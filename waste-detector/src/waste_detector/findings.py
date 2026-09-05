@@ -1,0 +1,122 @@
+"""The waste-category finding every detector emits, and its SQLite storage.
+
+A shared shape across detectors is what lets the (not yet built) savings
+estimator treat "idle", "over_provisioned", and "fragmented" findings
+uniformly rather than special-casing each detector's own output.
+"""
+from __future__ import annotations
+
+import os
+import sqlite3
+from contextlib import contextmanager
+from dataclasses import dataclass
+
+IDLE = "idle"
+OVER_PROVISIONED = "over_provisioned"
+FRAGMENTED = "fragmented"
+RECURRING_PATTERN = "recurring_pattern"
+
+
+@dataclass
+class WasteFinding:
+    category: str
+    node: str
+    gpu_index: str
+    gpu_instance_id: str | None
+    namespace: str
+    workload: str | None
+    window_start: float
+    window_end: float
+    # 0-1: how much of the analysis window had trustworthy (high-coverage)
+    # data behind it. Detectors compute this from the rollups they used;
+    # it's what lets a consumer decide whether to act on or just log a
+    # finding built on sparse data.
+    confidence: float
+    # A short, detector-specific number (idle streak hours, peak
+    # utilization %, count of concurrently underutilized GPUs, ...) so a
+    # human or the savings estimator can see the evidence, not just the
+    # verdict.
+    metric_value: float
+    detail: str
+
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS waste_findings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL,
+    node TEXT NOT NULL,
+    gpu_index TEXT NOT NULL,
+    gpu_instance_id TEXT,
+    namespace TEXT NOT NULL,
+    workload TEXT,
+    window_start REAL NOT NULL,
+    window_end REAL NOT NULL,
+    confidence REAL NOT NULL,
+    metric_value REAL NOT NULL,
+    detail TEXT NOT NULL,
+    detected_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_findings_category ON waste_findings (category);
+CREATE INDEX IF NOT EXISTS idx_findings_workload ON waste_findings (namespace, workload);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_findings_window
+    ON waste_findings (category, node, gpu_index, COALESCE(gpu_instance_id, ''), window_start, window_end);
+"""
+
+
+class FindingsStorage:
+    def __init__(self, path: str):
+        if path != ":memory:":
+            directory = os.path.dirname(path)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+        self.path = path
+        self._conn = sqlite3.connect(path, check_same_thread=False)
+        self._conn.execute("PRAGMA journal_mode=WAL;")
+        self._conn.row_factory = sqlite3.Row
+        self._conn.executescript(SCHEMA)
+        self._conn.commit()
+
+    @contextmanager
+    def _cursor(self):
+        cur = self._conn.cursor()
+        try:
+            yield cur
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+        finally:
+            cur.close()
+
+    def insert_findings(self, findings: list[WasteFinding], detected_at: float) -> None:
+        if not findings:
+            return
+        with self._cursor() as cur:
+            cur.executemany(
+                """INSERT OR REPLACE INTO waste_findings
+                   (category, node, gpu_index, gpu_instance_id, namespace, workload,
+                    window_start, window_end, confidence, metric_value, detail, detected_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        f.category, f.node, f.gpu_index, f.gpu_instance_id, f.namespace,
+                        f.workload, f.window_start, f.window_end, f.confidence,
+                        f.metric_value, f.detail, detected_at,
+                    )
+                    for f in findings
+                ],
+            )
+
+    def all_findings(self, category: str | None = None) -> list[sqlite3.Row]:
+        if category is None:
+            return self._conn.execute("SELECT * FROM waste_findings ORDER BY window_start").fetchall()
+        return self._conn.execute(
+            "SELECT * FROM waste_findings WHERE category = ? ORDER BY window_start", (category,)
+        ).fetchall()
+
+    def count(self) -> int:
+        return self._conn.execute("SELECT COUNT(*) FROM waste_findings").fetchone()[0]
+
+    def close(self) -> None:
+        self._conn.close()

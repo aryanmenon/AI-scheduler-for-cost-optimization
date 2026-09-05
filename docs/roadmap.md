@@ -136,20 +136,35 @@ Still needed: validation against real hardware and a second real cluster.
 Still needed: validation against real hardware and a second real cluster
 (same caveat as component 1 — no live cluster available yet).
 
-### 5.3 Baseline & Waste Detector — ○ PLANNED
+### 5.3 Baseline & Waste Detector — ✓ BUILT & VALIDATED against synthetic fixtures
 
 - Define waste categories with concrete thresholds (idle / fragmented /
-  over-provisioned)
+  over-provisioned) — done, plus a fourth category (recurring pattern) not
+  originally enumerated but needed to catch workloads idle detection's
+  strict streak logic would otherwise miss
 - Build over-provisioning detection first — single-snapshot comparison,
-  fastest to a demonstrable number
+  fastest to a demonstrable number — done: flags a workload whose peak
+  utilization never exceeds a threshold over a minimum observation window
 - Build idle-GPU detection, tuned for inference's bursty traffic (not
-  training's steady load)
+  training's steady load) — done: requires a sustained, unbroken run of
+  low avg *and* max utilization, so a single real request inside an
+  otherwise-quiet hour breaks the streak and the service isn't flagged
 - Build fragmentation detection — hardest piece; timebox it and ship
-  without it if needed
-- Add daily/weekly pattern detection (overnight idle-fleet pattern)
-- Validate against real traffic and tune false positives — a bad
-  recommendation that breaks a customer's SLA costs more trust than a
-  missed one
+  without it if needed — done at MVP scope (no bin-packing, just the
+  detectable signal: multiple GPUs on one node, owned by different
+  workloads, concurrently underutilized for a sustained streak); an
+  intentional multi-GPU job from one workload is explicitly excluded
+- Add daily/weekly pattern detection (overnight idle-fleet pattern) — done:
+  groups hourly rollups by hour-of-day across many observed days and
+  tolerates occasional exception days, catching patterns the continuous-
+  streak idle detector would fragment into too-short pieces
+- Validate against real traffic and tune false positives — validated
+  against synthetic fixtures covering the false-positive risks explicitly
+  (bursty-but-healthy traffic, a legitimate multi-GPU job, low-coverage
+  buckets); every detector excludes rollups below a coverage threshold and
+  requires a minimum observation window before flagging anything. Still
+  needs tuning against real customer traffic — the thresholds here are
+  reasonable starting points, not validated numbers.
 
 ## 6. Key Risks & Decision Gates
 

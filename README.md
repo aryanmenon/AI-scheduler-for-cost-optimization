@@ -27,7 +27,7 @@ power-constrained scheduler is explicitly out of scope for now.
 
 ```
 telemetry collector  →  ingestion & normalization  →  waste detector  →  savings estimator  →  dashboard / report
-     (built)                 (planned)                  (planned)            (planned)             (planned)
+     (built)                    (built)                  (built)            (planned)             (planned)
 ```
 
 Five components, in build order — see `docs/roadmap.md` §4–5 for full
@@ -42,8 +42,12 @@ detail and status of each:
    identity from pod names, scales raw utilization by a GPU capability
    reference table so SKUs are comparable, and rolls samples up into
    5-min/hourly/daily buckets with explicit gap/coverage tracking.
-3. Baseline & waste detector — idle/fragmentation/over-provisioning
-   detection. Not yet built.
+3. **Baseline & waste detector** — idle/fragmentation/over-provisioning
+   detection. *Built in this repo* (`waste-detector/`): four detectors
+   (idle, over-provisioned, fragmented, recurring-pattern), each excluding
+   low-coverage rollups and requiring sustained evidence before flagging
+   anything, to keep false positives — which cost more customer trust than
+   a missed detection — low.
 4. Achievable ceiling & savings estimator — SLA-aware target + confidence
    scored $ impact. Not yet built.
 5. Observe-mode report & dashboard — the self-serve sales artifact. Not
@@ -79,18 +83,36 @@ ingestion-normalization/      Python normalizer: raw samples → per-workload
                                 synthetic data-gap and a MIG-sharing scenario
   Dockerfile
 
+waste-detector/                Python detector: rollups → waste findings
+  src/waste_detector/
+    rollup_reader.py            read-only reader of ingestion's SQLite
+    idle.py                     streak-based idle detection, tuned against
+                                 flagging healthy bursty inference traffic
+    over_provisioning.py        peak-vs-threshold single-snapshot detection
+    fragmentation.py            multi-workload, multi-GPU node underuse
+    patterns.py                 recurring hour-of-day low-usage windows
+                                 (tolerates occasional exception days)
+    findings.py                  shared WasteFinding schema + SQLite storage
+    detector.py, pipeline.py,
+    main.py                      orchestration + the detect/store loop
+  tests/                        unit + integration tests per category, plus
+                                 a combined-run test and a false-positive
+                                 (healthy bursty workload) guard
+  Dockerfile
+
 deploy/helm/gpu-telemetry-collector/
                                one-command Helm chart: DCGM exporter
                                DaemonSet + kube-state-metrics + the
-                               collector (with ingestion-normalization as a
-                               sidecar sharing its PVC read-only), all RBAC
-                               read-only (get/list/watch only — no
+                               collector (with ingestion-normalization and
+                               waste-detector as sidecars sharing its PVC,
+                               each read-only against the stage before it),
+                               all RBAC read-only (get/list/watch only — no
                                create/update/patch/delete anywhere)
 ```
 
 ## Quickstart
 
-Run both components' test suites:
+Run all three components' test suites:
 
 ```bash
 cd telemetry-collector
@@ -99,6 +121,10 @@ pytest
 
 cd ../ingestion-normalization
 pip install -e ../telemetry-collector -e ".[dev]"  # dev-only; see its README
+pytest
+
+cd ../waste-detector
+pip install -e ../ingestion-normalization -e ".[dev]"  # dev-only; see its README
 pytest
 ```
 
@@ -111,12 +137,13 @@ helm install gpu-telemetry deploy/helm/gpu-telemetry-collector \
 
 This deploys DCGM exporter (per-GPU utilization/memory/power),
 kube-state-metrics (pod/node metadata), and the collector — which
-correlates the two into a raw SQLite time series, then hands it to the
-ingestion-normalization sidecar, which derives workload identity,
-capability-normalizes utilization, and produces the rollups that the
-(not-yet-built) waste detector will consume. See
+correlates the two into a raw SQLite time series, hands it to the
+ingestion-normalization sidecar (workload identity + capability
+normalization + rollups), which in turn feeds the waste-detector sidecar
+that flags idle/over-provisioned/fragmented/recurring-pattern findings for
+the (not-yet-built) savings estimator to price. See
 `deploy/helm/gpu-telemetry-collector/values.yaml` to toggle persistence,
-scrape/poll intervals, and image tags.
+scrape/poll intervals, detector thresholds, and image tags.
 
 ## Key risk / decision gate
 

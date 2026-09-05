@@ -11,6 +11,12 @@ This deployed, read-only:
                                                capability, and rolls it up
                                                into 5-min/hourly/daily buckets
 {{- end }}
+{{- if .Values.wasteDetector.enabled }}
+  - waste-detector (sidecar)                -- flags idle, over-provisioned,
+                                               fragmented, and recurring-
+                                               pattern GPU waste from those
+                                               rollups
+{{- end }}
 
 Nothing here can create, update, or delete anything in your cluster --
 every RBAC rule granted is get/list/watch only.
@@ -24,9 +30,16 @@ Check that ingestion is producing rollups:
 
   kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "gpu-telemetry-collector.fullname" . }}-collector -c ingestion-normalization -f
 {{- end }}
+{{- if .Values.wasteDetector.enabled }}
 
-Once you're ready to hand this data to the waste-detector / dashboard,
-telemetry.db lives at /data/telemetry.db inside the collector pod
+Check that waste findings are being produced:
+
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "gpu-telemetry-collector.fullname" . }}-collector -c waste-detector -f
+{{- end }}
+
+Once you're ready to hand this data to the (not yet built) savings
+estimator / dashboard, telemetry.db lives at /data/telemetry.db inside the
+collector pod
 {{- if .Values.persistence.enabled }} on a {{ .Values.persistence.size }} PersistentVolumeClaim.
 {{- else }} on an emptyDir -- enable `persistence.enabled` before running a real pilot so data survives pod restarts.
 {{- end }}

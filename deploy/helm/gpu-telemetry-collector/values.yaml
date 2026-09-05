@@ -32,6 +32,32 @@ ingestion:
       cpu: 250m
       memory: 256Mi
 
+wasteDetector:
+  enabled: true
+  image:
+    repository: ghcr.io/example-org/gpu-cost-optimizer/waste-detector
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  pollIntervalSeconds: 300
+  minCoverageRatio: 0.8
+  idleThresholdPct: 2.0
+  minIdleStreakHours: 4
+  overProvisionThresholdPct: 30.0
+  overProvisionMinObservationHours: 24
+  fragmentationThresholdPct: 50.0
+  fragmentationMinUnderutilizedGpus: 2
+  fragmentationMinStreakHours: 4
+  patternMinDaysObserved: 7
+  patternIdleThresholdPct: 5.0
+  patternMinConsistentFraction: 0.8
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
 persistence:
   # Toggleable: pilots without a storage class can run with an emptyDir
   # (telemetry lost on pod restart) before committing to a PVC.

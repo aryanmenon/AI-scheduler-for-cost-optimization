@@ -20,6 +20,20 @@ data:
   INGESTION_POLL_INTERVAL_SECONDS: {{ .Values.ingestion.pollIntervalSeconds | quote }}
   SOURCE_SCRAPE_INTERVAL_SECONDS: {{ .Values.collector.scrapeIntervalSeconds | quote }}
   LOW_CONFIDENCE_COVERAGE_THRESHOLD: {{ .Values.ingestion.lowConfidenceCoverageThreshold | quote }}
+  # Consumed by the waste-detector sidecar below.
+  FINDINGS_SQLITE_PATH: "/data/findings/findings.db"
+  DETECTOR_POLL_INTERVAL_SECONDS: {{ .Values.wasteDetector.pollIntervalSeconds | quote }}
+  MIN_COVERAGE_RATIO: {{ .Values.wasteDetector.minCoverageRatio | quote }}
+  IDLE_THRESHOLD_PCT: {{ .Values.wasteDetector.idleThresholdPct | quote }}
+  MIN_IDLE_STREAK_HOURS: {{ .Values.wasteDetector.minIdleStreakHours | quote }}
+  OVER_PROVISION_THRESHOLD_PCT: {{ .Values.wasteDetector.overProvisionThresholdPct | quote }}
+  OVER_PROVISION_MIN_OBSERVATION_HOURS: {{ .Values.wasteDetector.overProvisionMinObservationHours | quote }}
+  FRAGMENTATION_THRESHOLD_PCT: {{ .Values.wasteDetector.fragmentationThresholdPct | quote }}
+  FRAGMENTATION_MIN_UNDERUTILIZED_GPUS: {{ .Values.wasteDetector.fragmentationMinUnderutilizedGpus | quote }}
+  FRAGMENTATION_MIN_STREAK_HOURS: {{ .Values.wasteDetector.fragmentationMinStreakHours | quote }}
+  PATTERN_MIN_DAYS_OBSERVED: {{ .Values.wasteDetector.patternMinDaysObserved | quote }}
+  PATTERN_IDLE_THRESHOLD_PCT: {{ .Values.wasteDetector.patternIdleThresholdPct | quote }}
+  PATTERN_MIN_CONSISTENT_FRACTION: {{ .Values.wasteDetector.patternMinConsistentFraction | quote }}
 ---
 {{- if .Values.persistence.enabled }}
 apiVersion: v1
@@ -111,6 +125,34 @@ spec:
             - name: data
               mountPath: /data/normalized
               subPath: normalized
+        {{- end }}
+        {{- if .Values.wasteDetector.enabled }}
+        - name: waste-detector
+          image: "{{ .Values.wasteDetector.image.repository }}:{{ .Values.wasteDetector.image.tag }}"
+          imagePullPolicy: {{ .Values.wasteDetector.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "gpu-telemetry-collector.fullname" . }}-collector-config
+          resources:
+            {{- toYaml .Values.wasteDetector.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10003
+          volumeMounts:
+            # Read-only for the same reason as ingestion's mount above --
+            # this component must never be able to write into
+            # ingestion-normalization's output (see
+            # waste-detector/src/waste_detector/rollup_reader.py, which
+            # also opens its sqlite connection in mode=ro).
+            - name: data
+              mountPath: /data/normalized
+              subPath: normalized
+              readOnly: true
+            - name: data
+              mountPath: /data/findings
+              subPath: findings
         {{- end }}
       volumes:
         - name: data
