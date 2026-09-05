@@ -1,0 +1,35 @@
+# HELP DCGM_FI_DEV_GPU_UTIL GPU utilization (in %).
+# TYPE DCGM_FI_DEV_GPU_UTIL gauge
+DCGM_FI_DEV_GPU_UTIL{gpu="0",UUID="GPU-a1000000-0000-0000-0000-000000000000",device="nvidia0",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-1",namespace="inference",pod="bert-large-7d4f-xk2p9",container="model-server"} 87
+DCGM_FI_DEV_GPU_UTIL{gpu="1",UUID="GPU-a1000001-0000-0000-0000-000000000000",device="nvidia1",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-1",namespace="inference",pod="llama-70b-6c9d-p2q7r",container="model-server"} 3
+DCGM_FI_DEV_GPU_UTIL{gpu="0",UUID="GPU-h1000000-0000-0000-0000-000000000000",device="nvidia0",modelName="NVIDIA H100-SXM5-80GB",Hostname="gpu-node-2",namespace="training",pod="finetune-job-4",container="trainer"} 96
+DCGM_FI_DEV_GPU_UTIL{gpu="1",UUID="GPU-h1000001-0000-0000-0000-000000000000",device="nvidia1",modelName="NVIDIA H100-SXM5-80GB",Hostname="gpu-node-2"} 0
+DCGM_FI_DEV_GPU_UTIL{gpu="0",UUID="GPU-t4000000-0000-0000-0000-000000000000",device="nvidia0",modelName="Tesla T4",Hostname="gpu-node-3",namespace="default",pod="embedding-svc-9f8d-z1x2y",container="embedder"} 41
+# HELP DCGM_FI_DEV_FB_USED Framebuffer memory used (in MiB).
+# TYPE DCGM_FI_DEV_FB_USED gauge
+DCGM_FI_DEV_FB_USED{gpu="0",UUID="GPU-a1000000-0000-0000-0000-000000000000",device="nvidia0",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-1",namespace="inference",pod="bert-large-7d4f-xk2p9",container="model-server"} 61440
+DCGM_FI_DEV_FB_USED{gpu="1",UUID="GPU-a1000001-0000-0000-0000-000000000000",device="nvidia1",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-1",namespace="inference",pod="llama-70b-6c9d-p2q7r",container="model-server"} 72704
+DCGM_FI_DEV_FB_USED{gpu="0",UUID="GPU-h1000000-0000-0000-0000-000000000000",device="nvidia0",modelName="NVIDIA H100-SXM5-80GB",Hostname="gpu-node-2",namespace="training",pod="finetune-job-4",container="trainer"} 78336
+DCGM_FI_DEV_FB_USED{gpu="1",UUID="GPU-h1000001-0000-0000-0000-000000000000",device="nvidia1",modelName="NVIDIA H100-SXM5-80GB",Hostname="gpu-node-2"} 512
+DCGM_FI_DEV_FB_USED{gpu="0",UUID="GPU-t4000000-0000-0000-0000-000000000000",device="nvidia0",modelName="Tesla T4",Hostname="gpu-node-3",namespace="default",pod="embedding-svc-9f8d-z1x2y",container="embedder"} 8192
+# HELP DCGM_FI_DEV_FB_FREE Framebuffer memory free (in MiB).
+# TYPE DCGM_FI_DEV_FB_FREE gauge
+DCGM_FI_DEV_FB_FREE{gpu="0",UUID="GPU-a1000000-0000-0000-0000-000000000000",device="nvidia0",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-1",namespace="inference",pod="bert-large-7d4f-xk2p9",container="model-server"} 20240
+DCGM_FI_DEV_FB_FREE{gpu="1",UUID="GPU-a1000001-0000-0000-0000-000000000000",device="nvidia1",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-1",namespace="inference",pod="llama-70b-6c9d-p2q7r",container="model-server"} 8976
+DCGM_FI_DEV_FB_FREE{gpu="0",UUID="GPU-h1000000-0000-0000-0000-000000000000",device="nvidia0",modelName="NVIDIA H100-SXM5-80GB",Hostname="gpu-node-2",namespace="training",pod="finetune-job-4",container="trainer"} 1664
+DCGM_FI_DEV_FB_FREE{gpu="1",UUID="GPU-h1000001-0000-0000-0000-000000000000",device="nvidia1",modelName="NVIDIA H100-SXM5-80GB",Hostname="gpu-node-2"} 80384
+DCGM_FI_DEV_FB_FREE{gpu="0",UUID="GPU-t4000000-0000-0000-0000-000000000000",device="nvidia0",modelName="Tesla T4",Hostname="gpu-node-3",namespace="default",pod="embedding-svc-9f8d-z1x2y",container="embedder"} 7936
+# HELP DCGM_FI_DEV_POWER_USAGE Power draw (in W).
+# TYPE DCGM_FI_DEV_POWER_USAGE gauge
+DCGM_FI_DEV_POWER_USAGE{gpu="0",UUID="GPU-a1000000-0000-0000-0000-000000000000",device="nvidia0",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-1",namespace="inference",pod="bert-large-7d4f-xk2p9",container="model-server"} 312.5
+DCGM_FI_DEV_POWER_USAGE{gpu="1",UUID="GPU-a1000001-0000-0000-0000-000000000000",device="nvidia1",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-1",namespace="inference",pod="llama-70b-6c9d-p2q7r",container="model-server"} 68.2
+DCGM_FI_DEV_POWER_USAGE{gpu="0",UUID="GPU-h1000000-0000-0000-0000-000000000000",device="nvidia0",modelName="NVIDIA H100-SXM5-80GB",Hostname="gpu-node-2",namespace="training",pod="finetune-job-4",container="trainer"} 610.1
+DCGM_FI_DEV_POWER_USAGE{gpu="1",UUID="GPU-h1000001-0000-0000-0000-000000000000",device="nvidia1",modelName="NVIDIA H100-SXM5-80GB",Hostname="gpu-node-2"} 45.0
+DCGM_FI_DEV_POWER_USAGE{gpu="0",UUID="GPU-t4000000-0000-0000-0000-000000000000",device="nvidia0",modelName="Tesla T4",Hostname="gpu-node-3",namespace="default",pod="embedding-svc-9f8d-z1x2y",container="embedder"} 38.9
+# HELP DCGM_FI_DEV_SM_CLOCK SM clock frequency (in MHz).
+# TYPE DCGM_FI_DEV_SM_CLOCK gauge
+DCGM_FI_DEV_SM_CLOCK{gpu="0",UUID="GPU-a1000000-0000-0000-0000-000000000000",device="nvidia0",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-1",namespace="inference",pod="bert-large-7d4f-xk2p9",container="model-server"} 1410
+DCGM_FI_DEV_SM_CLOCK{gpu="1",UUID="GPU-a1000001-0000-0000-0000-000000000000",device="nvidia1",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-1",namespace="inference",pod="llama-70b-6c9d-p2q7r",container="model-server"} 210
+DCGM_FI_DEV_SM_CLOCK{gpu="0",UUID="GPU-h1000000-0000-0000-0000-000000000000",device="nvidia0",modelName="NVIDIA H100-SXM5-80GB",Hostname="gpu-node-2",namespace="training",pod="finetune-job-4",container="trainer"} 1755
+DCGM_FI_DEV_SM_CLOCK{gpu="1",UUID="GPU-h1000001-0000-0000-0000-000000000000",device="nvidia1",modelName="NVIDIA H100-SXM5-80GB",Hostname="gpu-node-2"} 210
+DCGM_FI_DEV_SM_CLOCK{gpu="0",UUID="GPU-t4000000-0000-0000-0000-000000000000",device="nvidia0",modelName="Tesla T4",Hostname="gpu-node-3",namespace="default",pod="embedding-svc-9f8d-z1x2y",container="embedder"} 990

@@ -1,0 +1,15 @@
+apiVersion: v2
+name: gpu-telemetry-collector
+description: >-
+  Read-only GPU telemetry collector for the cost-optimization SaaS.
+  Deploys DCGM exporter + kube-state-metrics and correlates per-GPU
+  utilization/memory/power to the owning pod.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - gpu
+  - nvidia
+  - dcgm
+  - cost-optimization
+  - observability

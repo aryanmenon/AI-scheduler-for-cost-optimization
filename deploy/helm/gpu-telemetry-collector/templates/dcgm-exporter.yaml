@@ -1,0 +1,71 @@
+{{- if .Values.dcgmExporter.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "gpu-telemetry-collector.fullname" . }}-dcgm-exporter
+  labels:
+    app.kubernetes.io/name: dcgm-exporter
+    {{- include "gpu-telemetry-collector.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dcgm-exporter
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dcgm-exporter
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      serviceAccountName: {{ include "gpu-telemetry-collector.fullname" . }}-dcgm-exporter
+      {{- with .Values.dcgmExporter.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dcgmExporter.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: dcgm-exporter
+          image: "{{ .Values.dcgmExporter.image.repository }}:{{ .Values.dcgmExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.dcgmExporter.image.pullPolicy }}
+          env:
+            # Attaches namespace/pod/container labels to every GPU sample by
+            # reading the kubelet's local pod-resources socket below.
+            - name: DCGM_EXPORTER_KUBERNETES
+              value: "true"
+          ports:
+            - name: metrics
+              containerPort: 9400
+          securityContext:
+            # DCGM needs to talk to the NVIDIA driver; it does not need
+            # host root or any capability beyond that.
+            privileged: false
+            capabilities:
+              add: ["SYS_ADMIN"]
+          volumeMounts:
+            - name: pod-gpu-resources
+              mountPath: /var/lib/kubelet/pod-resources
+              readOnly: true
+      volumes:
+        - name: pod-gpu-resources
+          hostPath:
+            path: /var/lib/kubelet/pod-resources
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gpu-telemetry-collector.fullname" . }}-dcgm-exporter
+  labels:
+    app.kubernetes.io/name: dcgm-exporter
+    {{- include "gpu-telemetry-collector.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: dcgm-exporter
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: metrics
+      port: 9400
+      targetPort: 9400
+{{- end }}

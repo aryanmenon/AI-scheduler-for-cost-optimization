@@ -1,0 +1,20 @@
+GPU telemetry collector installed into namespace {{ .Release.Namespace }}.
+
+This deployed, read-only:
+  - dcgm-exporter (DaemonSet on GPU nodes) -- per-GPU utilization/memory/power
+  - kube-state-metrics                     -- pod/node metadata
+  - telemetry-collector                    -- correlates the two and stores
+                                               a time series in SQLite
+
+Nothing here can create, update, or delete anything in your cluster --
+every RBAC rule granted is get/list/watch only.
+
+Check that GPUs are being scraped:
+
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "gpu-telemetry-collector.fullname" . }}-collector -f
+
+Once you're ready to hand this data to the waste-detector / dashboard,
+telemetry.db lives at /data/telemetry.db inside the collector pod
+{{- if .Values.persistence.enabled }} on a {{ .Values.persistence.size }} PersistentVolumeClaim.
+{{- else }} on an emptyDir -- enable `persistence.enabled` before running a real pilot so data survives pod restarts.
+{{- end }}

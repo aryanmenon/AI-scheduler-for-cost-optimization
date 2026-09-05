@@ -1,0 +1,65 @@
+import pytest
+import requests
+
+from telemetry_collector.metrics_client import ScrapeError, fetch_text, parse_metrics
+
+
+def test_parse_metrics_extracts_all_gpu_samples(dcgm_text):
+    samples = parse_metrics(dcgm_text)
+    util_samples = [s for s in samples if s.name == "DCGM_FI_DEV_GPU_UTIL"]
+    assert len(util_samples) == 5  # 2 + 2 + 1 GPUs across three nodes
+
+
+def test_parse_metrics_preserves_labels(dcgm_text):
+    samples = parse_metrics(dcgm_text)
+    a100_gpu0 = next(
+        s for s in samples
+        if s.name == "DCGM_FI_DEV_GPU_UTIL" and s.labels.get("Hostname") == "gpu-node-1" and s.labels.get("gpu") == "0"
+    )
+    assert a100_gpu0.value == 87
+    assert a100_gpu0.labels["namespace"] == "inference"
+    assert a100_gpu0.labels["pod"] == "bert-large-7d4f-xk2p9"
+
+
+def test_parse_metrics_handles_unattributed_gpu(dcgm_text):
+    samples = parse_metrics(dcgm_text)
+    idle_h100 = next(
+        s for s in samples
+        if s.name == "DCGM_FI_DEV_GPU_UTIL" and s.labels.get("Hostname") == "gpu-node-2" and s.labels.get("gpu") == "1"
+    )
+    assert "namespace" not in idle_h100.labels
+    assert idle_h100.value == 0
+
+
+def test_fetch_text_retries_then_succeeds(monkeypatch):
+    calls = {"n": 0}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        text = "ok"
+
+    def fake_get(url, timeout):
+        calls["n"] += 1
+        if calls["n"] < 2:
+            raise requests.ConnectionError("connection refused")
+        return FakeResponse()
+
+    monkeypatch.setattr("telemetry_collector.metrics_client.requests.get", fake_get)
+    monkeypatch.setattr("telemetry_collector.metrics_client.time.sleep", lambda s: None)
+
+    result = fetch_text("http://example/metrics", timeout=1, max_retries=3)
+    assert result == "ok"
+    assert calls["n"] == 2
+
+
+def test_fetch_text_raises_scrape_error_after_exhausting_retries(monkeypatch):
+    def fake_get(url, timeout):
+        raise requests.ConnectionError("connection refused")
+
+    monkeypatch.setattr("telemetry_collector.metrics_client.requests.get", fake_get)
+    monkeypatch.setattr("telemetry_collector.metrics_client.time.sleep", lambda s: None)
+
+    with pytest.raises(ScrapeError):
+        fetch_text("http://example/metrics", timeout=1, max_retries=2)

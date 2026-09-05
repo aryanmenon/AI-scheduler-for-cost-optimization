@@ -1,0 +1,47 @@
+# Default values for gpu-telemetry-collector.
+
+collector:
+  image:
+    repository: ghcr.io/example-org/gpu-cost-optimizer/telemetry-collector
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  scrapeIntervalSeconds: 30
+  httpTimeoutSeconds: 10
+  maxScrapeRetries: 3
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+persistence:
+  # Toggleable: pilots without a storage class can run with an emptyDir
+  # (telemetry lost on pod restart) before committing to a PVC.
+  enabled: true
+  storageClassName: ""
+  size: 5Gi
+
+dcgmExporter:
+  enabled: true
+  image:
+    repository: nvcr.io/nvidia/k8s/dcgm-exporter
+    tag: "3.3.5-3.4.1-ubuntu22.04"
+    pullPolicy: IfNotPresent
+  nodeSelector:
+    nvidia.com/gpu.present: "true"
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+
+kubeStateMetrics:
+  enabled: true
+  image:
+    repository: registry.k8s.io/kube-state-metrics/kube-state-metrics
+    tag: "v2.13.0"
+    pullPolicy: IfNotPresent
+
+rbac:
+  create: true

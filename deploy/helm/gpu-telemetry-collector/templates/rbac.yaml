@@ -1,0 +1,61 @@
+{{/*
+Only kube-state-metrics talks to the Kubernetes API in this chart (to
+learn about pods/nodes for later ingestion-layer use). DCGM exporter reads
+GPUs via NVML plus the kubelet's local pod-resources socket -- it needs no
+API access at all. The collector itself only does HTTP GETs against the
+two exporters' Services, so it gets a ServiceAccount with no API token
+mounted rather than any RBAC grant.
+
+Every verb below is read-only (get/list/watch) and there is no create,
+update, patch, or delete anywhere in this file -- a customer's security
+team should be able to verify that by inspection alone.
+*/}}
+{{- if .Values.rbac.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "gpu-telemetry-collector.fullname" . }}-kube-state-metrics
+  labels:
+    {{- include "gpu-telemetry-collector.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "gpu-telemetry-collector.fullname" . }}-kube-state-metrics
+  labels:
+    {{- include "gpu-telemetry-collector.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "namespaces"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "gpu-telemetry-collector.fullname" . }}-kube-state-metrics
+  labels:
+    {{- include "gpu-telemetry-collector.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "gpu-telemetry-collector.fullname" . }}-kube-state-metrics
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "gpu-telemetry-collector.fullname" . }}-kube-state-metrics
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "gpu-telemetry-collector.fullname" . }}-dcgm-exporter
+  labels:
+    {{- include "gpu-telemetry-collector.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "gpu-telemetry-collector.fullname" . }}-collector
+  labels:
+    {{- include "gpu-telemetry-collector.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+{{- end }}

@@ -1,0 +1,51 @@
+{{- if .Values.kubeStateMetrics.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gpu-telemetry-collector.fullname" . }}-kube-state-metrics
+  labels:
+    app.kubernetes.io/name: kube-state-metrics
+    {{- include "gpu-telemetry-collector.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kube-state-metrics
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kube-state-metrics
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      serviceAccountName: {{ include "gpu-telemetry-collector.fullname" . }}-kube-state-metrics
+      containers:
+        - name: kube-state-metrics
+          image: "{{ .Values.kubeStateMetrics.image.repository }}:{{ .Values.kubeStateMetrics.image.tag }}"
+          imagePullPolicy: {{ .Values.kubeStateMetrics.image.pullPolicy }}
+          args:
+            - --resources=pods,nodes
+          ports:
+            - name: metrics
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gpu-telemetry-collector.fullname" . }}-kube-state-metrics
+  labels:
+    app.kubernetes.io/name: kube-state-metrics
+    {{- include "gpu-telemetry-collector.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: kube-state-metrics
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: 8080
+{{- end }}

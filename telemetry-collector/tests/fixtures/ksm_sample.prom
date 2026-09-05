@@ -1,0 +1,17 @@
+# HELP kube_pod_info Information about pod.
+# TYPE kube_pod_info gauge
+kube_pod_info{namespace="inference",pod="bert-large-7d4f-xk2p9",node="gpu-node-1",host_ip="10.0.1.10"} 1
+kube_pod_info{namespace="inference",pod="llama-70b-6c9d-p2q7r",node="gpu-node-1",host_ip="10.0.1.10"} 1
+kube_pod_info{namespace="training",pod="finetune-job-4",node="gpu-node-2",host_ip="10.0.1.11"} 1
+kube_pod_info{namespace="default",pod="embedding-svc-9f8d-z1x2y",node="gpu-node-3",host_ip="10.0.1.12"} 1
+# HELP kube_pod_container_resource_requests The number of requested resource by a container.
+# TYPE kube_pod_container_resource_requests gauge
+kube_pod_container_resource_requests{namespace="inference",pod="bert-large-7d4f-xk2p9",container="model-server",node="gpu-node-1",resource="nvidia_com_gpu",unit="integer"} 1
+kube_pod_container_resource_requests{namespace="inference",pod="llama-70b-6c9d-p2q7r",container="model-server",node="gpu-node-1",resource="nvidia_com_gpu",unit="integer"} 1
+kube_pod_container_resource_requests{namespace="training",pod="finetune-job-4",container="trainer",node="gpu-node-2",resource="nvidia_com_gpu",unit="integer"} 1
+kube_pod_container_resource_requests{namespace="default",pod="embedding-svc-9f8d-z1x2y",container="embedder",node="gpu-node-3",resource="nvidia_com_gpu",unit="integer"} 1
+# HELP kube_node_info Information about node.
+# TYPE kube_node_info gauge
+kube_node_info{node="gpu-node-1"} 1
+kube_node_info{node="gpu-node-2"} 1
+kube_node_info{node="gpu-node-3"} 1
