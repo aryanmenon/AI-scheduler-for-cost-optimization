@@ -11,6 +11,11 @@ that revenue and those relationships to fund the harder, higher-moat
 power-hard-constraint scheduler for grid-unstable data centers. The
 power-constrained scheduler is explicitly out of scope for now.
 
+**Phase 1's MVP pipeline is fully built** (all five components below),
+validated against synthetic fixtures end to end. What's still needed
+before it's sellable: a real GPU cluster to validate against, and 2–3
+design partners to prove the 30–40%+ utilization-gain gate below.
+
 ## Why this, why now
 
 - GPU orchestration software is a ~$1.78B (2025) → $8.16B (2031) market,
@@ -27,7 +32,7 @@ power-constrained scheduler is explicitly out of scope for now.
 
 ```
 telemetry collector  →  ingestion & normalization  →  waste detector  →  savings estimator  →  dashboard / report
-     (built)                    (built)                  (built)              (built)               (planned)
+     (built)                    (built)                  (built)              (built)               (built)
 ```
 
 Five components, in build order — see `docs/roadmap.md` §4–5 for full
@@ -57,8 +62,14 @@ detail and status of each:
    workloads against a configurable SLA utilization ceiling (default 70%,
    not 100%); and marks anything with no known GPU price as explicitly
    unpriceable rather than guessing.
-5. Observe-mode report & dashboard — the self-serve sales artifact. Not
-   yet built.
+5. **Observe-mode report & dashboard** — the self-serve sales artifact.
+   *Built in this repo* (`dashboard/`): renders savings-estimator's priced
+   findings both as a live, always-current page and as a standalone HTML
+   file to email a prospect — the two headline numbers (projected monthly
+   savings vs. already-wasted spend observed) are never added together,
+   for the same reason component 4 keeps them separate; a "not priced"
+   section discloses findings that couldn't be quantified instead of
+   hiding them.
 
 ## What's in this repo right now
 
@@ -130,20 +141,36 @@ savings-estimator/              Python pricer: findings → $ impact
                                  comment; this is the one component with
                                  real cross-package runtime dependencies)
 
+dashboard/                      Python report: $ estimates → sales artifact
+  src/dashboard/
+    report_reader.py             read-only reader of savings-estimator's SQLite
+    aggregator.py                 estimates → summary (observed vs. projected
+                                   totals kept separate, by-category
+                                   breakdown, top findings, unpriceable list)
+    render.py                     self-contained HTML (inline CSS, HTML-
+                                   escaped, no external requests)
+    report.py                     shared read→aggregate→render glue
+    server.py                     stdlib HTTP server, regenerates live
+    main.py                       dashboard-server + generate-report entrypoints
+  tests/                         unit tests + a real HTTP server integration
+                                 test + an XSS-escaping guard
+  Dockerfile
+
 deploy/helm/gpu-telemetry-collector/
                                one-command Helm chart: DCGM exporter
                                DaemonSet + kube-state-metrics + the
                                collector (with ingestion-normalization,
-                               waste-detector, and savings-estimator as
-                               sidecars sharing its PVC, each read-only
-                               against the stage before it), all RBAC
+                               waste-detector, savings-estimator, and
+                               dashboard as sidecars sharing its PVC, each
+                               read-only against the stage before it, plus
+                               a Service exposing the dashboard), all RBAC
                                read-only (get/list/watch only — no
                                create/update/patch/delete anywhere)
 ```
 
 ## Quickstart
 
-Run all four components' test suites:
+Run all five components' test suites:
 
 ```bash
 cd telemetry-collector
@@ -161,6 +188,10 @@ pytest
 cd ../savings-estimator
 pip install -e ../ingestion-normalization -e ../waste-detector -e ".[dev]"  # REAL runtime deps here, not dev-only; see its README
 pytest
+
+cd ../dashboard
+pip install -e ../savings-estimator -e ".[dev]"  # dev-only (production code is stdlib-only); see its README
+pytest
 ```
 
 Install onto a cluster with GPU nodes (once images are published):
@@ -176,12 +207,18 @@ correlates the two into a raw SQLite time series, hands it to the
 ingestion-normalization sidecar (workload identity + capability
 normalization + rollups), which feeds the waste-detector sidecar
 (idle/over-provisioned/fragmented/recurring-pattern findings), which
-finally feeds the savings-estimator sidecar that prices those findings
-into $ impact for the (not-yet-built) dashboard to render. See
+feeds the savings-estimator sidecar (prices those findings into $
+impact), which finally feeds the dashboard sidecar + Service that renders
+it as the sales artifact. See
 `deploy/helm/gpu-telemetry-collector/values.yaml` to toggle persistence,
 scrape/poll intervals, detector thresholds, and image tags — and set
 `savingsEstimator.gpuHourlyRatesJson` to the customer's actual contracted
-rates before trusting any dollar figure it produces.
+rates before trusting any dollar figure it produces. Then:
+
+```bash
+kubectl -n gpu-optimizer port-forward svc/gpu-telemetry-dashboard 8080:8080
+# open http://localhost:8080
+```
 
 ## Key risk / decision gate
 

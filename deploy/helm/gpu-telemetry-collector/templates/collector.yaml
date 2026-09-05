@@ -46,6 +46,10 @@ data:
   # over the illustrative public list-price defaults baked into pricing.py.
   GPU_HOURLY_RATES_JSON: {{ .Values.savingsEstimator.gpuHourlyRatesJson | quote }}
   {{- end }}
+  # Consumed by the dashboard sidecar below -- the self-serve sales artifact.
+  DASHBOARD_HOST: "0.0.0.0"
+  DASHBOARD_PORT: {{ .Values.dashboard.port | quote }}
+  TOP_FINDINGS_LIMIT: {{ .Values.dashboard.topFindingsLimit | quote }}
 ---
 {{- if .Values.persistence.enabled }}
 apiVersion: v1
@@ -196,6 +200,31 @@ spec:
             - name: data
               mountPath: /data/savings
               subPath: savings
+        {{- end }}
+        {{- if .Values.dashboard.enabled }}
+        - name: dashboard
+          image: "{{ .Values.dashboard.image.repository }}:{{ .Values.dashboard.image.tag }}"
+          imagePullPolicy: {{ .Values.dashboard.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "gpu-telemetry-collector.fullname" . }}-collector-config
+          ports:
+            - name: dashboard
+              containerPort: {{ .Values.dashboard.port }}
+          resources:
+            {{- toYaml .Values.dashboard.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10005
+          volumeMounts:
+            # Read-only: the dashboard only ever reads savings-estimator's
+            # output (see dashboard's report_reader.py, opened in mode=ro).
+            - name: data
+              mountPath: /data/savings
+              subPath: savings
+              readOnly: true
         {{- end }}
       volumes:
         - name: data

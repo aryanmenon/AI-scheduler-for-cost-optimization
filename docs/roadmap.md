@@ -209,6 +209,41 @@ build-order breakdown given to 5.1–5.3. Built out as:
   validate the SLA ceiling default and the fragmentation capture-fraction
   discount.
 
+### 5.5 Observe-Mode Report & Dashboard — ✓ BUILT & VALIDATED against synthetic fixtures
+
+The original roadmap sized this at one line too ("the self-serve sales
+artifact, ≈ 1–2 weeks"). Built as:
+
+- **Two delivery modes sharing one code path**: a live page that always
+  reflects current data (no cache, regenerated per request — this is a
+  low-traffic internal tool where correctness beats a cheap render cost),
+  and a `generate-report` CLI producing a standalone HTML file with no
+  external requests, meant to be attached to an email. Both call the same
+  read → aggregate → render function, so they can never drift from each
+  other.
+- **The observed/projected split survives all the way to the UI**: the
+  report's two headline numbers ("Projected Monthly Savings" and
+  "Already-Wasted Spend Observed") are deliberately never summed —
+  continuing the same reasoning from 5.4's basis distinction. A sales
+  artifact whose top-line number can't be defended to a skeptical
+  customer champion isn't worth having.
+- **Unpriceable findings get their own disclosed section** rather than
+  being dropped silently — consistent with the "don't guess, say
+  unknown" principle applied everywhere else in this pipeline.
+- Needed zero new runtime dependencies (stdlib `http.server` + f-string
+  HTML, no templating engine, no web framework) — the one component in
+  this pipeline with no cross-package coupling at all in production code.
+- Validated with a real HTTP server integration test (not just unit tests
+  of the render function) and an explicit HTML-escaping test against an
+  adversarial workload name, since workload/namespace/node strings
+  ultimately originate from a customer's own cluster.
+
+This completes the Phase 1 MVP pipeline end to end (telemetry collector →
+ingestion & normalization → waste detector → savings estimator →
+dashboard), all validated against synthetic fixtures. What's not yet
+true: none of it has run against a real GPU cluster, and no design
+partner has validated the 30–40%+ utilization-gain gate below.
+
 ## 6. Key Risks & Decision Gates
 
 - Phase 1 gate: cannot proceed to funding phase 3 unless real customer

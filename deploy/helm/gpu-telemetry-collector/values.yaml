@@ -81,6 +81,26 @@ savingsEstimator:
       cpu: 250m
       memory: 256Mi
 
+dashboard:
+  enabled: true
+  image:
+    repository: ghcr.io/example-org/gpu-cost-optimizer/dashboard
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  port: 8080
+  topFindingsLimit: 25
+  # ClusterIP by default -- reach it with:
+  #   kubectl -n <namespace> port-forward svc/<release>-dashboard 8080:8080
+  # Set to LoadBalancer/NodePort if you want it reachable without port-forward.
+  serviceType: ClusterIP
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
 persistence:
   # Toggleable: pilots without a storage class can run with an emptyDir
   # (telemetry lost on pod restart) before committing to a PVC.

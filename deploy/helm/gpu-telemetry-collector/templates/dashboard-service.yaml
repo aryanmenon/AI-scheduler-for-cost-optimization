@@ -1,0 +1,21 @@
+{{- if .Values.dashboard.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gpu-telemetry-collector.fullname" . }}-dashboard
+  labels:
+    app.kubernetes.io/name: dashboard
+    {{- include "gpu-telemetry-collector.labels" . | nindent 4 }}
+spec:
+  # Targets the collector pod (the dashboard runs as a sidecar there) --
+  # selecting by its labels rather than giving the dashboard its own
+  # Deployment, since it has nothing to scale independently.
+  selector:
+    app.kubernetes.io/name: telemetry-collector
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: dashboard
+      port: {{ .Values.dashboard.port }}
+      targetPort: {{ .Values.dashboard.port }}
+  type: {{ .Values.dashboard.serviceType }}
+{{- end }}
