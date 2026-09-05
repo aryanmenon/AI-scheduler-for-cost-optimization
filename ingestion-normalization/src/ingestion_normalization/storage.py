@@ -64,7 +64,9 @@ CREATE TABLE IF NOT EXISTS rollups (
     max_utilization_pct REAL,
     avg_memory_used_mb REAL,
     avg_power_draw_w REAL,
-    avg_effective_tflops REAL
+    avg_effective_tflops REAL,
+    gpu_model TEXT,
+    fp16_tflops REAL
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_rollup_bucket
@@ -159,15 +161,16 @@ class NormalizedStorage:
                    (granularity, bucket_start, node, gpu_index, gpu_instance_id, namespace,
                     workload, sample_count, expected_sample_count, coverage_ratio,
                     low_confidence, avg_utilization_pct, max_utilization_pct,
-                    avg_memory_used_mb, avg_power_draw_w, avg_effective_tflops)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    avg_memory_used_mb, avg_power_draw_w, avg_effective_tflops,
+                    gpu_model, fp16_tflops)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 [
                     (
                         granularity, r.bucket_start, r.node, r.gpu_index, r.gpu_instance_id,
                         r.namespace, r.workload, r.sample_count, r.expected_sample_count,
                         r.coverage_ratio, int(r.low_confidence), r.avg_utilization_pct,
                         r.max_utilization_pct, r.avg_memory_used_mb, r.avg_power_draw_w,
-                        r.avg_effective_tflops,
+                        r.avg_effective_tflops, r.gpu_model, r.fp16_tflops,
                     )
                     for r in rollups
                 ],

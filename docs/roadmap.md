@@ -166,6 +166,49 @@ Still needed: validation against real hardware and a second real cluster
   needs tuning against real customer traffic — the thresholds here are
   reasonable starting points, not validated numbers.
 
+### 5.4 Achievable Ceiling & Savings Estimator — ✓ BUILT & VALIDATED against synthetic fixtures
+
+The original roadmap only sized this component at one line ("SLA-aware
+target + confidence-scored $ impact, ≈ 2 weeks") without the detailed
+build-order breakdown given to 5.1–5.3. Built out as:
+
+- **SLA-aware achievable ceiling**: rather than recommend right-sizing a
+  workload to run its new GPU at 100%, `ceiling.py` recommends the
+  smallest known SKU whose capacity — sized to the workload's own
+  already-observed peak load — lands at or below a configurable target
+  utilization ceiling (default 70%). Full utilization leaves no headroom
+  for a traffic spike or a latency-sensitive retry storm; a
+  recommendation that causes an SLA breach costs more trust than the
+  waste it fixed.
+- **Confidence-scored $ impact, split into observed vs. projected
+  bases** — a distinction the original one-liner didn't specify but that
+  turned out to matter: an idle finding's own idle-fraction is 100% by
+  construction (that's what makes it a streak), so pricing it as a full
+  month's waste would overclaim what a single window can support. Idle is
+  priced strictly against its own observed window (money already spent,
+  a defensible lower bound); over-provisioned, fragmented, and
+  recurring-pattern findings all require a sustained multi-hour or
+  multi-day observation before they fire at all, so projecting their
+  observed rate to a monthly figure is the standard, clearly-labeled
+  basis for a right-sizing ROI calculation.
+- **Pricing is configurable, not asserted** — ships illustrative public
+  on-demand list-price defaults, but is designed to be overridden with a
+  customer's actual contracted rate card. An unrecognized GPU model or a
+  model with no known rate is marked explicitly `unpriceable` rather than
+  guessed, consistent with every other "don't guess, say unknown" choice
+  made across this pipeline.
+- A gap surfaced building this component: the rollups schema (5.2) never
+  carried the GPU model forward, only a derived effective-TFLOPS number —
+  which can't be reverse-engineered into a capability at 0% utilization
+  (the idle case). Fixed by adding `gpu_model`/`fp16_tflops` columns to
+  the rollups table, the same kind of small, well-justified schema
+  addition as the MIG fix made building 5.2.
+- Validated against synthetic fixtures per category, plus an
+  unpriceable-GPU guard. Still needs real customer contracted rates (the
+  shipped defaults are explicitly illustrative) and real traffic to
+  validate the SLA ceiling default and the fragmentation capture-fraction
+  discount.
+
 ## 6. Key Risks & Decision Gates
 
 - Phase 1 gate: cannot proceed to funding phase 3 unless real customer

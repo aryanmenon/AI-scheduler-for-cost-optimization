@@ -34,6 +34,18 @@ data:
   PATTERN_MIN_DAYS_OBSERVED: {{ .Values.wasteDetector.patternMinDaysObserved | quote }}
   PATTERN_IDLE_THRESHOLD_PCT: {{ .Values.wasteDetector.patternIdleThresholdPct | quote }}
   PATTERN_MIN_CONSISTENT_FRACTION: {{ .Values.wasteDetector.patternMinConsistentFraction | quote }}
+  # Consumed by the savings-estimator sidecar below.
+  SAVINGS_SQLITE_PATH: "/data/savings/savings.db"
+  ESTIMATOR_POLL_INTERVAL_SECONDS: {{ .Values.savingsEstimator.pollIntervalSeconds | quote }}
+  MIN_FINDING_CONFIDENCE: {{ .Values.savingsEstimator.minFindingConfidence | quote }}
+  SLA_TARGET_UTILIZATION_PCT: {{ .Values.savingsEstimator.slaTargetUtilizationPct | quote }}
+  HOURS_PER_MONTH: {{ .Values.savingsEstimator.hoursPerMonth | quote }}
+  FRAGMENTATION_CAPTURE_FRACTION: {{ .Values.savingsEstimator.fragmentationCaptureFraction | quote }}
+  {{- if .Values.savingsEstimator.gpuHourlyRatesJson }}
+  # Always prefer setting this to the customer's actual contracted rates
+  # over the illustrative public list-price defaults baked into pricing.py.
+  GPU_HOURLY_RATES_JSON: {{ .Values.savingsEstimator.gpuHourlyRatesJson | quote }}
+  {{- end }}
 ---
 {{- if .Values.persistence.enabled }}
 apiVersion: v1
@@ -153,6 +165,37 @@ spec:
             - name: data
               mountPath: /data/findings
               subPath: findings
+        {{- end }}
+        {{- if .Values.savingsEstimator.enabled }}
+        - name: savings-estimator
+          image: "{{ .Values.savingsEstimator.image.repository }}:{{ .Values.savingsEstimator.image.tag }}"
+          imagePullPolicy: {{ .Values.savingsEstimator.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "gpu-telemetry-collector.fullname" . }}-collector-config
+          resources:
+            {{- toYaml .Values.savingsEstimator.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10004
+          volumeMounts:
+            # Read-only against both upstream outputs it prices findings
+            # from -- same reasoning as every read-only mount above (see
+            # savings-estimator's findings_reader.py / rollup_reader.py,
+            # both opened in mode=ro).
+            - name: data
+              mountPath: /data/findings
+              subPath: findings
+              readOnly: true
+            - name: data
+              mountPath: /data/normalized
+              subPath: normalized
+              readOnly: true
+            - name: data
+              mountPath: /data/savings
+              subPath: savings
         {{- end }}
       volumes:
         - name: data

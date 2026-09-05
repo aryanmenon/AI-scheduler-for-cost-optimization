@@ -52,3 +52,14 @@ def test_unknown_model_returns_explicit_unknown_rather_than_guess():
 def test_none_model_name_returns_unknown():
     cap = lookup_capability(None)
     assert not cap.known
+
+
+def test_all_known_capabilities_returns_deduplicated_list():
+    from ingestion_normalization.capability import all_known_capabilities
+
+    caps = all_known_capabilities()
+    names = [c.canonical_name for c in caps]
+    assert len(names) == len(set(names))  # no duplicates
+    assert "NVIDIA A100 80GB" in names
+    assert "NVIDIA T4" in names
+    assert all(c.known for c in caps)

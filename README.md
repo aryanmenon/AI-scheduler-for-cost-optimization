@@ -27,7 +27,7 @@ power-constrained scheduler is explicitly out of scope for now.
 
 ```
 telemetry collector  →  ingestion & normalization  →  waste detector  →  savings estimator  →  dashboard / report
-     (built)                    (built)                  (built)            (planned)             (planned)
+     (built)                    (built)                  (built)              (built)               (planned)
 ```
 
 Five components, in build order — see `docs/roadmap.md` §4–5 for full
@@ -48,8 +48,15 @@ detail and status of each:
    low-coverage rollups and requiring sustained evidence before flagging
    anything, to keep false positives — which cost more customer trust than
    a missed detection — low.
-4. Achievable ceiling & savings estimator — SLA-aware target + confidence
-   scored $ impact. Not yet built.
+4. **Achievable ceiling & savings estimator** — SLA-aware target +
+   confidence-scored $ impact. *Built in this repo* (`savings-estimator/`):
+   prices each finding, distinguishing money already spent (idle, scoped
+   strictly to its observed window) from projected monthly savings
+   (over-provisioned/fragmented/recurring, extrapolated from a
+   sustained-by-construction observed rate); right-sizes over-provisioned
+   workloads against a configurable SLA utilization ceiling (default 70%,
+   not 100%); and marks anything with no known GPU price as explicitly
+   unpriceable rather than guessing.
 5. Observe-mode report & dashboard — the self-serve sales artifact. Not
    yet built.
 
@@ -100,19 +107,43 @@ waste-detector/                Python detector: rollups → waste findings
                                  (healthy bursty workload) guard
   Dockerfile
 
+savings-estimator/              Python pricer: findings → $ impact
+  src/savings_estimator/
+    findings_reader.py           read-only reader of waste-detector's SQLite
+    rollup_reader.py              read-only reader of ingestion's SQLite
+                                   (including gpu_model/fp16_tflops)
+    pricing.py                    GPU $/hour lookup, illustrative defaults
+                                   overridable with a customer's real rates
+    ceiling.py                    SLA-aware right-sizing recommendation
+                                   (smallest SKU meeting a utilization
+                                   ceiling, not a naive 100% target)
+    estimator.py                  per-category $ calc: idle priced as
+                                   already-spent money in its exact
+                                   observed window; over-provisioned/
+                                   fragmented/recurring-pattern projected
+                                   to a monthly figure, clearly labeled
+    storage.py, pipeline.py,
+    main.py                       SavingsEstimate schema + the price loop
+  tests/                         unit + integration tests per category,
+                                 including an unpriceable-GPU guard
+  Dockerfile                     (built from the repo root -- see its
+                                 comment; this is the one component with
+                                 real cross-package runtime dependencies)
+
 deploy/helm/gpu-telemetry-collector/
                                one-command Helm chart: DCGM exporter
                                DaemonSet + kube-state-metrics + the
-                               collector (with ingestion-normalization and
-                               waste-detector as sidecars sharing its PVC,
-                               each read-only against the stage before it),
-                               all RBAC read-only (get/list/watch only — no
+                               collector (with ingestion-normalization,
+                               waste-detector, and savings-estimator as
+                               sidecars sharing its PVC, each read-only
+                               against the stage before it), all RBAC
+                               read-only (get/list/watch only — no
                                create/update/patch/delete anywhere)
 ```
 
 ## Quickstart
 
-Run all three components' test suites:
+Run all four components' test suites:
 
 ```bash
 cd telemetry-collector
@@ -125,6 +156,10 @@ pytest
 
 cd ../waste-detector
 pip install -e ../ingestion-normalization -e ".[dev]"  # dev-only; see its README
+pytest
+
+cd ../savings-estimator
+pip install -e ../ingestion-normalization -e ../waste-detector -e ".[dev]"  # REAL runtime deps here, not dev-only; see its README
 pytest
 ```
 
@@ -139,11 +174,14 @@ This deploys DCGM exporter (per-GPU utilization/memory/power),
 kube-state-metrics (pod/node metadata), and the collector — which
 correlates the two into a raw SQLite time series, hands it to the
 ingestion-normalization sidecar (workload identity + capability
-normalization + rollups), which in turn feeds the waste-detector sidecar
-that flags idle/over-provisioned/fragmented/recurring-pattern findings for
-the (not-yet-built) savings estimator to price. See
+normalization + rollups), which feeds the waste-detector sidecar
+(idle/over-provisioned/fragmented/recurring-pattern findings), which
+finally feeds the savings-estimator sidecar that prices those findings
+into $ impact for the (not-yet-built) dashboard to render. See
 `deploy/helm/gpu-telemetry-collector/values.yaml` to toggle persistence,
-scrape/poll intervals, detector thresholds, and image tags.
+scrape/poll intervals, detector thresholds, and image tags — and set
+`savingsEstimator.gpuHourlyRatesJson` to the customer's actual contracted
+rates before trusting any dollar figure it produces.
 
 ## Key risk / decision gate
 

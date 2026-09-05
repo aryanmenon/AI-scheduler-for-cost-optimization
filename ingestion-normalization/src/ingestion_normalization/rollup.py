@@ -44,6 +44,13 @@ class RollupRecord:
     avg_memory_used_mb: float | None
     avg_power_draw_w: float | None
     avg_effective_tflops: float | None
+    # Carried through (not aggregated) from the group's samples: a
+    # physical GPU's model doesn't change within an hour, so any sample in
+    # the group reflects it. Downstream consumers (the savings estimator)
+    # need this to price a bucket without re-deriving the GPU's capability
+    # from avg_effective_tflops, which is impossible when utilization is 0.
+    gpu_model: str | None
+    fp16_tflops: float | None
 
 
 def bucket_start_for(ts: float, bucket_seconds: int) -> float:
@@ -106,6 +113,8 @@ def compute_rollups(
                 avg_memory_used_mb=_avg([i.memory_used_mb for i in items]),
                 avg_power_draw_w=_avg([i.power_draw_w for i in items]),
                 avg_effective_tflops=_avg([i.effective_tflops for i in items]),
+                gpu_model=items[0].gpu_model,
+                fp16_tflops=items[0].fp16_tflops,
             )
         )
     return rollups

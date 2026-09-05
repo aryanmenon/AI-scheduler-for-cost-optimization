@@ -1,0 +1,30 @@
+[project]
+name = "savings-estimator"
+version = "0.1.0"
+description = "Prices waste-detector findings into confidence-scored $ impact against an SLA-aware right-sizing ceiling (Phase 1, Component 4)"
+requires-python = ">=3.10"
+# ingestion-normalization and waste-detector are REAL runtime dependencies:
+# pricing.py/ceiling.py import the capability reference table directly
+# (shared domain data, not a live service's database, so reuse is
+# appropriate here unlike the schema-only relationship between the other
+# components), and estimator.py imports waste-detector's category
+# constants (shared vocabulary, same reasoning). Neither is listed here
+# because neither is published to any index this monorepo has access to:
+# `pip install -e ../ingestion-normalization -e ../waste-detector` before
+# installing this package, in both dev and the Dockerfile. See README.md.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+savings-estimator = "savings_estimator.main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

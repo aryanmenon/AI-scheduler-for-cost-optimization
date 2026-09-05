@@ -1,0 +1,76 @@
+# savings-estimator
+
+Phase 1, Component 4 of the GPU cost-optimization SaaS: prices
+waste-detector's findings into confidence-scored dollar figures, sizing
+right-sizing recommendations against an SLA-aware utilization ceiling
+rather than a naive "run at 100%" target.
+
+## Estimate basis: observed vs. projected
+
+Every estimate is tagged with a `basis`, because conflating "already
+spent" money with "projected future" money would overclaim:
+
+| Category | Basis | Why |
+|---|---|---|
+| `idle` | `observed_window` | An idle streak's own idle-fraction is 100% by construction (that's what makes it a streak). Projecting that rate to a full month would claim the GPU is idle *all the time*, which the finding says nothing about outside its own window. Priced as money already spent with zero value during exactly that window -- a defensible lower bound, not a forecast. |
+| `over_provisioned` | `projected_monthly` | Requires 24h+ of observed peak-never-exceeds-threshold evidence before it fires at all -- built to represent a persistent state, so projecting its rate forward is the standard basis for a right-sizing ROI calculation. |
+| `fragmented` | `projected_monthly` | Same reasoning: a 4h+ sustained streak is the detector's minimum before flagging, so it's evidence of an ongoing pattern. |
+| `recurring_pattern` | `projected_monthly` | Explicitly measures a rate across many observed calendar days already -- extrapolation is what the category is *for*. |
+
+## Achievable ceiling, not 100%
+
+`ceiling.py` recommends the smallest known GPU SKU whose capacity, sized
+to a workload's *already-observed peak* load, would land at or below a
+configurable `SLA_TARGET_UTILIZATION_PCT` (default 70%) -- not 100%. Full
+utilization leaves no headroom for a traffic spike or a latency-sensitive
+retry storm; a right-sizing recommendation that causes an SLA breach costs
+more customer trust than the waste it fixed.
+
+## Pricing is configurable, not asserted
+
+`pricing.py` ships illustrative public on-demand list-price approximations
+as a fallback, but a real deployment should always set
+`GPU_HOURLY_RATES_JSON` to the customer's actual contracted rate. A GPU
+model with no known rate anywhere is marked explicitly `unpriceable`
+rather than priced against a guess -- a wrong "savings" number computed
+against a rate the customer doesn't pay would undermine the one thing
+this product is selling: a trustworthy dollar figure.
+
+## Local development
+
+```bash
+pip install -e ../ingestion-normalization -e ../waste-detector -e ".[dev]"
+pytest
+```
+
+## Running standalone
+
+```bash
+export FINDINGS_SQLITE_PATH=../waste-detector/findings.db
+export NORMALIZED_SQLITE_PATH=../ingestion-normalization/normalized.db
+export SAVINGS_SQLITE_PATH=./savings.db
+export GPU_HOURLY_RATES_JSON='{"NVIDIA A100 80GB": 2.75, "NVIDIA T4": 0.35}'  # your actual rates
+savings-estimator
+```
+
+## Design notes
+
+- **Component boundary is the schema, not shared code, for the two
+  databases it reads** (`findings_reader.py`, `rollup_reader.py`) --
+  same pattern as every reader before this one in the pipeline.
+- **Capability and category vocabulary ARE real dependencies**, unlike
+  the database schemas: `ceiling.py`/`pricing.py` import
+  `ingestion_normalization.capability` directly, and `estimator.py`
+  imports `waste_detector.findings`' category constants. Both are shared
+  domain reference data, not another service's mutable state, so reuse
+  avoids re-deriving SKU-matching logic that already exists. See
+  `pyproject.toml` and the Dockerfile (which builds from the repo root,
+  not this directory, to reach the sibling packages).
+- **A finding below `MIN_FINDING_CONFIDENCE` isn't priced at all** --
+  same false-positive-cost principle as the detector itself: an estimate
+  built on shaky evidence is worse than no estimate.
+- **Idempotent estimates.** Re-running pricing over unchanged findings
+  replaces (not duplicates) each estimate, keyed by `finding_id`.
+
+See `../deploy/helm/gpu-telemetry-collector` for how this runs alongside
+the rest of the pipeline in-cluster.

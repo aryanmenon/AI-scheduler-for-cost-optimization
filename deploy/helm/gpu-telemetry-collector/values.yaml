@@ -58,6 +58,29 @@ wasteDetector:
       cpu: 250m
       memory: 256Mi
 
+savingsEstimator:
+  enabled: true
+  image:
+    repository: ghcr.io/example-org/gpu-cost-optimizer/savings-estimator
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  pollIntervalSeconds: 300
+  minFindingConfidence: 0.7
+  slaTargetUtilizationPct: 70.0
+  hoursPerMonth: 730.0
+  fragmentationCaptureFraction: 0.5
+  # Set this to the customer's actual contracted $/hour rates, e.g.:
+  # gpuHourlyRatesJson: '{"NVIDIA A100 80GB": 2.75, "NVIDIA T4": 0.35}'
+  # Left empty, pricing.py falls back to illustrative public list prices.
+  gpuHourlyRatesJson: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
 persistence:
   # Toggleable: pilots without a storage class can run with an emptyDir
   # (telemetry lost on pod restart) before committing to a PVC.

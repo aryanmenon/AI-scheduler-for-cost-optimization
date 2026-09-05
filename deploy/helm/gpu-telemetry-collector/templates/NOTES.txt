@@ -17,6 +17,12 @@ This deployed, read-only:
                                                pattern GPU waste from those
                                                rollups
 {{- end }}
+{{- if .Values.savingsEstimator.enabled }}
+  - savings-estimator (sidecar)             -- prices those findings into
+                                               confidence-scored $ impact
+                                               against an SLA-aware
+                                               right-sizing ceiling
+{{- end }}
 
 Nothing here can create, update, or delete anything in your cluster --
 every RBAC rule granted is get/list/watch only.
@@ -36,10 +42,20 @@ Check that waste findings are being produced:
 
   kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "gpu-telemetry-collector.fullname" . }}-collector -c waste-detector -f
 {{- end }}
+{{- if .Values.savingsEstimator.enabled }}
 
-Once you're ready to hand this data to the (not yet built) savings
-estimator / dashboard, telemetry.db lives at /data/telemetry.db inside the
-collector pod
+Check that $ savings estimates are being produced:
+
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "gpu-telemetry-collector.fullname" . }}-collector -c savings-estimator -f
+
+IMPORTANT: savingsEstimator.gpuHourlyRatesJson is empty by default, which
+means estimates are priced against illustrative public list rates, not
+your actual cost. Set it to your contracted $/hour rates before trusting
+any dollar figure this produces.
+{{- end }}
+
+Once you're ready to hand this data to the (not yet built) dashboard,
+telemetry.db lives at /data/telemetry.db inside the collector pod
 {{- if .Values.persistence.enabled }} on a {{ .Values.persistence.size }} PersistentVolumeClaim.
 {{- else }} on an emptyDir -- enable `persistence.enabled` before running a real pilot so data survives pod restarts.
 {{- end }}

@@ -23,6 +23,8 @@ def make_rollup_record(
     avg_memory_used_mb: float | None = 1000.0,
     avg_power_draw_w: float | None = 200.0,
     avg_effective_tflops: float | None = 150.0,
+    gpu_model: str | None = "NVIDIA A100-SXM4-80GB",
+    fp16_tflops: float | None = 312.0,
     low_confidence_threshold: float = 0.5,
 ) -> RollupRecord:
     coverage_ratio = min(1.0, sample_count / expected_sample_count)
@@ -42,6 +44,8 @@ def make_rollup_record(
         avg_memory_used_mb=avg_memory_used_mb,
         avg_power_draw_w=avg_power_draw_w,
         avg_effective_tflops=avg_effective_tflops,
+        gpu_model=gpu_model,
+        fp16_tflops=fp16_tflops,
     )
 
 

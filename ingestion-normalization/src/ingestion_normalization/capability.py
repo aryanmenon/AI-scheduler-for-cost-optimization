@@ -113,3 +113,16 @@ def lookup_capability(model_name: str | None) -> GPUCapability:
             return capability
 
     return _unknown(model_name)
+
+
+def all_known_capabilities() -> list[GPUCapability]:
+    """Every SKU this table can resolve to, deduplicated by canonical name.
+
+    For consumers that need to search across known SKUs (e.g. the savings
+    estimator picking the smallest capability meeting a target) rather
+    than resolve one model-name string.
+    """
+    seen: dict[str, GPUCapability] = {}
+    for _tokens, capability in _CAPABILITY_TABLE:
+        seen[capability.canonical_name] = capability
+    return list(seen.values())

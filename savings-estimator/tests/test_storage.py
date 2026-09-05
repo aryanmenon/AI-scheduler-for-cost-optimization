@@ -1,0 +1,68 @@
+import pytest
+
+from savings_estimator.estimate import BASIS_OBSERVED_WINDOW, SavingsEstimate
+from savings_estimator.storage import SavingsStorage
+
+
+@pytest.fixture
+def storage(tmp_path):
+    s = SavingsStorage(str(tmp_path / "savings.db"))
+    yield s
+    s.close()
+
+
+def _estimate(finding_id=1, amount_usd=14.0, priceable=True, **overrides) -> SavingsEstimate:
+    defaults = dict(
+        finding_id=finding_id,
+        category="idle",
+        node="gpu-node-1",
+        gpu_index="0",
+        gpu_instance_id=None,
+        namespace="inference",
+        workload="bert-large",
+        window_start=0.0,
+        window_end=3600.0,
+        confidence=0.9,
+        priceable=priceable,
+        basis=BASIS_OBSERVED_WINDOW if priceable else None,
+        amount_usd=amount_usd if priceable else None,
+        recommended_action="terminate",
+        methodology="test",
+    )
+    defaults.update(overrides)
+    return SavingsEstimate(**defaults)
+
+
+def test_insert_and_count(storage):
+    storage.insert_estimates([_estimate()], estimated_at=1000.0)
+    assert storage.count() == 1
+
+
+def test_reinserting_same_finding_replaces_not_duplicates(storage):
+    storage.insert_estimates([_estimate(finding_id=1, amount_usd=10.0)], estimated_at=1000.0)
+    storage.insert_estimates([_estimate(finding_id=1, amount_usd=20.0)], estimated_at=2000.0)
+    assert storage.count() == 1
+    assert storage.all_estimates()[0]["amount_usd"] == 20.0
+
+
+def test_total_priceable_amount_excludes_unpriceable(storage):
+    storage.insert_estimates(
+        [
+            _estimate(finding_id=1, amount_usd=10.0, priceable=True),
+            _estimate(finding_id=2, priceable=False),
+        ],
+        estimated_at=1000.0,
+    )
+    assert storage.total_priceable_amount() == 10.0
+
+
+def test_all_estimates_priceable_only_filter(storage):
+    storage.insert_estimates(
+        [
+            _estimate(finding_id=1, priceable=True),
+            _estimate(finding_id=2, priceable=False),
+        ],
+        estimated_at=1000.0,
+    )
+    assert len(storage.all_estimates()) == 2
+    assert len(storage.all_estimates(priceable_only=True)) == 1
