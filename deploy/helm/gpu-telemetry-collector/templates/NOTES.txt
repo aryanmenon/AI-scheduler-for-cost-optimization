@@ -5,13 +5,25 @@ This deployed, read-only:
   - kube-state-metrics                     -- pod/node metadata
   - telemetry-collector                    -- correlates the two and stores
                                                a time series in SQLite
+{{- if .Values.ingestion.enabled }}
+  - ingestion-normalization (sidecar)       -- derives workload identity,
+                                               normalizes utilization by GPU
+                                               capability, and rolls it up
+                                               into 5-min/hourly/daily buckets
+{{- end }}
 
 Nothing here can create, update, or delete anything in your cluster --
 every RBAC rule granted is get/list/watch only.
 
 Check that GPUs are being scraped:
 
-  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "gpu-telemetry-collector.fullname" . }}-collector -f
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "gpu-telemetry-collector.fullname" . }}-collector -c telemetry-collector -f
+{{- if .Values.ingestion.enabled }}
+
+Check that ingestion is producing rollups:
+
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "gpu-telemetry-collector.fullname" . }}-collector -c ingestion-normalization -f
+{{- end }}
 
 Once you're ready to hand this data to the waste-detector / dashboard,
 telemetry.db lives at /data/telemetry.db inside the collector pod

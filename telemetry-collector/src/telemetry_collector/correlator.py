@@ -31,6 +31,11 @@ _GPU_INDEX_LABEL_ALIASES = ("gpu", "device")
 _UUID_LABEL_ALIASES = ("UUID", "uuid")
 _HOSTNAME_LABEL_ALIASES = ("Hostname", "instance", "kubernetes_node")
 _MODEL_LABEL_ALIASES = ("modelName", "model")
+# When MIG is enabled, DCGM reports one sample set per MIG instance, all
+# sharing the same parent `gpu` index -- GPU_I_ID is what actually
+# distinguishes them. Without it in the grouping key, instances collide
+# into a single overwritten record.
+_INSTANCE_ID_LABEL_ALIASES = ("GPU_I_ID", "gpu_i_id", "migprofile")
 
 
 def _first_label(labels: dict, aliases: tuple[str, ...]) -> str | None:
@@ -49,6 +54,7 @@ class GPUMetricRecord:
     namespace: str
     pod: str | None
     container: str | None
+    gpu_instance_id: str | None = None
     utilization_pct: float | None = None
     memory_used_mb: float | None = None
     memory_free_mb: float | None = None
@@ -72,7 +78,8 @@ def correlate(dcgm_samples: list[MetricSample]) -> list[GPUMetricRecord]:
         labels = sample.labels
         node = _first_label(labels, _HOSTNAME_LABEL_ALIASES) or "unknown-node"
         gpu_index = _first_label(labels, _GPU_INDEX_LABEL_ALIASES) or "unknown-index"
-        key = (node, gpu_index)
+        gpu_instance_id = _first_label(labels, _INSTANCE_ID_LABEL_ALIASES)
+        key = (node, gpu_index, gpu_instance_id)
 
         record = by_gpu.get(key)
         if record is None:
@@ -93,6 +100,7 @@ def correlate(dcgm_samples: list[MetricSample]) -> list[GPUMetricRecord]:
                 namespace=namespace,
                 pod=pod,
                 container=container,
+                gpu_instance_id=gpu_instance_id,
             )
             by_gpu[key] = record
 

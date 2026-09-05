@@ -36,8 +36,12 @@ detail and status of each:
 1. **Telemetry collector** — one-command, read-only install. *Built in
    this repo* (`telemetry-collector/`), validated against synthetic
    fixtures modeling a heterogeneous A100/H100/T4 fleet.
-2. Ingestion & normalization — per-workload time series, capability-aware
-   normalization across heterogeneous GPU SKUs. Not yet built.
+2. **Ingestion & normalization** — per-workload time series,
+   capability-aware normalization across heterogeneous GPU SKUs. *Built in
+   this repo* (`ingestion-normalization/`): derives a stable workload
+   identity from pod names, scales raw utilization by a GPU capability
+   reference table so SKUs are comparable, and rolls samples up into
+   5-min/hourly/daily buckets with explicit gap/coverage tracking.
 3. Baseline & waste detector — idle/fragmentation/over-provisioning
    detection. Not yet built.
 4. Achievable ceiling & savings estimator — SLA-aware target + confidence
@@ -52,7 +56,7 @@ telemetry-collector/          Python collector: scrape → correlate → store
   src/telemetry_collector/
     config.py                 env-driven configuration
     metrics_client.py         Prometheus scrape + parse, with retry/backoff
-    correlator.py             GPU → pod/namespace attribution
+    correlator.py             GPU → pod/namespace attribution (MIG-aware)
     storage.py                SQLite (WAL) schema + writes
     collector.py               the scrape/correlate/store loop
     main.py                   entrypoint
@@ -60,35 +64,59 @@ telemetry-collector/          Python collector: scrape → correlate → store
                                DCGM exporter / kube-state-metrics fixtures
   Dockerfile
 
+ingestion-normalization/      Python normalizer: raw samples → per-workload
+                               time series, comparable across GPU SKUs
+  src/ingestion_normalization/
+    raw_reader.py              read-only reader of the collector's SQLite
+    workload.py                pod name → stable workload identity
+    capability.py               GPU model → FP16 TFLOPS/bandwidth reference
+    normalizer.py               joins raw samples into per-workload records
+    rollup.py                   5-min/hourly/daily buckets with explicit
+                                 coverage_ratio / low_confidence gap handling
+    storage.py                  normalized-sample + rollup SQLite schema
+    pipeline.py, main.py        the ingest/normalize/rollup loop
+  tests/                       unit + integration tests, including a
+                                synthetic data-gap and a MIG-sharing scenario
+  Dockerfile
+
 deploy/helm/gpu-telemetry-collector/
                                one-command Helm chart: DCGM exporter
                                DaemonSet + kube-state-metrics + the
-                               collector, all RBAC read-only (get/list/watch
-                               only — no create/update/patch/delete anywhere)
+                               collector (with ingestion-normalization as a
+                               sidecar sharing its PVC read-only), all RBAC
+                               read-only (get/list/watch only — no
+                               create/update/patch/delete anywhere)
 ```
 
 ## Quickstart
 
-Run the collector's test suite:
+Run both components' test suites:
 
 ```bash
 cd telemetry-collector
 pip install -e ".[dev]"
 pytest
+
+cd ../ingestion-normalization
+pip install -e ../telemetry-collector -e ".[dev]"  # dev-only; see its README
+pytest
 ```
 
-Install onto a cluster with GPU nodes (once an image is published):
+Install onto a cluster with GPU nodes (once images are published):
 
 ```bash
 helm install gpu-telemetry deploy/helm/gpu-telemetry-collector \
   --namespace gpu-optimizer --create-namespace
 ```
 
-This deploys DCGM exporter (per-GPU utilization/memory/power), kube-state-metrics
-(pod/node metadata), and the collector, which correlates the two and writes
-a SQLite time series that the (not-yet-built) waste detector will consume.
-See `deploy/helm/gpu-telemetry-collector/values.yaml` to toggle persistence,
-scrape interval, and image tags.
+This deploys DCGM exporter (per-GPU utilization/memory/power),
+kube-state-metrics (pod/node metadata), and the collector — which
+correlates the two into a raw SQLite time series, then hands it to the
+ingestion-normalization sidecar, which derives workload identity,
+capability-normalizes utilization, and produces the rollups that the
+(not-yet-built) waste detector will consume. See
+`deploy/helm/gpu-telemetry-collector/values.yaml` to toggle persistence,
+scrape/poll intervals, and image tags.
 
 ## Key risk / decision gate
 

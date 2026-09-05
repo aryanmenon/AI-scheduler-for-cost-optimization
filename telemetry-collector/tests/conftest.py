@@ -18,3 +18,8 @@ def dcgm_text() -> str:
 @pytest.fixture
 def ksm_text() -> str:
     return _read_fixture("ksm_sample.prom")
+
+
+@pytest.fixture
+def dcgm_mig_text() -> str:
+    return _read_fixture("dcgm_sample_mig.prom")

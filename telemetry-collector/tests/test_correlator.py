@@ -52,6 +52,25 @@ def test_correlate_ignores_unknown_metric_names():
     assert records[0].utilization_pct == 50
 
 
+def test_correlate_keeps_mig_instances_on_same_physical_gpu_distinct(dcgm_mig_text):
+    samples = parse_metrics(dcgm_mig_text)
+    records = correlate(samples)
+
+    # Both MIG slices share node + gpu index "0" -- only GPU_I_ID tells them apart.
+    assert len(records) == 2
+    by_pod = {r.pod: r for r in records}
+    assert set(by_pod) == {"small-model-a-7d4f-x1y2z", "small-model-b-9c1d-p3q4r"}
+
+    a = by_pod["small-model-a-7d4f-x1y2z"]
+    b = by_pod["small-model-b-9c1d-p3q4r"]
+    assert a.node == b.node == "gpu-node-4"
+    assert a.gpu_index == b.gpu_index == "0"
+    assert a.gpu_instance_id == "1"
+    assert b.gpu_instance_id == "2"
+    assert a.utilization_pct == 72
+    assert b.utilization_pct == 15
+
+
 def test_correlate_treats_pod_without_namespace_as_unattributed():
     from telemetry_collector.metrics_client import MetricSample
 

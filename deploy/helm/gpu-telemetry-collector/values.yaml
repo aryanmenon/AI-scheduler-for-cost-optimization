@@ -16,6 +16,22 @@ collector:
       cpu: 250m
       memory: 256Mi
 
+ingestion:
+  enabled: true
+  image:
+    repository: ghcr.io/example-org/gpu-cost-optimizer/ingestion-normalization
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  pollIntervalSeconds: 60
+  lowConfidenceCoverageThreshold: 0.5
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
 persistence:
   # Toggleable: pilots without a storage class can run with an emptyDir
   # (telemetry lost on pod restart) before committing to a PVC.

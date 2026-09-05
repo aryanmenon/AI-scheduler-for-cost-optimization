@@ -11,6 +11,15 @@ data:
   SCRAPE_INTERVAL_SECONDS: {{ .Values.collector.scrapeIntervalSeconds | quote }}
   HTTP_TIMEOUT_SECONDS: {{ .Values.collector.httpTimeoutSeconds | quote }}
   MAX_SCRAPE_RETRIES: {{ .Values.collector.maxScrapeRetries | quote }}
+  # Consumed by the ingestion sidecar below. RAW_TELEMETRY_SQLITE_PATH
+  # intentionally points at the same file as TELEMETRY_SQLITE_PATH above --
+  # the collector and ingestion containers reach it via different mounts
+  # of the same PVC (see volumeMounts), one read-write, one read-only.
+  RAW_TELEMETRY_SQLITE_PATH: "/data/raw/telemetry.db"
+  NORMALIZED_SQLITE_PATH: "/data/normalized/normalized.db"
+  INGESTION_POLL_INTERVAL_SECONDS: {{ .Values.ingestion.pollIntervalSeconds | quote }}
+  SOURCE_SCRAPE_INTERVAL_SECONDS: {{ .Values.collector.scrapeIntervalSeconds | quote }}
+  LOW_CONFIDENCE_COVERAGE_THRESHOLD: {{ .Values.ingestion.lowConfidenceCoverageThreshold | quote }}
 ---
 {{- if .Values.persistence.enabled }}
 apiVersion: v1
@@ -37,8 +46,10 @@ metadata:
     app.kubernetes.io/name: telemetry-collector
     {{- include "gpu-telemetry-collector.labels" . | nindent 4 }}
 spec:
-  # Exactly one replica: it's a single writer to one SQLite file, and a
-  # second replica would double-count every scrape.
+  # Exactly one replica: the collector is a single writer to one SQLite
+  # file, and a second replica would double-count every scrape. Ingestion
+  # runs as a sidecar in the same pod (rather than its own Deployment) so
+  # both can share one PVC without needing ReadWriteMany storage.
   replicas: 1
   strategy:
     type: Recreate
@@ -68,8 +79,39 @@ spec:
             runAsNonRoot: true
             runAsUser: 10001
           volumeMounts:
+            # subPath "raw" isolates the collector's own database from the
+            # "normalized" subdirectory the ingestion sidecar writes into,
+            # while both still live on the one PVC below.
             - name: data
               mountPath: /data
+              subPath: raw
+        {{- if .Values.ingestion.enabled }}
+        - name: ingestion-normalization
+          image: "{{ .Values.ingestion.image.repository }}:{{ .Values.ingestion.image.tag }}"
+          imagePullPolicy: {{ .Values.ingestion.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "gpu-telemetry-collector.fullname" . }}-collector-config
+          resources:
+            {{- toYaml .Values.ingestion.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10002
+          volumeMounts:
+            # Read-only: this component must never be able to write into
+            # the collector's raw data, even by accident (see
+            # ingestion-normalization/src/ingestion_normalization/raw_reader.py,
+            # which additionally opens its sqlite connection in mode=ro).
+            - name: data
+              mountPath: /data/raw
+              subPath: raw
+              readOnly: true
+            - name: data
+              mountPath: /data/normalized
+              subPath: normalized
+        {{- end }}
       volumes:
         - name: data
           {{- if .Values.persistence.enabled }}

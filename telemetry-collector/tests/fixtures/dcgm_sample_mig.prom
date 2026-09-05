@@ -1,0 +1,12 @@
+# HELP DCGM_FI_DEV_GPU_UTIL GPU utilization (in %).
+# TYPE DCGM_FI_DEV_GPU_UTIL gauge
+DCGM_FI_DEV_GPU_UTIL{gpu="0",GPU_I_ID="1",UUID="MIG-GPU-a1000000-0000-0000-0000-000000000000/1/0",device="nvidia0",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-4",namespace="inference",pod="small-model-a-7d4f-x1y2z",container="model-server"} 72
+DCGM_FI_DEV_GPU_UTIL{gpu="0",GPU_I_ID="2",UUID="MIG-GPU-a1000000-0000-0000-0000-000000000000/2/0",device="nvidia0",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-4",namespace="inference",pod="small-model-b-9c1d-p3q4r",container="model-server"} 15
+# HELP DCGM_FI_DEV_FB_USED Framebuffer memory used (in MiB).
+# TYPE DCGM_FI_DEV_FB_USED gauge
+DCGM_FI_DEV_FB_USED{gpu="0",GPU_I_ID="1",UUID="MIG-GPU-a1000000-0000-0000-0000-000000000000/1/0",device="nvidia0",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-4",namespace="inference",pod="small-model-a-7d4f-x1y2z",container="model-server"} 9216
+DCGM_FI_DEV_FB_USED{gpu="0",GPU_I_ID="2",UUID="MIG-GPU-a1000000-0000-0000-0000-000000000000/2/0",device="nvidia0",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-4",namespace="inference",pod="small-model-b-9c1d-p3q4r",container="model-server"} 4608
+# HELP DCGM_FI_DEV_POWER_USAGE Power draw (in W).
+# TYPE DCGM_FI_DEV_POWER_USAGE gauge
+DCGM_FI_DEV_POWER_USAGE{gpu="0",GPU_I_ID="1",UUID="MIG-GPU-a1000000-0000-0000-0000-000000000000/1/0",device="nvidia0",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-4",namespace="inference",pod="small-model-a-7d4f-x1y2z",container="model-server"} 90.0
+DCGM_FI_DEV_POWER_USAGE{gpu="0",GPU_I_ID="2",UUID="MIG-GPU-a1000000-0000-0000-0000-000000000000/2/0",device="nvidia0",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-4",namespace="inference",pod="small-model-b-9c1d-p3q4r",container="model-server"} 40.0

@@ -111,18 +111,30 @@ time on real traffic).
 
 Still needed: validation against real hardware and a second real cluster.
 
-### 5.2 Ingestion & Normalization — ○ PLANNED
+### 5.2 Ingestion & Normalization — ✓ BUILT & VALIDATED against synthetic fixtures
 
-- Define the per-workload record schema
+- Define the per-workload record schema — done (`NormalizedRecord`)
 - Build a GPU-capability reference table (FLOPS/bandwidth) so raw
-  utilization % is comparable across SKUs — worth building slightly more
-  general now, since phase 3's scheduler will reuse this for heterogeneous
-  capability reasoning
-- Build the time-aggregation layer (5-min / hourly / daily rollups)
-- Handle missing data and gaps explicitly
-- Handle shared-GPU edge cases (MIG, time-slicing) — important early since
-  the product's own advice will push customers toward sharing GPUs
-- Validate against raw source data
+  utilization % is comparable across SKUs — done, covering
+  A100/H100/T4/V100/A10/L4/L40S with an explicit "unknown" fallback
+  rather than a guessed default; built general enough for phase 3's
+  scheduler to reuse for heterogeneous capability reasoning
+- Build the time-aggregation layer (5-min / hourly / daily rollups) — done
+- Handle missing data and gaps explicitly — done, via a `coverage_ratio` +
+  `low_confidence` flag on every rollup bucket, rather than silently
+  averaging whatever samples happened to be present
+- Handle shared-GPU edge cases (MIG, time-slicing) — done for MIG (each
+  instance tracked as a distinct workload via DCGM's `GPU_I_ID`, which
+  required a small fix to component 1's correlator to stop colliding MIG
+  instances sharing a physical GPU index); time-slicing on a non-MIG GPU
+  is a known, documented limitation — DCGM reports one utilization value
+  per physical device, so per-tenant accounting isn't exact there
+- Validate against raw source data — validated against synthetic DCGM
+  fixtures (heterogeneous fleet, MIG sharing, and a scrape-gap scenario);
+  still needs validation against a real cluster
+
+Still needed: validation against real hardware and a second real cluster
+(same caveat as component 1 — no live cluster available yet).
 
 ### 5.3 Baseline & Waste Detector — ○ PLANNED
 

@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS gpu_metrics (
     scraped_at REAL NOT NULL,
     node TEXT NOT NULL,
     gpu_index TEXT NOT NULL,
+    gpu_instance_id TEXT,
     gpu_uuid TEXT,
     gpu_model TEXT,
     namespace TEXT NOT NULL,
@@ -102,16 +103,17 @@ class Storage:
 
             cur.executemany(
                 """INSERT INTO gpu_metrics
-                   (scrape_run_id, scraped_at, node, gpu_index, gpu_uuid, gpu_model,
-                    namespace, pod, container, utilization_pct, memory_used_mb,
+                   (scrape_run_id, scraped_at, node, gpu_index, gpu_instance_id, gpu_uuid,
+                    gpu_model, namespace, pod, container, utilization_pct, memory_used_mb,
                     memory_free_mb, power_draw_w, sm_clock_mhz)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 [
                     (
                         run_id,
                         scraped_at,
                         r.node,
                         r.gpu_index,
+                        r.gpu_instance_id,
                         r.gpu_uuid,
                         r.gpu_model,
                         r.namespace,
@@ -140,6 +142,30 @@ class Storage:
         self._conn.row_factory = sqlite3.Row
         cur = self._conn.execute(
             "SELECT * FROM gpu_metrics ORDER BY scraped_at DESC LIMIT ?", (limit,)
+        )
+        return cur.fetchall()
+
+    def latest_run_id(self) -> int:
+        """Highest scrape_runs.id currently stored, or 0 if none yet.
+
+        Used by downstream readers (ingestion) as the starting high-water
+        mark on first run, so they don't have to reprocess a full history.
+        """
+        cur = self._conn.execute("SELECT COALESCE(MAX(id), 0) FROM scrape_runs")
+        return cur.fetchone()[0]
+
+    def fetch_metrics_since(self, after_run_id: int) -> list[sqlite3.Row]:
+        """All gpu_metrics rows from scrape runs strictly after after_run_id.
+
+        This is the read contract downstream components (ingestion &
+        normalization) consume -- it deliberately returns raw rows rather
+        than GPUMetricRecord objects so callers aren't coupled to this
+        package's internal dataclasses, only to the stored schema.
+        """
+        self._conn.row_factory = sqlite3.Row
+        cur = self._conn.execute(
+            "SELECT * FROM gpu_metrics WHERE scrape_run_id > ? ORDER BY scrape_run_id, id",
+            (after_run_id,),
         )
         return cur.fetchall()
 
