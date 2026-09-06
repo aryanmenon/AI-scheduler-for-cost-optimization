@@ -156,6 +156,13 @@ dashboard/                      Python report: ₹ estimates → sales artifact
                                  test + an XSS-escaping guard
   Dockerfile
 
+integration-tests/              End-to-end test wiring all five services'
+                                 real entrypoints together against real,
+                                 on-disk SQLite files -- proves the schema
+                                 handoffs between components actually
+                                 hold, not just that each one's own test
+                                 suite is internally consistent.
+
 deploy/helm/gpu-telemetry-collector/
                                one-command Helm chart: DCGM exporter
                                DaemonSet + kube-state-metrics + the

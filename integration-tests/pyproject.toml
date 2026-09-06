@@ -1,0 +1,11 @@
+[project]
+name = "integration-tests"
+version = "0.1.0"
+description = "End-to-end pipeline test wiring all five Phase 1 services together against real on-disk SQLite files, not fixtures standing in for a neighbor's schema"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+]
