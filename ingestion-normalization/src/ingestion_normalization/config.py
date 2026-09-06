@@ -17,6 +17,16 @@ class Config:
     # collector's own SCRAPE_INTERVAL_SECONDS, not a free variable.
     source_scrape_interval_seconds: float
     low_confidence_coverage_threshold: float
+    # A daily bucket accumulates samples across the whole day, so fully
+    # recomputing it (see pipeline.py's module docstring on why full
+    # recompute, not incremental update) means every ingestion cycle
+    # re-scans an ever-larger fraction of that day's data -- total work
+    # across a day grows quadratically with cycle count. 5m/hourly buckets
+    # don't have this problem (their window size caps the rescan cost
+    # regardless of how long the bucket has been accumulating), so only
+    # daily recompute is throttled to at most once per this interval. 0
+    # disables throttling (recompute daily every cycle, like before).
+    daily_rollup_min_recompute_interval_seconds: float = 3600.0
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -35,5 +45,8 @@ class Config:
             ),
             low_confidence_coverage_threshold=float(
                 os.environ.get("LOW_CONFIDENCE_COVERAGE_THRESHOLD", "0.5")
+            ),
+            daily_rollup_min_recompute_interval_seconds=float(
+                os.environ.get("DAILY_ROLLUP_MIN_RECOMPUTE_INTERVAL_SECONDS", "3600")
             ),
         )

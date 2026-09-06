@@ -109,6 +109,75 @@ def test_full_coverage_bucket_not_flagged_low_confidence(tmp_path, dcgm_text):
     storage.close()
 
 
+def test_daily_rollup_recompute_is_throttled_across_cycles(tmp_path, dcgm_text, monkeypatch):
+    # Regression: recomputing the whole daily bucket from scratch every
+    # ingestion cycle makes per-cycle work grow with elapsed samples in the
+    # day -- total work across a day is quadratic in cycle count. Daily
+    # recompute must be throttled to a bounded cadence; 5m/hourly (whose
+    # window size is naturally bounded) still recompute every cycle.
+    raw_path = str(tmp_path / "telemetry.db")
+    populate_raw_db(raw_path, [(dcgm_text, 0.0)])
+
+    config = _config(
+        raw_path, str(tmp_path / "normalized.db"),
+        daily_rollup_min_recompute_interval_seconds=3600.0,
+    )
+    storage = NormalizedStorage(config.normalized_sqlite_path)
+
+    wall_clock = {"now": 1_000_000.0}
+    monkeypatch.setattr("ingestion_normalization.pipeline.time.time", lambda: wall_clock["now"])
+
+    reader1 = RawReader(config.raw_sqlite_path)
+    run_once(config, reader1, storage)
+    reader1.close()
+    for row in storage.rollups("daily"):
+        assert row["sample_count"] == 1
+
+    # A second cycle's worth of samples lands a minute later -- well
+    # inside the same daily bucket and well under the throttle interval.
+    populate_raw_db(raw_path, [(dcgm_text, 60.0)])
+    wall_clock["now"] += 60.0
+
+    reader2 = RawReader(config.raw_sqlite_path)
+    run_once(config, reader2, storage)
+    reader2.close()
+
+    for row in storage.rollups("hourly"):
+        assert row["sample_count"] == 2  # sees the new samples immediately
+    for row in storage.rollups("daily"):
+        assert row["sample_count"] == 1  # not re-scanned again this soon
+    storage.close()
+
+
+def test_daily_rollup_recompute_happens_again_after_interval_elapses(tmp_path, dcgm_text, monkeypatch):
+    raw_path = str(tmp_path / "telemetry.db")
+    populate_raw_db(raw_path, [(dcgm_text, 0.0)])
+
+    config = _config(
+        raw_path, str(tmp_path / "normalized.db"),
+        daily_rollup_min_recompute_interval_seconds=3600.0,
+    )
+    storage = NormalizedStorage(config.normalized_sqlite_path)
+
+    wall_clock = {"now": 1_000_000.0}
+    monkeypatch.setattr("ingestion_normalization.pipeline.time.time", lambda: wall_clock["now"])
+
+    reader1 = RawReader(config.raw_sqlite_path)
+    run_once(config, reader1, storage)
+    reader1.close()
+
+    populate_raw_db(raw_path, [(dcgm_text, 60.0)])
+    wall_clock["now"] += 3601.0  # past the throttle interval
+
+    reader2 = RawReader(config.raw_sqlite_path)
+    run_once(config, reader2, storage)
+    reader2.close()
+
+    for row in storage.rollups("daily"):
+        assert row["sample_count"] == 2
+    storage.close()
+
+
 def test_mig_samples_normalize_to_distinct_workloads(tmp_path, dcgm_mig_text):
     raw_path = str(tmp_path / "telemetry.db")
     populate_raw_db(raw_path, [(dcgm_mig_text, 0.0)])

@@ -20,6 +20,11 @@ CREATE TABLE IF NOT EXISTS ingestion_cursor (
     last_raw_run_id INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS rollup_recompute_state (
+    granularity TEXT PRIMARY KEY,
+    last_recomputed_at REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS normalized_samples (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     scrape_run_id INTEGER NOT NULL,
@@ -112,6 +117,21 @@ class NormalizedStorage:
                 """INSERT INTO ingestion_cursor (id, last_raw_run_id) VALUES (1, ?)
                    ON CONFLICT (id) DO UPDATE SET last_raw_run_id = excluded.last_raw_run_id""",
                 (last_raw_run_id,),
+            )
+
+    def get_last_rollup_recompute_at(self, granularity: str) -> float | None:
+        row = self._conn.execute(
+            "SELECT last_recomputed_at FROM rollup_recompute_state WHERE granularity = ?",
+            (granularity,),
+        ).fetchone()
+        return row["last_recomputed_at"] if row else None
+
+    def set_last_rollup_recompute_at(self, granularity: str, at: float) -> None:
+        with self._cursor() as cur:
+            cur.execute(
+                """INSERT INTO rollup_recompute_state (granularity, last_recomputed_at) VALUES (?, ?)
+                   ON CONFLICT (granularity) DO UPDATE SET last_recomputed_at = excluded.last_recomputed_at""",
+                (granularity, at),
             )
 
     def insert_normalized_samples(self, records: list[NormalizedRecord]) -> None:

@@ -9,6 +9,7 @@ see NormalizedStorage.replace_rollups for why that's safe to do repeatedly.
 from __future__ import annotations
 
 import logging
+import time
 
 from ingestion_normalization.config import Config
 from ingestion_normalization.normalizer import NormalizedRecord, normalize_samples
@@ -68,10 +69,23 @@ def run_once(config: Config, reader: RawReader, storage: NormalizedStorage) -> i
     return len(normalized)
 
 
+def _daily_recompute_due(config: Config, storage: NormalizedStorage, now: float) -> bool:
+    interval = config.daily_rollup_min_recompute_interval_seconds
+    if interval <= 0:
+        return True
+    last = storage.get_last_rollup_recompute_at("daily")
+    return last is None or (now - last) >= interval
+
+
 def _recompute_touched_rollups(
-    config: Config, storage: NormalizedStorage, min_ts: float, max_ts: float
+    config: Config, storage: NormalizedStorage, min_ts: float, max_ts: float, now: float | None = None
 ) -> None:
+    now = now if now is not None else time.time()
+
     for granularity, bucket_seconds in GRANULARITY_SECONDS.items():
+        if granularity == "daily" and not _daily_recompute_due(config, storage, now):
+            continue
+
         window_start = bucket_start_for(min_ts, bucket_seconds)
         window_end = bucket_start_for(max_ts, bucket_seconds) + bucket_seconds
 
@@ -85,3 +99,6 @@ def _recompute_touched_rollups(
             low_confidence_threshold=config.low_confidence_coverage_threshold,
         )
         storage.replace_rollups(granularity, window_start, window_end, rollups)
+
+        if granularity == "daily":
+            storage.set_last_rollup_recompute_at("daily", now)

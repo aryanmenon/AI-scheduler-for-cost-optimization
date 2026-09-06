@@ -34,6 +34,17 @@ def test_cursor_roundtrip(storage):
     assert storage.get_cursor() == 99
 
 
+def test_rollup_recompute_watermark_defaults_to_none(storage):
+    assert storage.get_last_rollup_recompute_at("daily") is None
+
+
+def test_rollup_recompute_watermark_roundtrip(storage):
+    storage.set_last_rollup_recompute_at("daily", 1000.0)
+    assert storage.get_last_rollup_recompute_at("daily") == 1000.0
+    storage.set_last_rollup_recompute_at("daily", 2000.0)
+    assert storage.get_last_rollup_recompute_at("daily") == 2000.0
+
+
 def test_insert_normalized_samples(storage):
     records = [normalize_sample(_raw(i, i * 30)) for i in range(1, 4)]
     storage.insert_normalized_samples(records)
