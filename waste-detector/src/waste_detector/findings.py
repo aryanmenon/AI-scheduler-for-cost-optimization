@@ -59,8 +59,19 @@ CREATE TABLE IF NOT EXISTS waste_findings (
 
 CREATE INDEX IF NOT EXISTS idx_findings_category ON waste_findings (category);
 CREATE INDEX IF NOT EXISTS idx_findings_workload ON waste_findings (namespace, workload);
+-- Keyed on window_start (not window_end): every detector computes
+-- window_start as the stable start of a streak/observation window that
+-- only grows monotonically while the underlying condition persists (see
+-- idle.py, over_provisioning.py, fragmentation.py, patterns.py). Each
+-- detection cycle re-derives the *entire* history from scratch, so an
+-- ongoing waste condition produces a growing window_end every cycle;
+-- keying on window_end too would make each cycle's row fail to match the
+-- previous one and insert a duplicate instead of replacing it.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_findings_window
-    ON waste_findings (category, node, gpu_index, COALESCE(gpu_instance_id, ''), window_start, window_end);
+    ON waste_findings (
+        category, node, gpu_index, COALESCE(gpu_instance_id, ''),
+        namespace, COALESCE(workload, ''), window_start
+    );
 """
 
 

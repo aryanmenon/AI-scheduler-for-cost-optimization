@@ -50,6 +50,26 @@ def test_reinserting_same_window_replaces_not_duplicates(storage):
     assert row["metric_value"] == 5.0
 
 
+def test_growing_window_end_replaces_not_duplicates(storage):
+    # Regression: every detection cycle re-derives findings from scratch, so
+    # an *ongoing* waste condition keeps the same window_start (the streak's
+    # stable start) but a window_end that grows each cycle as more hourly
+    # rollups arrive. The uniqueness key must not include window_end, or
+    # each cycle inserts a new row instead of replacing the prior one --
+    # silently duplicating (and downstream, double-counting) the same
+    # ongoing finding.
+    cycle_1 = _finding(window_start=0.0, window_end=3 * 3600.0, metric_value=3.0)
+    storage.insert_findings([cycle_1], detected_at=1000.0)
+
+    cycle_2 = _finding(window_start=0.0, window_end=6 * 3600.0, metric_value=6.0)
+    storage.insert_findings([cycle_2], detected_at=2000.0)
+
+    assert storage.count() == 1
+    row = storage.all_findings()[0]
+    assert row["window_end"] == 6 * 3600.0
+    assert row["metric_value"] == 6.0
+
+
 def test_distinct_gpu_instances_are_separate_findings(storage):
     storage.insert_findings(
         [
