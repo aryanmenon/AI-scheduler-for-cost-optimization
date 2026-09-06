@@ -72,6 +72,32 @@ def test_run_once_is_idempotent_on_unchanged_rollups(tmp_path):
     storage.close()
 
 
+def test_run_once_does_not_flag_corrupted_peak_as_over_provisioned(tmp_path):
+    # Regression: a corrupted, negative max_utilization_pct (a bad
+    # driver/DCGM read) reads as "below threshold" just like a genuinely
+    # idle peak would, and must be excluded as untrustworthy rather than
+    # trusted into flagging the workload as over-provisioned on garbage
+    # data.
+    normalized_path = str(tmp_path / "normalized.db")
+    records = [
+        make_rollup_record(bucket_start=float(i * 3600), avg_utilization_pct=10.0, max_utilization_pct=-5.0)
+        for i in range(24)
+    ]
+    write_rollups(normalized_path, "hourly", records)
+
+    config = _config(normalized_path, str(tmp_path / "findings.db"))
+    storage = FindingsStorage(config.findings_sqlite_path)
+    reader = RollupReader(config.normalized_sqlite_path)
+
+    run_once(config, reader, storage)
+
+    from waste_detector.findings import OVER_PROVISIONED
+
+    assert storage.all_findings(category=OVER_PROVISIONED) == []
+    reader.close()
+    storage.close()
+
+
 def test_run_once_with_no_rollups_yet(tmp_path):
     normalized_path = str(tmp_path / "normalized.db")
     write_rollups(normalized_path, "hourly", [])  # creates schema, no rows
