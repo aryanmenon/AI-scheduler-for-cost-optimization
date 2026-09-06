@@ -54,8 +54,21 @@ def _unpriceable(finding: FindingRow, reason: str) -> SavingsEstimate:
 
 
 def _avg_utilization(rollup_rows: list[RollupRow]) -> float | None:
-    present = [r.avg_utilization_pct for r in rollup_rows if r.avg_utilization_pct is not None]
-    return sum(present) / len(present) if present else None
+    # Weighted by coverage_ratio: an unweighted mean would let a bucket
+    # built from a handful of real samples (low coverage, possibly reading
+    # near zero because most of the window is simply missing) count the
+    # same as one built from a full window of trustworthy samples --
+    # silently undermining the confidence-scoring this estimate is
+    # supposed to reflect.
+    weighted = [
+        (r.avg_utilization_pct, r.coverage_ratio)
+        for r in rollup_rows
+        if r.avg_utilization_pct is not None and r.coverage_ratio > 0
+    ]
+    if not weighted:
+        return None
+    total_weight = sum(weight for _, weight in weighted)
+    return sum(value * weight for value, weight in weighted) / total_weight
 
 
 def estimate_for_finding(

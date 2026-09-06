@@ -1,3 +1,4 @@
+import pytest
 from waste_detector.findings import FRAGMENTED, IDLE, OVER_PROVISIONED, RECURRING_PATTERN
 
 from savings_estimator.config import Config
@@ -148,6 +149,32 @@ def test_fragmented_priced_with_capture_discount():
     assert estimate.basis == BASIS_PROJECTED_MONTHLY
     # wasted_fraction = (1 - 0.20) * 0.5 = 0.40; monthly = 3.50 * 0.40 * 730
     assert estimate.amount_usd == 3.50 * 0.40 * 730.0
+
+
+def test_fragmented_weights_avg_utilization_by_coverage_ratio():
+    # Regression: a low-coverage bucket (mostly missing data, reading near
+    # zero) must not count the same as a full-coverage one in the average
+    # -- that would understate a workload's real utilization and overstate
+    # its fragmentation waste. One reliable, busy hour and one sparse,
+    # near-empty hour should land close to the reliable reading, not
+    # halfway between them.
+    finding = _finding(FRAGMENTED, metric_value=2.0)
+    rows = [
+        _rollup(avg_utilization_pct=90.0, coverage_ratio=1.0),
+        _rollup(avg_utilization_pct=0.0, coverage_ratio=0.05),
+    ]
+    config = _config(fragmentation_capture_fraction=0.5)
+    estimate = estimate_for_finding(finding, rows, config, {})
+
+    # weighted avg = (90*1.0 + 0*0.05) / 1.05 =~ 85.7%
+    weighted_avg = (90.0 * 1.0 + 0.0 * 0.05) / 1.05
+    unweighted_avg = (90.0 + 0.0) / 2  # what the old, buggy average would give: 45%
+
+    wasted_fraction = max(0.0, 1 - weighted_avg / 100.0) * 0.5
+    assert estimate.amount_usd == pytest.approx(3.50 * wasted_fraction * 730.0)
+
+    wrong_wasted_fraction = max(0.0, 1 - unweighted_avg / 100.0) * 0.5
+    assert estimate.amount_usd != pytest.approx(3.50 * wrong_wasted_fraction * 730.0)
 
 
 def test_recurring_pattern_priced_from_consistent_fraction():
