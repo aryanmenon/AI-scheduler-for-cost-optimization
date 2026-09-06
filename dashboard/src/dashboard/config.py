@@ -22,6 +22,16 @@ class Config:
     # unthrottled deployment is a trivial CPU/thread-exhaustion target.
     rate_limit_max_requests: int = 60
     rate_limit_window_seconds: float = 60.0
+    # A Slack-compatible incoming webhook URL to POST a human-visible
+    # alert to once report generation is chronically failing -- a
+    # structured log line only reaches someone already looking. Unset
+    # (the default) disables alerting entirely.
+    alert_webhook_url: str | None = None
+    # How many *consecutive* failed report-generation requests trigger an
+    # alert. Edge-triggered (fires once on crossing this, once again on
+    # recovery), not on every request past it -- one transient blip
+    # shouldn't page anyone.
+    alert_consecutive_failure_threshold: int = 3
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -42,4 +52,8 @@ class Config:
             auth_token=os.environ.get("DASHBOARD_AUTH_TOKEN") or None,
             rate_limit_max_requests=int(os.environ.get("DASHBOARD_RATE_LIMIT_MAX_REQUESTS", "60")),
             rate_limit_window_seconds=float(os.environ.get("DASHBOARD_RATE_LIMIT_WINDOW_SECONDS", "60")),
+            alert_webhook_url=os.environ.get("ALERT_WEBHOOK_URL") or None,
+            alert_consecutive_failure_threshold=int(
+                os.environ.get("ALERT_CONSECUTIVE_FAILURE_THRESHOLD", "3")
+            ),
         )

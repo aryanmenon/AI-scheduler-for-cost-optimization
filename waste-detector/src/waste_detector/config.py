@@ -49,6 +49,15 @@ class Config:
     # component's own write target) so it lands on that writable volume
     # without needing its own mount.
     heartbeat_path: str = "/data/findings/.heartbeat"
+    # A Slack-compatible incoming webhook URL to POST a human-visible
+    # alert to once a chronic failure is detected -- a structured log line
+    # only reaches someone already looking. Unset (the default) disables
+    # alerting entirely.
+    alert_webhook_url: str | None = None
+    # How many *consecutive* failed cycles trigger an alert. Edge-
+    # triggered (fires once on crossing this, once again on recovery), not
+    # on every cycle past it -- one transient blip shouldn't page anyone.
+    alert_consecutive_failure_threshold: int = 3
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -92,5 +101,9 @@ class Config:
             heartbeat_path=os.environ.get(
                 "HEARTBEAT_PATH",
                 os.path.join(os.path.dirname(findings_sqlite_path) or ".", ".heartbeat"),
+            ),
+            alert_webhook_url=os.environ.get("ALERT_WEBHOOK_URL") or None,
+            alert_consecutive_failure_threshold=int(
+                os.environ.get("ALERT_CONSECUTIVE_FAILURE_THRESHOLD", "3")
             ),
         )

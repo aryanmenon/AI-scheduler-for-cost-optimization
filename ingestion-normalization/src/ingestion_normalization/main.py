@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import logging
 import sys
 import time
+import urllib.request
 
 from ingestion_normalization.config import Config
 from ingestion_normalization.pipeline import run_once
@@ -20,9 +22,31 @@ def _write_heartbeat(path: str) -> None:
         logger.warning("failed to write heartbeat file %s", path)
 
 
+def _send_alert(webhook_url: str | None, message: str) -> None:
+    """Best-effort POST to a Slack-compatible incoming webhook (a plain
+    {"text": ...} JSON body). A structured log line only reaches someone
+    who's already looking; this is for the case where nobody is. Alerting
+    must never be allowed to take down the pipeline it's watching, so any
+    failure here is logged and swallowed, never raised.
+    """
+    if not webhook_url:
+        return
+    try:
+        req = urllib.request.Request(
+            webhook_url,
+            data=json.dumps({"text": message}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=5)
+    except Exception:
+        logger.warning("failed to send alert webhook", exc_info=True)
+
+
 def run_forever(config: Config, stop_after: int | None = None) -> None:
     storage = NormalizedStorage(config.normalized_sqlite_path)
     cycles = 0
+    consecutive_failures = 0
     while stop_after is None or cycles < stop_after:
         cycle_start = time.monotonic()
         try:
@@ -33,6 +57,26 @@ def run_forever(config: Config, stop_after: int | None = None) -> None:
                 reader.close()
         except Exception:
             logger.exception("unexpected error during ingestion cycle; will retry next interval")
+            consecutive_failures += 1
+            # Edge-triggered, not level-triggered: fires once on crossing
+            # the threshold, not on every cycle after -- a structured log
+            # line already exists per cycle for anyone polling; this is
+            # for getting a human's attention once, not paging them every
+            # interval for the same ongoing problem.
+            if consecutive_failures == config.alert_consecutive_failure_threshold:
+                _send_alert(
+                    config.alert_webhook_url,
+                    f"[gpu-cost-optimizer] ingestion-normalization: "
+                    f"{consecutive_failures} consecutive failed cycles -- investigate.",
+                )
+        else:
+            if consecutive_failures >= config.alert_consecutive_failure_threshold:
+                _send_alert(
+                    config.alert_webhook_url,
+                    f"[gpu-cost-optimizer] ingestion-normalization: "
+                    f"recovered after {consecutive_failures} consecutive failed cycles.",
+                )
+            consecutive_failures = 0
         finally:
             # Written whether or not the cycle above succeeded -- this
             # proves the loop itself is iterating, not that cycles are

@@ -34,6 +34,18 @@ class Config:
     # checking this file's mtime can. Defaults alongside sqlite_path so it
     # lands on the same writable volume without needing its own mount.
     heartbeat_path: str = "/data/.heartbeat"
+    # A Slack-compatible incoming webhook URL to POST a human-visible
+    # alert to once a chronic failure is detected -- a structured log line
+    # only reaches someone already looking. Unset (the default) disables
+    # alerting entirely; this runs fine without it, same as
+    # DASHBOARD_AUTH_TOKEN being optional.
+    alert_webhook_url: str | None = None
+    # How many *consecutive* failed cycles trigger an alert. Edge-
+    # triggered (fires once on crossing this, once again on recovery), not
+    # on every cycle past it -- one transient blip shouldn't page anyone,
+    # matching the same false-positive-cost principle waste-detector's own
+    # thresholds are built on.
+    alert_consecutive_failure_threshold: int = 3
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -56,5 +68,9 @@ class Config:
             retention_hours=float(os.environ.get("TELEMETRY_RETENTION_HOURS", str(14 * 24))),
             heartbeat_path=os.environ.get(
                 "HEARTBEAT_PATH", os.path.join(os.path.dirname(sqlite_path) or ".", ".heartbeat")
+            ),
+            alert_webhook_url=os.environ.get("ALERT_WEBHOOK_URL") or None,
+            alert_consecutive_failure_threshold=int(
+                os.environ.get("ALERT_CONSECUTIVE_FAILURE_THRESHOLD", "3")
             ),
         )

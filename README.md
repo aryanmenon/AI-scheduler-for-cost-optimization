@@ -227,7 +227,12 @@ background loops each touch a heartbeat file at the end of every cycle
 (success or failure -- these loops catch their own exceptions and keep
 running, so a plain "is the process alive" check can't catch a genuinely
 stuck one) and the dashboard's own `/healthz` backs its liveness and
-readiness probes. See
+readiness probes. A heartbeat-driven restart is self-healing, not
+alerting, though -- set `alerting.webhookUrl` to a Slack-compatible
+incoming webhook (kept in a Secret, not values.yaml, since it's a
+credential) to also get a human-visible message once a service's
+consecutive cycle/request failures cross `alerting.consecutiveFailureThreshold`
+(default 3), and a second message once it recovers. See
 `deploy/helm/gpu-telemetry-collector/values.yaml` to toggle persistence,
 scrape/poll intervals, detector thresholds, and image tags — and set
 `savingsEstimator.gpuHourlyRatesJson` to the customer's actual contracted

@@ -149,6 +149,24 @@ dashboard:
       cpu: 100m
       memory: 128Mi
 
+alerting:
+  # A Slack-compatible incoming webhook URL (Slack's own "Incoming
+  # Webhooks" feature, or anything else that accepts a plain
+  # {"text": "..."} JSON POST). Left empty (the default), every service
+  # still writes its per-cycle structured log line, but nothing pages a
+  # human -- these background loops catch their own exceptions and keep
+  # running (see each main.py), so a chronic failure can go unnoticed
+  # indefinitely without this. Treated as a credential (see
+  # alert-webhook-secret.yaml), not a plain values.yaml string, since
+  # anyone holding it can post into that channel -- set it via --set or a
+  # values file kept out of version control, not committed here.
+  webhookUrl: ""
+  # How many *consecutive* cycle/request failures trigger an alert.
+  # Edge-triggered (fires once on crossing this, once again on recovery),
+  # not on every cycle past it -- one transient blip shouldn't page
+  # anyone.
+  consecutiveFailureThreshold: 3
+
 persistence:
   # Toggleable: pilots without a storage class can run with an emptyDir
   # (telemetry lost on pod restart) before committing to a PVC.

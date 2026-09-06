@@ -63,6 +63,11 @@ data:
   TOP_FINDINGS_LIMIT: {{ .Values.dashboard.topFindingsLimit | quote }}
   DASHBOARD_RATE_LIMIT_MAX_REQUESTS: {{ .Values.dashboard.rateLimitMaxRequests | quote }}
   DASHBOARD_RATE_LIMIT_WINDOW_SECONDS: {{ .Values.dashboard.rateLimitWindowSeconds | quote }}
+  # Consumed by all five sidecars: how many *consecutive* cycle/request
+  # failures trigger a human-visible webhook alert (see
+  # alert-webhook-secret.yaml for the URL itself, which is a credential
+  # and lives in a Secret instead). Not sensitive on its own.
+  ALERT_CONSECUTIVE_FAILURE_THRESHOLD: {{ .Values.alerting.consecutiveFailureThreshold | quote }}
 ---
 {{- if .Values.persistence.enabled }}
 apiVersion: v1
@@ -114,6 +119,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "gpu-telemetry-collector.fullname" . }}-collector-config
+            {{- if .Values.alerting.webhookUrl }}
+            - secretRef:
+                name: {{ include "gpu-telemetry-collector.fullname" . }}-alert-webhook
+            {{- end }}
           resources:
             {{- toYaml .Values.collector.resources | nindent 12 }}
           securityContext:
@@ -154,6 +163,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "gpu-telemetry-collector.fullname" . }}-collector-config
+            {{- if .Values.alerting.webhookUrl }}
+            - secretRef:
+                name: {{ include "gpu-telemetry-collector.fullname" . }}-alert-webhook
+            {{- end }}
           resources:
             {{- toYaml .Values.ingestion.resources | nindent 12 }}
           securityContext:
@@ -197,6 +210,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "gpu-telemetry-collector.fullname" . }}-collector-config
+            {{- if .Values.alerting.webhookUrl }}
+            - secretRef:
+                name: {{ include "gpu-telemetry-collector.fullname" . }}-alert-webhook
+            {{- end }}
           resources:
             {{- toYaml .Values.wasteDetector.resources | nindent 12 }}
           securityContext:
@@ -241,6 +258,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "gpu-telemetry-collector.fullname" . }}-collector-config
+            {{- if .Values.alerting.webhookUrl }}
+            - secretRef:
+                name: {{ include "gpu-telemetry-collector.fullname" . }}-alert-webhook
+            {{- end }}
           resources:
             {{- toYaml .Values.savingsEstimator.resources | nindent 12 }}
           securityContext:
@@ -288,6 +309,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "gpu-telemetry-collector.fullname" . }}-collector-config
+            {{- if .Values.alerting.webhookUrl }}
+            - secretRef:
+                name: {{ include "gpu-telemetry-collector.fullname" . }}-alert-webhook
+            {{- end }}
             - secretRef:
                 name: {{ include "gpu-telemetry-collector.fullname" . }}-dashboard-auth
           ports:

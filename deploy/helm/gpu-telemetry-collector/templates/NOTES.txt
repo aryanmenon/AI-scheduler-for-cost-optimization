@@ -32,6 +32,20 @@ This deployed, read-only:
 Nothing here can create, update, or delete anything in your cluster --
 every RBAC rule granted is get/list/watch only.
 
+{{- if .Values.alerting.webhookUrl }}
+
+Human-visible alerting is configured: a webhook message fires once a
+service's consecutive cycle/request failures cross
+alerting.consecutiveFailureThreshold ({{ .Values.alerting.consecutiveFailureThreshold }}), and again on recovery.
+{{- else }}
+
+Human-visible alerting is NOT configured (alerting.webhookUrl is empty).
+Each service still logs a structured line per cycle and gets restarted by
+its own liveness probe if it hangs, but nothing pages anyone if it's
+chronically failing without hanging. Set alerting.webhookUrl to a
+Slack-compatible incoming webhook to change that.
+{{- end }}
+
 Check that GPUs are being scraped:
 
   kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "gpu-telemetry-collector.fullname" . }}-collector -c telemetry-collector -f

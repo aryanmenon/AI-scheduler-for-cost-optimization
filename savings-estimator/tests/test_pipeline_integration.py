@@ -304,3 +304,60 @@ def test_run_forever_writes_heartbeat_every_cycle_even_after_exception(tmp_path,
     second_heartbeat = float(open(config.heartbeat_path).read())
 
     assert second_heartbeat > first_heartbeat
+
+
+def test_run_forever_alerts_after_consecutive_failures_then_on_recovery(tmp_path, monkeypatch):
+    # Regression: a structured cycle_complete log line only reaches an
+    # operator who's already looking for it. Once failures cross the
+    # configured threshold, a human-visible webhook alert must fire -- and
+    # exactly once (edge-triggered), not on every cycle past the
+    # threshold. A second alert must fire once the loop recovers.
+    findings_path = str(tmp_path / "findings.db")
+    normalized_path = str(tmp_path / "normalized.db")
+    savings_path = str(tmp_path / "savings.db")
+
+    write_findings(findings_path, [make_finding("idle", window_start=0.0, window_end=3600.0)])
+    write_rollups(normalized_path, "hourly", [make_rollup_record(bucket_start=0.0)])
+
+    config = _config(
+        findings_path, normalized_path, savings_path,
+        heartbeat_path=str(tmp_path / "heartbeat"),
+        alert_webhook_url="https://hooks.example.test/webhook",
+    )
+
+    posted = []
+
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=None):
+        posted.append(json.loads(req.data.decode("utf-8"))["text"])
+        return _FakeResponse()
+
+    import savings_estimator.main as main_module
+
+    monkeypatch.setattr(main_module.urllib.request, "urlopen", fake_urlopen)
+
+    calls = {"n": 0}
+
+    def flaky_run_once(*args, **kwargs):
+        calls["n"] += 1
+        # Cycles 1-4 fail (crossing the default threshold of 3 on cycle 3,
+        # staying failed on cycle 4); cycle 5 recovers.
+        if calls["n"] <= 4:
+            raise ValueError("boom - simulated persistent failure")
+        return 0
+
+    monkeypatch.setattr(main_module, "run_once", flaky_run_once)
+
+    main_module.run_forever(config, stop_after=5)
+
+    # Cycle 3 crosses the threshold (one alert); cycle 4 stays failed past
+    # it (no new alert); cycle 5 recovers (a second, distinct alert).
+    assert len(posted) == 2
+    assert "3 consecutive failed" in posted[0]
+    assert "recovered" in posted[1]

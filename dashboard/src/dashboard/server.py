@@ -6,15 +6,78 @@ avoiding a re-render.
 from __future__ import annotations
 
 import hmac
+import json
 import logging
 import threading
 import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from dashboard.config import Config
 from dashboard.report import generate_report_html
 
 logger = logging.getLogger(__name__)
+
+
+def _send_alert(webhook_url: str | None, message: str) -> None:
+    """Best-effort POST to a Slack-compatible incoming webhook (a plain
+    {"text": ...} JSON body). A structured log line only reaches someone
+    who's already looking; this is for the case where nobody is. Alerting
+    must never be allowed to take down report serving, so any failure
+    here is logged and swallowed, never raised.
+    """
+    if not webhook_url:
+        return
+    try:
+        req = urllib.request.Request(
+            webhook_url,
+            data=json.dumps({"text": message}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=5)
+    except Exception:
+        logger.warning("failed to send alert webhook", exc_info=True)
+
+
+class _FailureAlerter:
+    """Tracks consecutive report-generation failures across requests
+    (ThreadingHTTPServer serves them concurrently, hence the lock) and
+    fires a human-visible webhook alert once they cross a threshold --
+    edge-triggered, once on crossing it and once again on recovery, not on
+    every failed request past it.
+    """
+
+    def __init__(self, webhook_url: str | None, threshold: int):
+        self._webhook_url = webhook_url
+        self._threshold = threshold
+        self._lock = threading.Lock()
+        self._consecutive_failures = 0
+
+    def record_failure(self) -> None:
+        if not self._webhook_url:
+            return
+        with self._lock:
+            self._consecutive_failures += 1
+            n = self._consecutive_failures
+        if n == self._threshold:
+            _send_alert(
+                self._webhook_url,
+                f"[gpu-cost-optimizer] dashboard: "
+                f"{n} consecutive failed report-generation requests -- investigate.",
+            )
+
+    def record_success(self) -> None:
+        if not self._webhook_url:
+            return
+        with self._lock:
+            n = self._consecutive_failures
+            self._consecutive_failures = 0
+        if n >= self._threshold:
+            _send_alert(
+                self._webhook_url,
+                f"[gpu-cost-optimizer] dashboard: recovered after {n} consecutive failed requests.",
+            )
 
 
 class _RateLimiter:
@@ -50,6 +113,7 @@ class _RateLimiter:
 
 def make_handler(config: Config) -> type[BaseHTTPRequestHandler]:
     limiter = _RateLimiter(config.rate_limit_max_requests, config.rate_limit_window_seconds)
+    alerter = _FailureAlerter(config.alert_webhook_url, config.alert_consecutive_failure_threshold)
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -83,8 +147,10 @@ def make_handler(config: Config) -> type[BaseHTTPRequestHandler]:
                 body = generate_report_html(config).encode("utf-8")
             except Exception:
                 logger.exception("failed to generate report")
+                alerter.record_failure()
                 self._respond(500, b"failed to generate report", "text/plain; charset=utf-8")
                 return
+            alerter.record_success()
             self._respond(200, body, "text/html; charset=utf-8")
 
         def _respond(self, status: int, body: bytes, content_type: str) -> None:
