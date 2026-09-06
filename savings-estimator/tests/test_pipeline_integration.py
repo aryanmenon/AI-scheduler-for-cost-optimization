@@ -146,6 +146,47 @@ def test_run_once_is_idempotent(tmp_path):
     storage.close()
 
 
+def test_run_once_prunes_stale_estimates_no_longer_priced(tmp_path, monkeypatch):
+    # Regression: savings_estimates had no pruning -- once a finding
+    # resolves (or is pruned upstream in waste-detector), its estimate
+    # just stops being refreshed rather than being deleted, so it would
+    # linger forever without this.
+    findings_path = str(tmp_path / "findings.db")
+    normalized_path = str(tmp_path / "normalized.db")
+    savings_path = str(tmp_path / "savings.db")
+
+    write_findings(findings_path, [make_finding("idle")], detected_at=1000.0)
+    write_rollups(normalized_path, "hourly", [make_rollup_record(bucket_start=0.0)])
+
+    config = _config(findings_path, normalized_path, savings_path, savings_estimates_retention_hours=1.0)
+    storage = SavingsStorage(config.savings_sqlite_path)
+
+    wall_clock = {"now": 1000.0}
+    monkeypatch.setattr("savings_estimator.pipeline.time.time", lambda: wall_clock["now"])
+
+    findings_reader = FindingsReader(config.findings_sqlite_path)
+    rollup_reader = RollupReader(config.normalized_sqlite_path)
+    run_once(config, findings_reader, rollup_reader, storage)
+    findings_reader.close()
+    rollup_reader.close()
+    assert storage.count() == 1
+
+    # The finding is gone upstream (resolved, or pruned in waste-detector)
+    # -- nothing re-prices/refreshes the earlier estimate -- and enough
+    # wall-clock time has passed to exceed the 1h retention window.
+    write_findings(str(tmp_path / "empty_findings.db"), [])
+    wall_clock["now"] = 10_000.0
+
+    findings_reader = FindingsReader(str(tmp_path / "empty_findings.db"))
+    rollup_reader = RollupReader(config.normalized_sqlite_path)
+    run_once(config, findings_reader, rollup_reader, storage)
+    findings_reader.close()
+    rollup_reader.close()
+
+    assert storage.count() == 0
+    storage.close()
+
+
 def test_run_once_with_no_findings_yet(tmp_path):
     findings_path = str(tmp_path / "findings.db")
     normalized_path = str(tmp_path / "normalized.db")

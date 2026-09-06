@@ -39,6 +39,13 @@ class Config:
     # approximations shipped as fallbacks.
     gpu_hourly_rates_json: str | None
 
+    # savings_estimates has no natural cap: every cycle re-prices all
+    # findings currently in waste-detector's database, and a resolved
+    # finding's estimate just stops being refreshed rather than being
+    # deleted. Kept as long as the dashboard might reasonably want
+    # historical estimates for. 0 disables pruning.
+    savings_estimates_retention_hours: float = 2160.0  # 90 days
+
     @classmethod
     def from_env(cls) -> "Config":
         return cls(
@@ -61,4 +68,7 @@ class Config:
                 os.environ.get("FRAGMENTATION_CAPTURE_FRACTION", "0.5")
             ),
             gpu_hourly_rates_json=os.environ.get("GPU_HOURLY_RATES_JSON"),
+            savings_estimates_retention_hours=float(
+                os.environ.get("SAVINGS_ESTIMATES_RETENTION_HOURS", "2160")
+            ),
         )

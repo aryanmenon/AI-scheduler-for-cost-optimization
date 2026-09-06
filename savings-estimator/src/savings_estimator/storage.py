@@ -98,6 +98,20 @@ class SavingsStorage:
                 ],
             )
 
+    def prune_older_than(self, cutoff: float) -> int:
+        """Delete estimates whose estimated_at < cutoff.
+
+        estimated_at is refreshed to "now" every cycle a finding is still
+        present upstream (see insert_estimates' upsert), so a row that
+        hasn't been refreshed in a long time corresponds to a finding
+        that's gone (resolved or pruned in waste-detector), not just an
+        old one. Without this, every finding ever priced accumulates
+        forever with no way to know it's stale.
+        """
+        with self._cursor() as cur:
+            cur.execute("DELETE FROM savings_estimates WHERE estimated_at < ?", (cutoff,))
+            return cur.rowcount
+
     def count(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM savings_estimates").fetchone()[0]
 
