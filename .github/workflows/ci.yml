@@ -73,3 +73,86 @@ jobs:
         # it deploys cleanly (that needs a real cluster, intentionally
         # out of scope for this check).
         run: helm template test-release deploy/helm/gpu-telemetry-collector > /dev/null
+
+  docker-build:
+    # Each Dockerfile is referenced by the Helm chart's values.yaml as the
+    # image every sidecar actually runs -- an untested Dockerfile is an
+    # untested deployment. savings-estimator is the odd one out: it needs
+    # its two sibling packages copied in (see its Dockerfile's own
+    # comment), so it alone builds from the repo root.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: telemetry-collector
+            context: telemetry-collector
+            dockerfile: telemetry-collector/Dockerfile
+          - component: ingestion-normalization
+            context: ingestion-normalization
+            dockerfile: ingestion-normalization/Dockerfile
+          - component: waste-detector
+            context: waste-detector
+            dockerfile: waste-detector/Dockerfile
+          - component: savings-estimator
+            context: .
+            dockerfile: savings-estimator/Dockerfile
+          - component: dashboard
+            context: dashboard
+            dockerfile: dashboard/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build ${{ matrix.component }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          tags: ${{ matrix.component }}:ci
+
+  dependency-audit:
+    # Scans the pinned runtime dependency versions (requests,
+    # prometheus-client, pytest, etc. -- see each component's
+    # pyproject.toml) for known CVEs. Installs the same way the `test` job
+    # does so pip-audit sees exactly what's actually pinned, not a fresh
+    # unconstrained resolve.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install all components editable (with dev extras)
+        run: |
+          python -m pip install \
+            -e "telemetry-collector[dev]" \
+            -e "ingestion-normalization[dev]" \
+            -e "waste-detector[dev]" \
+            -e "savings-estimator[dev]" \
+            -e "dashboard[dev]" \
+            -e "integration-tests[dev]"
+
+      - name: Install pip-audit
+        # Upgrade pip/setuptools first: confirmed locally that
+        # actions/setup-python's bundled pip 24.0 and setuptools 79.0.1
+        # carry their own known CVEs (PYSEC-2026-*), unrelated to anything
+        # this repo depends on -- auditing before upgrading them would
+        # fail this job on bootstrap tooling, not on our actual
+        # dependency choices.
+        run: |
+          python -m pip install --upgrade pip setuptools
+          python -m pip install pip-audit
+
+      - name: Audit installed dependencies for known CVEs
+        # `python -m pip_audit` (the importable module name has an
+        # underscore; the CLI entry point has a hyphen -- confirmed
+        # locally that `python -m pip-audit` fails with "No module named
+        # pip-audit"). --local restricts the scan to packages actually
+        # installed in this environment (the pinned versions above), not
+        # the full PyPI index; the six -e installs of the components
+        # themselves aren't PyPI-published so pip-audit skips them and
+        # audits their third-party dependencies instead.
+        run: python -m pip_audit --local
