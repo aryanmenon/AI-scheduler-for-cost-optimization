@@ -1,7 +1,7 @@
 [project]
 name = "savings-estimator"
 version = "0.1.0"
-description = "Prices waste-detector findings into confidence-scored $ impact against an SLA-aware right-sizing ceiling (Phase 1, Component 4)"
+description = "Prices waste-detector findings into confidence-scored INR impact against an SLA-aware right-sizing ceiling (Phase 1, Component 4)"
 requires-python = ">=3.10"
 # ingestion-normalization and waste-detector are REAL runtime dependencies:
 # pricing.py/ceiling.py import the capability reference table directly

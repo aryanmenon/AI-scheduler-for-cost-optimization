@@ -1,4 +1,4 @@
-"""Per-category $ impact calculation.
+"""Per-category rupee impact calculation.
 
 The categories split into two fundamentally different kinds of evidence,
 and conflating them would overclaim:
@@ -47,7 +47,7 @@ def _unpriceable(finding: FindingRow, reason: str) -> SavingsEstimate:
         confidence=finding.confidence,
         priceable=False,
         basis=None,
-        amount_usd=None,
+        amount_inr=None,
         recommended_action="none -- not priceable",
         methodology=reason,
     )
@@ -87,7 +87,7 @@ def estimate_for_finding(
     if not capability.known:
         return _unpriceable(finding, f"unrecognized GPU model {gpu_model!r} -- no capability data")
     if not price.known:
-        return _unpriceable(finding, f"no $/hour rate available for {capability.canonical_name!r}")
+        return _unpriceable(finding, f"no ₹/hour rate available for {capability.canonical_name!r}")
 
     if finding.category == IDLE:
         return _estimate_idle(finding, price)
@@ -121,18 +121,18 @@ def _estimate_idle(finding: FindingRow, price) -> SavingsEstimate:
     window_hours = (finding.window_end - finding.window_start) / _SECONDS_PER_HOUR
     if window_hours < 0:
         # A corrupted or clock-skewed upstream finding (window_end before
-        # window_start) must not silently produce a negative dollar figure
+        # window_start) must not silently produce a negative rupee figure
         # -- admit we can't price this rather than show a customer a
         # nonsensical "negative savings" number.
         return _unpriceable(finding, "finding window is invalid (window_end precedes window_start)")
-    amount = price.hourly_usd * window_hours
+    amount = price.hourly_inr * window_hours
     return SavingsEstimate(
         **_base_kwargs(finding),
         basis=BASIS_OBSERVED_WINDOW,
-        amount_usd=amount,
+        amount_inr=amount,
         recommended_action="terminate or reclaim this idle GPU allocation",
         methodology=(
-            f"{window_hours:.1f}h idle at ${price.hourly_usd:.2f}/hr "
+            f"{window_hours:.1f}h idle at ₹{price.hourly_inr:.2f}/hr "
             f"({price.source}) -- already-incurred cost for this observed window only, not projected"
         ),
     )
@@ -167,7 +167,7 @@ def _estimate_over_provisioned(
         return SavingsEstimate(
             **_base_kwargs(finding),
             basis=BASIS_PROJECTED_MONTHLY,
-            amount_usd=0.0,
+            amount_inr=0.0,
             recommended_action="none -- no smaller known SKU meets the SLA ceiling",
             methodology=rec.detail,
         )
@@ -176,17 +176,17 @@ def _estimate_over_provisioned(
     if not recommended_price.known:
         return _unpriceable(
             finding,
-            f"right-sizing recommends {rec.recommended.canonical_name!r} but it has no known $/hour rate",
+            f"right-sizing recommends {rec.recommended.canonical_name!r} but it has no known ₹/hour rate",
         )
 
-    monthly_savings = max(0.0, (price.hourly_usd - recommended_price.hourly_usd) * config.hours_per_month)
+    monthly_savings = max(0.0, (price.hourly_inr - recommended_price.hourly_inr) * config.hours_per_month)
     return SavingsEstimate(
         **_base_kwargs(finding),
         basis=BASIS_PROJECTED_MONTHLY,
-        amount_usd=monthly_savings,
+        amount_inr=monthly_savings,
         recommended_action=f"right-size to {rec.recommended.canonical_name}",
         methodology=(
-            f"{rec.detail}; ${price.hourly_usd:.2f}/hr -> ${recommended_price.hourly_usd:.2f}/hr, "
+            f"{rec.detail}; ₹{price.hourly_inr:.2f}/hr -> ₹{recommended_price.hourly_inr:.2f}/hr, "
             f"projected over {config.hours_per_month:.0f}h/month if this profile continues"
         ),
     )
@@ -198,12 +198,12 @@ def _estimate_fragmented(finding: FindingRow, rollup_rows: list[RollupRow], pric
         return _unpriceable(finding, "no utilization data available to size fragmentation waste")
 
     wasted_fraction = max(0.0, 1 - avg_util / 100.0) * config.fragmentation_capture_fraction
-    monthly_savings = price.hourly_usd * wasted_fraction * config.hours_per_month
+    monthly_savings = price.hourly_inr * wasted_fraction * config.hours_per_month
 
     return SavingsEstimate(
         **_base_kwargs(finding),
         basis=BASIS_PROJECTED_MONTHLY,
-        amount_usd=monthly_savings,
+        amount_inr=monthly_savings,
         recommended_action="consolidate with the other underutilized workloads on this node",
         methodology=(
             f"avg utilization {avg_util:.1f}% -> {wasted_fraction * 100:.0f}% of capacity reclaimable "
@@ -224,16 +224,16 @@ def _estimate_recurring_pattern(finding: FindingRow, price, config: Config) -> S
         return _unpriceable(finding, f"metric_value {finding.metric_value!r} is not a valid fraction in [0, 1]")
 
     monthly_wasted_hours = finding.metric_value * _DAYS_PER_MONTH
-    monthly_savings = price.hourly_usd * monthly_wasted_hours
+    monthly_savings = price.hourly_inr * monthly_wasted_hours
 
     return SavingsEstimate(
         **_base_kwargs(finding),
         basis=BASIS_PROJECTED_MONTHLY,
-        amount_usd=monthly_savings,
+        amount_inr=monthly_savings,
         recommended_action="scale down or scale to zero during this recurring low-usage window",
         methodology=(
             f"{finding.metric_value:.0%} of observed days quiet at this hour -> "
-            f"~{monthly_wasted_hours:.1f}h/month at ${price.hourly_usd:.2f}/hr, "
+            f"~{monthly_wasted_hours:.1f}h/month at ₹{price.hourly_inr:.2f}/hr, "
             f"projected if the pattern continues"
         ),
     )

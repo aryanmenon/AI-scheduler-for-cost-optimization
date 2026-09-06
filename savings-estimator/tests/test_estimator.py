@@ -71,8 +71,8 @@ def test_idle_priced_as_observed_window_not_projected():
     estimate = estimate_for_finding(finding, rows, _config(), {})
     assert estimate.priceable
     assert estimate.basis == BASIS_OBSERVED_WINDOW
-    # 4 hours idle at the A100 default illustrative rate ($3.50/hr).
-    assert estimate.amount_usd == 4 * 3.50
+    # 4 hours idle at the A100 default illustrative rate (₹300.00/hr).
+    assert estimate.amount_inr == 4 * 300.00
 
 
 def test_over_provisioned_recommends_smaller_sku_and_monthly_savings():
@@ -81,7 +81,7 @@ def test_over_provisioned_recommends_smaller_sku_and_monthly_savings():
     estimate = estimate_for_finding(finding, rows, _config(), {})
     assert estimate.priceable
     assert estimate.basis == BASIS_PROJECTED_MONTHLY
-    assert estimate.amount_usd > 0
+    assert estimate.amount_inr > 0
     assert "T4" in estimate.recommended_action
 
 
@@ -91,18 +91,18 @@ def test_over_provisioned_high_peak_may_yield_zero_savings():
     finding = _finding(OVER_PROVISIONED, metric_value=68.0)
     rows = [_rollup()]
     estimate = estimate_for_finding(finding, rows, _config(sla_target_utilization_pct=70.0), {})
-    assert estimate.amount_usd >= 0.0
+    assert estimate.amount_inr >= 0.0
 
 
 def test_idle_with_inverted_window_is_unpriceable_not_negative():
     # Regression: a corrupted or clock-skewed upstream finding with
     # window_end before window_start must not silently produce a negative
-    # dollar "savings" figure shown to a customer.
+    # rupee "savings" figure shown to a customer.
     finding = _finding(IDLE, window_start=3600.0, window_end=0.0)
     rows = [_rollup()]
     estimate = estimate_for_finding(finding, rows, _config(), {})
     assert not estimate.priceable
-    assert estimate.amount_usd is None
+    assert estimate.amount_inr is None
 
 
 def test_recurring_pattern_out_of_range_fraction_is_unpriceable():
@@ -113,7 +113,7 @@ def test_recurring_pattern_out_of_range_fraction_is_unpriceable():
     rows = [_rollup()]
     estimate = estimate_for_finding(finding, rows, _config(), {})
     assert not estimate.priceable
-    assert estimate.amount_usd is None
+    assert estimate.amount_inr is None
 
 
 def test_recurring_pattern_negative_fraction_is_unpriceable():
@@ -136,7 +136,7 @@ def test_over_provisioned_mig_slice_is_unpriceable_not_mispriced():
     rows = [_rollup(gpu_instance_id="1")]
     estimate = estimate_for_finding(finding, rows, _config(), {})
     assert not estimate.priceable
-    assert estimate.amount_usd is None
+    assert estimate.amount_inr is None
     assert "MIG" in estimate.methodology
 
 
@@ -147,8 +147,8 @@ def test_fragmented_priced_with_capture_discount():
     estimate = estimate_for_finding(finding, rows, config, {})
     assert estimate.priceable
     assert estimate.basis == BASIS_PROJECTED_MONTHLY
-    # wasted_fraction = (1 - 0.20) * 0.5 = 0.40; monthly = 3.50 * 0.40 * 730
-    assert estimate.amount_usd == 3.50 * 0.40 * 730.0
+    # wasted_fraction = (1 - 0.20) * 0.5 = 0.40; monthly = 300.00 * 0.40 * 730
+    assert estimate.amount_inr == 300.00 * 0.40 * 730.0
 
 
 def test_fragmented_weights_avg_utilization_by_coverage_ratio():
@@ -171,10 +171,10 @@ def test_fragmented_weights_avg_utilization_by_coverage_ratio():
     unweighted_avg = (90.0 + 0.0) / 2  # what the old, buggy average would give: 45%
 
     wasted_fraction = max(0.0, 1 - weighted_avg / 100.0) * 0.5
-    assert estimate.amount_usd == pytest.approx(3.50 * wasted_fraction * 730.0)
+    assert estimate.amount_inr == pytest.approx(300.00 * wasted_fraction * 730.0)
 
     wrong_wasted_fraction = max(0.0, 1 - unweighted_avg / 100.0) * 0.5
-    assert estimate.amount_usd != pytest.approx(3.50 * wrong_wasted_fraction * 730.0)
+    assert estimate.amount_inr != pytest.approx(300.00 * wrong_wasted_fraction * 730.0)
 
 
 def test_recurring_pattern_priced_from_consistent_fraction():
@@ -183,8 +183,8 @@ def test_recurring_pattern_priced_from_consistent_fraction():
     estimate = estimate_for_finding(finding, rows, _config(), {})
     assert estimate.priceable
     assert estimate.basis == BASIS_PROJECTED_MONTHLY
-    # 0.9 * 30 days * $3.50/hr
-    assert estimate.amount_usd == 0.9 * 30.0 * 3.50
+    # 0.9 * 30 days * ₹300.00/hr
+    assert estimate.amount_inr == 0.9 * 30.0 * 300.00
 
 
 def test_unknown_gpu_model_is_unpriceable():
@@ -192,7 +192,7 @@ def test_unknown_gpu_model_is_unpriceable():
     rows = [_rollup(gpu_model="Some Future GPU")]
     estimate = estimate_for_finding(finding, rows, _config(), {})
     assert not estimate.priceable
-    assert estimate.amount_usd is None
+    assert estimate.amount_inr is None
     assert estimate.basis is None
 
 
@@ -205,8 +205,8 @@ def test_no_rollup_data_is_unpriceable():
 def test_customer_rate_override_changes_amount():
     finding = _finding(IDLE, window_start=0.0, window_end=3600.0)
     rows = [_rollup()]
-    estimate = estimate_for_finding(finding, rows, _config(), {"NVIDIA A100 80GB": 1.00})
-    assert estimate.amount_usd == 1.00
+    estimate = estimate_for_finding(finding, rows, _config(), {"NVIDIA A100 80GB": 120.00})
+    assert estimate.amount_inr == 120.00
 
 
 def test_estimate_preserves_finding_identity():

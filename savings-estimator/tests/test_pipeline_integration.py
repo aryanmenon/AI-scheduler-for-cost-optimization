@@ -43,7 +43,7 @@ def test_run_once_prices_a_real_idle_finding(tmp_path):
     estimates = storage.all_estimates()
     assert len(estimates) == 1
     assert estimates[0]["priceable"] == 1
-    assert estimates[0]["amount_usd"] == 4 * 3.50
+    assert estimates[0]["amount_inr"] == 4 * 300.00
 
     findings_reader.close()
     rollup_reader.close()

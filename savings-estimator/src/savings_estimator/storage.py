@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS savings_estimates (
     confidence REAL NOT NULL,
     priceable INTEGER NOT NULL,
     basis TEXT,
-    amount_usd REAL,
+    amount_inr REAL,
     recommended_action TEXT NOT NULL,
     methodology TEXT NOT NULL,
     estimated_at REAL NOT NULL
@@ -68,14 +68,14 @@ class SavingsStorage:
             cur.executemany(
                 """INSERT OR REPLACE INTO savings_estimates
                    (finding_id, category, node, gpu_index, gpu_instance_id, namespace, workload,
-                    window_start, window_end, confidence, priceable, basis, amount_usd,
+                    window_start, window_end, confidence, priceable, basis, amount_inr,
                     recommended_action, methodology, estimated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 [
                     (
                         e.finding_id, e.category, e.node, e.gpu_index, e.gpu_instance_id,
                         e.namespace, e.workload, e.window_start, e.window_end, e.confidence,
-                        int(e.priceable), e.basis, e.amount_usd, e.recommended_action,
+                        int(e.priceable), e.basis, e.amount_inr, e.recommended_action,
                         e.methodology, estimated_at,
                     )
                     for e in estimates
@@ -94,7 +94,7 @@ class SavingsStorage:
 
     def total_priceable_amount(self) -> float:
         row = self._conn.execute(
-            "SELECT COALESCE(SUM(amount_usd), 0) FROM savings_estimates WHERE priceable = 1"
+            "SELECT COALESCE(SUM(amount_inr), 0) FROM savings_estimates WHERE priceable = 1"
         ).fetchone()
         return row[0]
 

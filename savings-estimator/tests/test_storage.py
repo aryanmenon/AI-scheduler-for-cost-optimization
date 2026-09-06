@@ -11,7 +11,7 @@ def storage(tmp_path):
     s.close()
 
 
-def _estimate(finding_id=1, amount_usd=14.0, priceable=True, **overrides) -> SavingsEstimate:
+def _estimate(finding_id=1, amount_inr=14.0, priceable=True, **overrides) -> SavingsEstimate:
     defaults = dict(
         finding_id=finding_id,
         category="idle",
@@ -25,7 +25,7 @@ def _estimate(finding_id=1, amount_usd=14.0, priceable=True, **overrides) -> Sav
         confidence=0.9,
         priceable=priceable,
         basis=BASIS_OBSERVED_WINDOW if priceable else None,
-        amount_usd=amount_usd if priceable else None,
+        amount_inr=amount_inr if priceable else None,
         recommended_action="terminate",
         methodology="test",
     )
@@ -39,16 +39,16 @@ def test_insert_and_count(storage):
 
 
 def test_reinserting_same_finding_replaces_not_duplicates(storage):
-    storage.insert_estimates([_estimate(finding_id=1, amount_usd=10.0)], estimated_at=1000.0)
-    storage.insert_estimates([_estimate(finding_id=1, amount_usd=20.0)], estimated_at=2000.0)
+    storage.insert_estimates([_estimate(finding_id=1, amount_inr=10.0)], estimated_at=1000.0)
+    storage.insert_estimates([_estimate(finding_id=1, amount_inr=20.0)], estimated_at=2000.0)
     assert storage.count() == 1
-    assert storage.all_estimates()[0]["amount_usd"] == 20.0
+    assert storage.all_estimates()[0]["amount_inr"] == 20.0
 
 
 def test_total_priceable_amount_excludes_unpriceable(storage):
     storage.insert_estimates(
         [
-            _estimate(finding_id=1, amount_usd=10.0, priceable=True),
+            _estimate(finding_id=1, amount_inr=10.0, priceable=True),
             _estimate(finding_id=2, priceable=False),
         ],
         estimated_at=1000.0,

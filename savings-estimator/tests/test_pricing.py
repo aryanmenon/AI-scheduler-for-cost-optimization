@@ -13,27 +13,27 @@ def test_known_gpu_gets_illustrative_default_rate():
     price = lookup_price(cap, rate_overrides={})
     assert price.known
     assert price.source == ILLUSTRATIVE_DEFAULT_SOURCE
-    assert price.hourly_usd == 3.50
+    assert price.hourly_inr == 300.00
 
 
 def test_customer_override_takes_precedence_over_default():
     cap = lookup_capability("NVIDIA A100-SXM4-80GB")
     price = lookup_price(cap, rate_overrides={"NVIDIA A100 80GB": 2.10})
     assert price.source == CUSTOMER_PROVIDED_SOURCE
-    assert price.hourly_usd == 2.10
+    assert price.hourly_inr == 2.10
 
 
 def test_unknown_gpu_model_is_unpriceable():
     cap = lookup_capability("Some Future GPU")
     price = lookup_price(cap, rate_overrides={})
     assert not price.known
-    assert price.hourly_usd is None
+    assert price.hourly_inr is None
 
 
 def test_h100_sxm_and_pcie_have_different_rates():
     sxm_price = lookup_price(lookup_capability("NVIDIA H100-SXM5-80GB"), {})
     pcie_price = lookup_price(lookup_capability("NVIDIA H100 PCIe 80GB"), {})
-    assert sxm_price.hourly_usd != pcie_price.hourly_usd
+    assert sxm_price.hourly_inr != pcie_price.hourly_inr
 
 
 def test_parse_rate_overrides_valid_json():

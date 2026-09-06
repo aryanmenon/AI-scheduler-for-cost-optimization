@@ -33,9 +33,9 @@ class Config:
     fragmentation_capture_fraction: float
 
     # JSON object mapping a GPU capability's canonical_name (see
-    # ingestion_normalization.capability) to a $/hour rate. Overrides the
+    # ingestion_normalization.capability) to a ₹/hour rate. Overrides the
     # illustrative defaults in pricing.py -- always prefer a customer's
-    # actual contracted rate over the public on-demand list-price
+    # actual contracted rate over the Indian GPU-cloud on-demand list-price
     # approximations shipped as fallbacks.
     gpu_hourly_rates_json: str | None
 
