@@ -8,6 +8,7 @@ secondary source.
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 
@@ -17,6 +18,24 @@ from telemetry_collector.metrics_client import ScrapeError, scrape
 from telemetry_collector.storage import Storage
 
 logger = logging.getLogger(__name__)
+
+
+def _log_cycle(duration_ms: float, rows_in: int, rows_out: int, errors: int, **extra) -> None:
+    """One structured summary line per cycle, same core schema across all
+    five services (component/event/duration_ms/rows_in/rows_out/errors) so
+    an operator can query cycle health without reading source code to
+    learn what each service's ad-hoc log message meant.
+    """
+    payload = {
+        "event": "cycle_complete",
+        "component": "telemetry-collector",
+        "duration_ms": round(duration_ms, 1),
+        "rows_in": rows_in,
+        "rows_out": rows_out,
+        "errors": errors,
+        **extra,
+    }
+    logger.info(json.dumps(payload))
 
 
 def run_once(config: Config, storage: Storage) -> int:
@@ -35,6 +54,7 @@ def run_once(config: Config, storage: Storage) -> int:
         duration_ms = (time.monotonic() - start) * 1000
         run_id = storage.record_scrape([], duration_ms, success=False, error=str(exc))
         _prune(config, storage)
+        _log_cycle(duration_ms, rows_in=0, rows_out=0, errors=1)
         return run_id
 
     try:
@@ -52,13 +72,16 @@ def run_once(config: Config, storage: Storage) -> int:
     duration_ms = (time.monotonic() - start) * 1000
 
     attributed = sum(1 for r in records if r.attributed)
-    logger.info(
-        "scraped %d GPUs (%d attributed, %d unattributed) in %.1fms",
-        len(records), attributed, len(records) - attributed, duration_ms,
-    )
-
     run_id = storage.record_scrape(records, duration_ms, success=True, error=error)
     _prune(config, storage)
+    _log_cycle(
+        duration_ms,
+        rows_in=len(dcgm_samples),
+        rows_out=len(records),
+        errors=1 if error else 0,
+        attributed=attributed,
+        unattributed=len(records) - attributed,
+    )
     return run_id
 
 

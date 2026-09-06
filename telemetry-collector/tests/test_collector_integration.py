@@ -1,3 +1,5 @@
+import json
+
 import requests
 
 from telemetry_collector.collector import run_forever, run_once
@@ -83,6 +85,33 @@ def test_run_once_records_failure_when_dcgm_unreachable(tmp_path, monkeypatch, k
     assert storage.count_gpu_metrics() == 0
     row = storage._conn.execute("SELECT success FROM scrape_runs").fetchone()
     assert row[0] == 0
+    storage.close()
+
+
+def test_run_once_emits_structured_cycle_complete_log(tmp_path, monkeypatch, dcgm_text, ksm_text, caplog):
+    # Regression: an operator needs a consistent, parseable signal per
+    # cycle without reading source code to learn what each service's
+    # ad-hoc log message means. This is the schema shared across all five
+    # services: event/component/duration_ms/rows_in/rows_out/errors.
+    monkeypatch.setattr(
+        "telemetry_collector.metrics_client.requests.get",
+        _make_fake_get(dcgm_text, ksm_text),
+    )
+    config = _config(tmp_path)
+    storage = Storage(config.sqlite_path)
+
+    with caplog.at_level("INFO", logger="telemetry_collector.collector"):
+        run_once(config, storage)
+
+    payloads = [json.loads(r.message) for r in caplog.records if r.message.startswith("{")]
+    cycle_logs = [p for p in payloads if p.get("event") == "cycle_complete"]
+    assert len(cycle_logs) == 1
+    log = cycle_logs[0]
+    assert log["component"] == "telemetry-collector"
+    assert log["rows_in"] > 0  # raw DCGM metric samples scraped, pre-correlation
+    assert log["rows_out"] == 5  # 5 GPUs, post-correlation
+    assert log["errors"] == 0
+    assert isinstance(log["duration_ms"], (int, float))
     storage.close()
 
 
