@@ -1,7 +1,7 @@
 import pytest
 import requests
 
-from telemetry_collector.metrics_client import ScrapeError, fetch_text, parse_metrics
+from telemetry_collector.metrics_client import ScrapeError, fetch_text, parse_metrics, scrape
 
 
 def test_parse_metrics_extracts_all_gpu_samples(dcgm_text):
@@ -52,6 +52,23 @@ def test_fetch_text_retries_then_succeeds(monkeypatch):
     result = fetch_text("http://example/metrics", timeout=1, max_retries=3)
     assert result == "ok"
     assert calls["n"] == 2
+
+
+def test_scrape_raises_scrape_error_on_malformed_body(monkeypatch):
+    # Regression: a raw ValueError from the Prometheus parser (as opposed
+    # to ScrapeError) would skip run_once's "record a failed scrape_runs
+    # row" handling entirely, leaving zero audit trail for that cycle
+    # instead of a recorded failure.
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        text = 'DCGM_FI_DEV_GPU_UTIL{gpu="0"} not_a_number\n'
+
+    monkeypatch.setattr("telemetry_collector.metrics_client.requests.get", lambda url, timeout: FakeResponse())
+
+    with pytest.raises(ScrapeError):
+        scrape("http://example/metrics", timeout=1, max_retries=1)
 
 
 def test_fetch_text_raises_scrape_error_after_exhausting_retries(monkeypatch):

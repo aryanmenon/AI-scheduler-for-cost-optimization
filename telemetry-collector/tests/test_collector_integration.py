@@ -101,6 +101,28 @@ def test_run_forever_repeats_scrapes_across_cycles(tmp_path, monkeypatch, dcgm_t
     storage.close()
 
 
+def test_run_once_records_failed_run_on_malformed_dcgm_body(tmp_path, monkeypatch, ksm_text):
+    # Regression: a malformed DCGM body used to raise a plain ValueError
+    # out of run_once entirely (only ScrapeError was caught), leaving zero
+    # rows in scrape_runs for that cycle -- an invisible gap in the audit
+    # trail. It must now be recorded as a failed run, like any other
+    # scrape failure.
+    monkeypatch.setattr(
+        "telemetry_collector.metrics_client.requests.get",
+        _make_fake_get('DCGM_FI_DEV_GPU_UTIL{gpu="0"} not_a_number\n', ksm_text),
+    )
+    config = _config(tmp_path)
+    storage = Storage(config.sqlite_path)
+
+    run_once(config, storage)
+
+    assert storage.count_scrape_runs() == 1
+    row = storage._conn.execute("SELECT success, error FROM scrape_runs").fetchone()
+    assert row[0] == 0
+    assert "parse" in row[1]
+    storage.close()
+
+
 def test_run_once_prunes_old_scrapes_per_retention_config(tmp_path, monkeypatch, dcgm_text, ksm_text):
     # Regression: without pruning, this unattended-for-weeks database grows
     # without bound. A short retention window must actually get enforced
