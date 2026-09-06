@@ -223,9 +223,18 @@ scrape/poll intervals, detector thresholds, and image tags — and set
 rates before trusting any rupee figure it produces. Then:
 
 ```bash
+kubectl -n gpu-optimizer get secret gpu-telemetry-dashboard-auth \
+  -o jsonpath='{.data.DASHBOARD_AUTH_TOKEN}' | base64 -d; echo
 kubectl -n gpu-optimizer port-forward svc/gpu-telemetry-dashboard 8080:8080
-# open http://localhost:8080
+# then, with the token above:
+curl -H "Authorization: Bearer <token>" http://localhost:8080/
 ```
+
+`kubectl port-forward` is safe to use as-is here — it's tunneled through
+the Kubernetes API server's own TLS/mTLS, so the token and every rupee
+figure in the report stay encrypted end to end. See
+`dashboard/README.md`'s Security section before changing
+`dashboard.serviceType` away from the default `ClusterIP`.
 
 ## Key risk / decision gate
 
