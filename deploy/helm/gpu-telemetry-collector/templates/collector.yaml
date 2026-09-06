@@ -11,6 +11,7 @@ data:
   SCRAPE_INTERVAL_SECONDS: {{ .Values.collector.scrapeIntervalSeconds | quote }}
   HTTP_TIMEOUT_SECONDS: {{ .Values.collector.httpTimeoutSeconds | quote }}
   MAX_SCRAPE_RETRIES: {{ .Values.collector.maxScrapeRetries | quote }}
+  TELEMETRY_RETENTION_HOURS: {{ .Values.collector.retentionHours | quote }}
   # Consumed by the ingestion sidecar below. RAW_TELEMETRY_SQLITE_PATH
   # intentionally points at the same file as TELEMETRY_SQLITE_PATH above --
   # the collector and ingestion containers reach it via different mounts
@@ -20,6 +21,9 @@ data:
   INGESTION_POLL_INTERVAL_SECONDS: {{ .Values.ingestion.pollIntervalSeconds | quote }}
   SOURCE_SCRAPE_INTERVAL_SECONDS: {{ .Values.collector.scrapeIntervalSeconds | quote }}
   LOW_CONFIDENCE_COVERAGE_THRESHOLD: {{ .Values.ingestion.lowConfidenceCoverageThreshold | quote }}
+  DAILY_ROLLUP_MIN_RECOMPUTE_INTERVAL_SECONDS: {{ .Values.ingestion.dailyRollupMinRecomputeIntervalSeconds | quote }}
+  NORMALIZED_SAMPLES_RETENTION_HOURS: {{ .Values.ingestion.normalizedSamplesRetentionHours | quote }}
+  ROLLUPS_RETENTION_HOURS: {{ .Values.ingestion.rollupsRetentionHours | quote }}
   # Consumed by the waste-detector sidecar below.
   FINDINGS_SQLITE_PATH: "/data/findings/findings.db"
   DETECTOR_POLL_INTERVAL_SECONDS: {{ .Values.wasteDetector.pollIntervalSeconds | quote }}
@@ -34,6 +38,7 @@ data:
   PATTERN_MIN_DAYS_OBSERVED: {{ .Values.wasteDetector.patternMinDaysObserved | quote }}
   PATTERN_IDLE_THRESHOLD_PCT: {{ .Values.wasteDetector.patternIdleThresholdPct | quote }}
   PATTERN_MIN_CONSISTENT_FRACTION: {{ .Values.wasteDetector.patternMinConsistentFraction | quote }}
+  FINDINGS_RETENTION_HOURS: {{ .Values.wasteDetector.findingsRetentionHours | quote }}
   # Consumed by the savings-estimator sidecar below.
   SAVINGS_SQLITE_PATH: "/data/savings/savings.db"
   ESTIMATOR_POLL_INTERVAL_SECONDS: {{ .Values.savingsEstimator.pollIntervalSeconds | quote }}
@@ -46,10 +51,18 @@ data:
   # over the illustrative public list-price defaults baked into pricing.py.
   GPU_HOURLY_RATES_JSON: {{ .Values.savingsEstimator.gpuHourlyRatesJson | quote }}
   {{- end }}
+  SAVINGS_ESTIMATES_RETENTION_HOURS: {{ .Values.savingsEstimator.savingsEstimatesRetentionHours | quote }}
   # Consumed by the dashboard sidecar below -- the self-serve sales artifact.
+  # 0.0.0.0 is required here, not a leftover default: dashboard-service.yaml
+  # is a real ClusterIP Service routing to this pod's actual network
+  # interface, not to loopback, so binding to 127.0.0.1 would make the
+  # Service unable to reach the container at all. DASHBOARD_AUTH_TOKEN
+  # below (not the bind address) is what actually gates access.
   DASHBOARD_HOST: "0.0.0.0"
   DASHBOARD_PORT: {{ .Values.dashboard.port | quote }}
   TOP_FINDINGS_LIMIT: {{ .Values.dashboard.topFindingsLimit | quote }}
+  DASHBOARD_RATE_LIMIT_MAX_REQUESTS: {{ .Values.dashboard.rateLimitMaxRequests | quote }}
+  DASHBOARD_RATE_LIMIT_WINDOW_SECONDS: {{ .Values.dashboard.rateLimitWindowSeconds | quote }}
 ---
 {{- if .Values.persistence.enabled }}
 apiVersion: v1
@@ -208,6 +221,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "gpu-telemetry-collector.fullname" . }}-collector-config
+            - secretRef:
+                name: {{ include "gpu-telemetry-collector.fullname" . }}-dashboard-auth
           ports:
             - name: dashboard
               containerPort: {{ .Values.dashboard.port }}
