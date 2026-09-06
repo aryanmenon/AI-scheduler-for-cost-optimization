@@ -62,6 +62,22 @@ def _effective_tflops(utilization_pct: float | None, capability: GPUCapability) 
 
 def normalize_sample(raw: RawGPUSample) -> NormalizedRecord:
     capability = lookup_capability(raw.gpu_model)
+
+    # A MIG instance's utilization_pct is relative to its own slice, not
+    # the full physical GPU capability.fp16_tflops resolves to -- and DCGM
+    # carries no MIG profile/fraction label (see module docstring) from
+    # which to derive the slice's actual share of that capacity. Treating
+    # a slice's utilization as if it applied to the whole GPU overcounts
+    # capacity: summed effective_tflops across a GPU's slices could exceed
+    # what the physical card can do. Until MIG profile data is available,
+    # capacity-normalized figures are reported as unknown for these
+    # samples -- the same "admit we don't know" choice this table already
+    # makes for unrecognized models -- rather than silently wrong.
+    is_mig_slice = raw.gpu_instance_id is not None
+    capability_known = capability.known and not is_mig_slice
+    fp16_tflops = None if is_mig_slice else capability.fp16_tflops
+    effective_tflops = None if is_mig_slice else _effective_tflops(raw.utilization_pct, capability)
+
     return NormalizedRecord(
         scrape_run_id=raw.scrape_run_id,
         scraped_at=raw.scraped_at,
@@ -78,9 +94,9 @@ def normalize_sample(raw: RawGPUSample) -> NormalizedRecord:
         memory_used_mb=raw.memory_used_mb,
         memory_free_mb=raw.memory_free_mb,
         power_draw_w=raw.power_draw_w,
-        capability_known=capability.known,
-        fp16_tflops=capability.fp16_tflops,
-        effective_tflops=_effective_tflops(raw.utilization_pct, capability),
+        capability_known=capability_known,
+        fp16_tflops=fp16_tflops,
+        effective_tflops=effective_tflops,
     )
 
 

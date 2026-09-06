@@ -46,6 +46,29 @@ def test_normalize_unknown_gpu_model_leaves_effective_tflops_none():
     assert record.effective_tflops is None
 
 
+def test_mig_slice_effective_tflops_not_computed_from_full_gpu_capacity():
+    # Regression: DCGM carries no MIG profile/fraction label, so a slice's
+    # utilization_pct is relative to its own slice, not the full physical
+    # GPU. Multiplying it by the physical GPU's fp16_tflops silently
+    # overcounts capacity -- summed across enough slices it can exceed
+    # what the physical card can actually do (an A100 80GB tops out at
+    # 312 TFLOPS; 4 slices each reading ~90% "effective" of the whole GPU
+    # would sum to ~1123 TFLOPS under the old, buggy math). Until MIG
+    # profile data is available, these samples must report capacity as
+    # unknown rather than a wrong, overcounted number.
+    slices = [
+        normalize_sample(_raw(gpu_instance_id=str(i), utilization_pct=90.0))
+        for i in range(1, 5)
+    ]
+
+    assert all(r.effective_tflops is None for r in slices)
+    assert all(r.capability_known is False for r in slices)
+
+    physical_gpu_capacity = 312.0  # NVIDIA A100 80GB fp16 TFLOPS
+    summed_effective_tflops = sum(r.effective_tflops or 0.0 for r in slices)
+    assert summed_effective_tflops <= physical_gpu_capacity
+
+
 def test_normalize_unattributed_sample_has_no_workload():
     record = normalize_sample(_raw(namespace=UNATTRIBUTED, pod=None, container=None))
     assert record.workload is None
