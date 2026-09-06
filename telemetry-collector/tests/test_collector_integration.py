@@ -101,6 +101,32 @@ def test_run_forever_repeats_scrapes_across_cycles(tmp_path, monkeypatch, dcgm_t
     storage.close()
 
 
+def test_run_once_prunes_old_scrapes_per_retention_config(tmp_path, monkeypatch, dcgm_text, ksm_text):
+    # Regression: without pruning, this unattended-for-weeks database grows
+    # without bound. A short retention window must actually get enforced
+    # by run_once, not just exist as an unused config knob.
+    monkeypatch.setattr(
+        "telemetry_collector.metrics_client.requests.get",
+        _make_fake_get(dcgm_text, ksm_text),
+    )
+    config = Config(
+        dcgm_exporter_url="http://dcgm-exporter:9400/metrics",
+        kube_state_metrics_url="http://kube-state-metrics:8080/metrics",
+        sqlite_path=str(tmp_path / "telemetry.db"),
+        scrape_interval_seconds=0,
+        http_timeout_seconds=1,
+        max_scrape_retries=2,
+        retention_hours=1.0,
+    )
+    storage = Storage(config.sqlite_path)
+    storage.record_scrape([], duration_ms=1.0, success=True, scraped_at=1000.0)  # ancient, pre-existing
+
+    run_once(config, storage)  # a fresh, "now" scrape
+
+    assert storage.count_scrape_runs() == 1  # the ancient run was pruned; the fresh one wasn't
+    storage.close()
+
+
 def test_run_forever_continues_after_unexpected_exception(tmp_path, monkeypatch, dcgm_text, ksm_text):
     calls = {"n": 0}
     real_fake_get = _make_fake_get(dcgm_text, ksm_text)

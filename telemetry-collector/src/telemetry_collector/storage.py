@@ -130,6 +130,22 @@ class Storage:
             )
         return run_id
 
+    def prune_older_than(self, cutoff: float) -> int:
+        """Delete gpu_metrics and scrape_runs older than `cutoff` (a
+        time.time()-style timestamp). Children are deleted before their
+        parent scrape_runs rows -- gpu_metrics.scrape_run_id is a foreign
+        key with foreign_keys=ON, so a parent row with remaining children
+        can't be deleted, and this call sizes both deletes off the same
+        cutoff so no parent is left orphaned of its own old children.
+
+        Returns the number of gpu_metrics rows deleted.
+        """
+        with self._cursor() as cur:
+            cur.execute("DELETE FROM gpu_metrics WHERE scraped_at < ?", (cutoff,))
+            deleted = cur.rowcount
+            cur.execute("DELETE FROM scrape_runs WHERE scraped_at < ?", (cutoff,))
+        return deleted
+
     def count_gpu_metrics(self) -> int:
         cur = self._conn.execute("SELECT COUNT(*) FROM gpu_metrics")
         return cur.fetchone()[0]

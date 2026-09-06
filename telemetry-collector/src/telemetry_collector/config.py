@@ -18,6 +18,14 @@ class Config:
     scrape_interval_seconds: float
     http_timeout_seconds: float
     max_scrape_retries: int
+    # This runs unattended, scraping every ~30s, for weeks at a time (see
+    # storage.py's module docstring) -- without a retention window,
+    # gpu_metrics/scrape_runs grow without bound and eventually exhaust
+    # disk. The default (14 days) must stay generous enough that
+    # ingestion-normalization -- which reads this same file by
+    # scrape_run_id, not by age -- has always caught up well before data
+    # this old is pruned. 0 (or less) disables pruning.
+    retention_hours: float = 14 * 24.0
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -38,4 +46,5 @@ class Config:
                 os.environ.get("HTTP_TIMEOUT_SECONDS", "10")
             ),
             max_scrape_retries=int(os.environ.get("MAX_SCRAPE_RETRIES", "3")),
+            retention_hours=float(os.environ.get("TELEMETRY_RETENTION_HOURS", str(14 * 24))),
         )

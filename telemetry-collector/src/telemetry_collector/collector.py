@@ -33,7 +33,9 @@ def run_once(config: Config, storage: Storage) -> int:
     except ScrapeError as exc:
         logger.error("DCGM scrape failed: %s", exc)
         duration_ms = (time.monotonic() - start) * 1000
-        return storage.record_scrape([], duration_ms, success=False, error=str(exc))
+        run_id = storage.record_scrape([], duration_ms, success=False, error=str(exc))
+        _prune(config, storage)
+        return run_id
 
     try:
         scrape(
@@ -55,7 +57,18 @@ def run_once(config: Config, storage: Storage) -> int:
         len(records), attributed, len(records) - attributed, duration_ms,
     )
 
-    return storage.record_scrape(records, duration_ms, success=True, error=error)
+    run_id = storage.record_scrape(records, duration_ms, success=True, error=error)
+    _prune(config, storage)
+    return run_id
+
+
+def _prune(config: Config, storage: Storage) -> None:
+    if config.retention_hours <= 0:
+        return
+    cutoff = time.time() - config.retention_hours * 3600
+    deleted = storage.prune_older_than(cutoff)
+    if deleted:
+        logger.info("pruned %d gpu_metrics rows older than %.1fh", deleted, config.retention_hours)
 
 
 def run_forever(config: Config, storage: Storage, stop_after: int | None = None) -> None:
