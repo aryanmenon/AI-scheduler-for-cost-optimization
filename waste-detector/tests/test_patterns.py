@@ -78,6 +78,16 @@ def test_tolerates_occasional_exception_night():
     assert findings[0].metric_value == 0.9
 
 
+def test_utilization_exactly_at_threshold_counts_as_quiet():
+    # Boundary semantics: pattern_idle_threshold_pct=5.0 is inclusive --
+    # exactly at the threshold counts as quiet, consistent across every
+    # detector.
+    rows = _daily_rows(10, hour_of_day=3, avg_utilization_pct_fn=lambda day: 5.0)
+    findings = detect_recurring_patterns(rows, _config())
+    assert len(findings) == 1
+    assert findings[0].metric_value == 1.0
+
+
 def test_does_not_flag_below_minimum_days_observed():
     rows = _daily_rows(5, hour_of_day=3, avg_utilization_pct_fn=lambda day: 1.0)  # need 7
     findings = detect_recurring_patterns(rows, _config(pattern_min_days_observed=7))

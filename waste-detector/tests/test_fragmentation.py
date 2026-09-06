@@ -91,6 +91,20 @@ def test_below_minimum_streak_length_not_flagged():
     assert findings == []
 
 
+def test_utilization_exactly_at_threshold_counts_as_underutilized():
+    # Regression: this detector used strict "<" while every other detector
+    # (idle.py, over_provisioning.py, patterns.py) is inclusive ("<=") --
+    # a GPU sitting exactly at fragmentation_threshold_pct=50.0 must now
+    # qualify too, consistent with the rest of the module.
+    rows = []
+    for i in range(4):
+        bs = i * 3600.0
+        rows.append(_row(bs, "0", "model-a", avg_utilization_pct=50.0))
+        rows.append(_row(bs, "1", "model-b", avg_utilization_pct=50.0))
+    findings = detect_fragmentation(rows, _config())
+    assert len(findings) == 2
+
+
 def test_well_utilized_gpus_not_flagged():
     rows = []
     for i in range(4):

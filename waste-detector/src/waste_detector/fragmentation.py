@@ -45,7 +45,11 @@ def _find_qualifying_hours(
 
     qualifying = {}
     for key, hour_rows in by_hour.items():
-        underutilized = [r for r in hour_rows if r.avg_utilization_pct < config.fragmentation_threshold_pct]
+        # Inclusive of the threshold itself, consistent with every other
+        # detector (idle.py, over_provisioning.py, patterns.py) -- a GPU
+        # sitting exactly at the threshold counts as qualifying everywhere
+        # in this module, not just here.
+        underutilized = [r for r in hour_rows if r.avg_utilization_pct <= config.fragmentation_threshold_pct]
         distinct_gpus = {_gpu_identity(r) for r in underutilized}
         distinct_workloads = {(r.namespace, r.workload) for r in underutilized}
         if (
