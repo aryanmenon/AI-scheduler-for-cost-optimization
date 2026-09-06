@@ -9,10 +9,10 @@ demonstrable number.
 from __future__ import annotations
 
 import time
-from collections import defaultdict
 
 from waste_detector.config import Config
 from waste_detector.findings import OVER_PROVISIONED, WasteFinding
+from waste_detector.grouping import group_by, usable_rows
 from waste_detector.rollup_reader import RollupRow
 
 _BUCKET_SECONDS = 3600  # hourly rollups only
@@ -30,11 +30,8 @@ def detect_over_provisioning(
     # Unattributed capacity has no workload to right-size, and low-coverage
     # buckets aren't trustworthy evidence either way -- both are excluded
     # before any grouping happens.
-    usable = [r for r in rows if r.attributed and r.coverage_ratio >= config.min_coverage_ratio]
-
-    groups: dict[tuple, list[RollupRow]] = defaultdict(list)
-    for row in usable:
-        groups[_group_key(row)].append(row)
+    usable = usable_rows(rows, config)
+    groups = group_by(usable, _group_key)
 
     findings = []
     for (namespace, workload, node, gpu_index, gpu_instance_id), group_rows in groups.items():

@@ -18,6 +18,7 @@ from collections import defaultdict
 
 from waste_detector.config import Config
 from waste_detector.findings import FRAGMENTED, WasteFinding
+from waste_detector.grouping import group_by, usable_rows
 from waste_detector.rollup_reader import RollupRow
 
 _BUCKET_SECONDS = 3600  # hourly rollups only
@@ -33,15 +34,8 @@ def _find_qualifying_hours(
     """(node, bucket_start) -> the underutilized rows in that hour, for
     every hour where enough distinct GPUs from distinct workloads on that
     node were simultaneously underutilized."""
-    usable = [
-        r for r in rows
-        if r.attributed and r.coverage_ratio >= config.min_coverage_ratio
-        and r.avg_utilization_pct is not None
-    ]
-
-    by_hour: dict[tuple, list[RollupRow]] = defaultdict(list)
-    for row in usable:
-        by_hour[(row.node, row.bucket_start)].append(row)
+    usable = usable_rows(rows, config, require_utilization=True)
+    by_hour = group_by(usable, lambda r: (r.node, r.bucket_start))
 
     qualifying = {}
     for key, hour_rows in by_hour.items():
