@@ -1,3 +1,5 @@
+import json
+
 from conftest import make_rollup_record, write_rollups
 
 from waste_detector.config import Config
@@ -45,6 +47,37 @@ def test_run_once_produces_idle_finding_from_real_rollups(tmp_path):
     assert count == 1
     findings = storage.all_findings(category=IDLE)
     assert len(findings) == 1
+    reader.close()
+    storage.close()
+
+
+def test_run_once_emits_structured_cycle_complete_log(tmp_path, caplog):
+    # Regression: an operator needs a consistent, parseable signal per
+    # cycle without reading source code to learn what each service's
+    # ad-hoc log message means. Schema shared across all five services:
+    # event/component/duration_ms/rows_in/rows_out/errors.
+    normalized_path = str(tmp_path / "normalized.db")
+    records = [
+        make_rollup_record(bucket_start=float(i * 3600), avg_utilization_pct=0.0, max_utilization_pct=0.0)
+        for i in range(6)
+    ]
+    write_rollups(normalized_path, "hourly", records)
+
+    config = _config(normalized_path, str(tmp_path / "findings.db"))
+    storage = FindingsStorage(config.findings_sqlite_path)
+    reader = RollupReader(config.normalized_sqlite_path)
+
+    with caplog.at_level("INFO", logger="waste_detector.pipeline"):
+        run_once(config, reader, storage)
+
+    payloads = [json.loads(r.message) for r in caplog.records if r.message.startswith("{")]
+    cycle_logs = [p for p in payloads if p.get("event") == "cycle_complete"]
+    assert len(cycle_logs) == 1
+    log = cycle_logs[0]
+    assert log["component"] == "waste-detector"
+    assert log["rows_in"] == 6
+    assert log["rows_out"] == 1
+    assert log["errors"] == 0
     reader.close()
     storage.close()
 
