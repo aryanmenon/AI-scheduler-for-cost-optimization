@@ -98,6 +98,45 @@ def test_run_once_does_not_flag_corrupted_peak_as_over_provisioned(tmp_path):
     storage.close()
 
 
+def test_run_once_prunes_stale_findings_no_longer_redetected(tmp_path, monkeypatch):
+    # Regression: waste_findings had no pruning -- once a condition
+    # resolves (the workload is decommissioned, or simply stops being
+    # idle), its last finding just stops being refreshed rather than
+    # being deleted, so it would linger forever without this.
+    normalized_path = str(tmp_path / "normalized.db")
+    records = [
+        make_rollup_record(bucket_start=float(i * 3600), avg_utilization_pct=0.0, max_utilization_pct=0.0)
+        for i in range(6)
+    ]
+    write_rollups(normalized_path, "hourly", records)
+
+    findings_path = str(tmp_path / "findings.db")
+    config = _config(normalized_path, findings_path, findings_retention_hours=1.0)
+    storage = FindingsStorage(findings_path)
+
+    wall_clock = {"now": 1000.0}
+    monkeypatch.setattr("waste_detector.pipeline.time.time", lambda: wall_clock["now"])
+
+    reader1 = RollupReader(normalized_path)
+    run_once(config, reader1, storage)
+    reader1.close()
+    assert storage.count() == 1
+
+    # A later cycle's rollup data no longer includes this workload at all
+    # -- nothing re-detects/refreshes the earlier finding -- and enough
+    # wall-clock time has passed to exceed the 1h retention window.
+    empty_normalized_path = str(tmp_path / "empty_normalized.db")
+    write_rollups(empty_normalized_path, "hourly", [])
+    wall_clock["now"] = 10_000.0
+
+    reader2 = RollupReader(empty_normalized_path)
+    run_once(config, reader2, storage)
+    reader2.close()
+
+    assert storage.count() == 0
+    storage.close()
+
+
 def test_run_once_with_no_rollups_yet(tmp_path):
     normalized_path = str(tmp_path / "normalized.db")
     write_rollups(normalized_path, "hourly", [])  # creates schema, no rows

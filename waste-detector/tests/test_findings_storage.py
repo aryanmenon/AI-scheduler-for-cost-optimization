@@ -70,6 +70,24 @@ def test_growing_window_end_replaces_not_duplicates(storage):
     assert row["metric_value"] == 6.0
 
 
+def test_prune_older_than_removes_stale_findings_keeps_active(storage):
+    # Regression: findings had no pruning -- a resolved condition's last
+    # finding just stops being refreshed rather than being deleted, so old,
+    # no-longer-active findings accumulate forever without this.
+    stale = _finding(category=IDLE, window_start=0.0)
+    storage.insert_findings([stale], detected_at=1000.0)
+
+    active = _finding(category=OVER_PROVISIONED, window_start=100.0)
+    storage.insert_findings([active], detected_at=2_000_000.0)
+
+    deleted = storage.prune_older_than(cutoff=1_000_000.0)
+
+    assert deleted == 1
+    remaining = storage.all_findings()
+    assert len(remaining) == 1
+    assert remaining[0]["category"] == OVER_PROVISIONED
+
+
 def test_distinct_gpu_instances_are_separate_findings(storage):
     storage.insert_findings(
         [

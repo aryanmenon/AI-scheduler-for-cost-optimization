@@ -26,10 +26,21 @@ def run_once(config: Config, reader: RollupReader, storage: FindingsStorage) -> 
 
     if not rows:
         logger.info("no hourly rollups available yet")
+        _prune(config, storage, now)
         return 0
 
     findings = run_all_detectors(rows, config, now)
     storage.insert_findings(findings, detected_at=now)
+    _prune(config, storage, now)
 
     logger.info("evaluated %d hourly rollups, produced %d findings", len(rows), len(findings))
     return len(findings)
+
+
+def _prune(config: Config, storage: FindingsStorage, now: float) -> None:
+    if config.findings_retention_hours <= 0:
+        return
+    cutoff = now - config.findings_retention_hours * 3600
+    deleted = storage.prune_older_than(cutoff)
+    if deleted:
+        logger.info("pruned %d stale findings older than %.1fh", deleted, config.findings_retention_hours)

@@ -33,6 +33,14 @@ class Config:
     pattern_idle_threshold_pct: float
     pattern_min_consistent_fraction: float
 
+    # waste_findings has no natural cap: every cycle re-derives the full
+    # findings set from all rollup history (see pipeline.py), and a
+    # resolved condition's last finding just stops being refreshed rather
+    # than being deleted -- so old, no-longer-active findings accumulate
+    # forever without this. Kept as long as savings-estimator/dashboard
+    # might reasonably want historical findings for. 0 disables pruning.
+    findings_retention_hours: float = 2160.0  # 90 days
+
     @classmethod
     def from_env(cls) -> "Config":
         return cls(
@@ -67,5 +75,8 @@ class Config:
             ),
             pattern_min_consistent_fraction=float(
                 os.environ.get("PATTERN_MIN_CONSISTENT_FRACTION", "0.8")
+            ),
+            findings_retention_hours=float(
+                os.environ.get("FINDINGS_RETENTION_HOURS", "2160")
             ),
         )

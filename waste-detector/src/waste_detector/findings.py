@@ -119,6 +119,19 @@ class FindingsStorage:
                 ],
             )
 
+    def prune_older_than(self, cutoff: float) -> int:
+        """Delete findings whose detected_at < cutoff.
+
+        detected_at is refreshed to "now" every cycle a finding is still
+        active (see insert_findings' INSERT OR REPLACE), so a finding that
+        hasn't been refreshed in a long time is one whose condition ended
+        -- it's stale, not just old. Without this, every category ever
+        detected accumulates forever with no way to know it's resolved.
+        """
+        with self._cursor() as cur:
+            cur.execute("DELETE FROM waste_findings WHERE detected_at < ?", (cutoff,))
+            return cur.rowcount
+
     def all_findings(self, category: str | None = None) -> list[sqlite3.Row]:
         if category is None:
             return self._conn.execute("SELECT * FROM waste_findings ORDER BY window_start").fetchall()
