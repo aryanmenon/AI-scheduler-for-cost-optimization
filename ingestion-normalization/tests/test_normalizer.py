@@ -69,6 +69,34 @@ def test_mig_slice_effective_tflops_not_computed_from_full_gpu_capacity():
     assert summed_effective_tflops <= physical_gpu_capacity
 
 
+def test_out_of_range_utilization_treated_as_missing_not_trusted():
+    # Regression: a corrupted reading (driver bug, disk corruption) is worse
+    # than a missing one -- fed verbatim into effective_tflops it silently
+    # produces a wrong number instead of just lowering coverage_ratio.
+    record = normalize_sample(_raw(utilization_pct=250.0))
+    assert record.utilization_pct is None
+    assert record.effective_tflops is None
+
+
+def test_negative_utilization_treated_as_missing():
+    record = normalize_sample(_raw(utilization_pct=-5.0))
+    assert record.utilization_pct is None
+    assert record.effective_tflops is None
+
+
+def test_nan_utilization_treated_as_missing():
+    record = normalize_sample(_raw(utilization_pct=float("nan")))
+    assert record.utilization_pct is None
+    assert record.effective_tflops is None
+
+
+def test_negative_memory_and_power_treated_as_missing():
+    record = normalize_sample(_raw(memory_used_mb=-1.0, memory_free_mb=float("nan"), power_draw_w=-200.0))
+    assert record.memory_used_mb is None
+    assert record.memory_free_mb is None
+    assert record.power_draw_w is None
+
+
 def test_normalize_unattributed_sample_has_no_workload():
     record = normalize_sample(_raw(namespace=UNATTRIBUTED, pod=None, container=None))
     assert record.workload is None
