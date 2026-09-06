@@ -48,6 +48,45 @@ def test_html_escapes_untrusted_workload_names():
     assert "&lt;script&gt;" in html_out
 
 
+def test_html_escapes_untrusted_namespace():
+    summary = aggregate([_row(namespace="<script>alert(2)</script>")], top_n=10)
+    html_out = render_report(summary)
+    assert "<script>alert(2)</script>" not in html_out
+    assert "&lt;script&gt;" in html_out
+
+
+def test_html_escapes_untrusted_node():
+    summary = aggregate([_row(node="<script>alert(3)</script>")], top_n=10)
+    html_out = render_report(summary)
+    assert "<script>alert(3)</script>" not in html_out
+    assert "&lt;script&gt;" in html_out
+
+
+def test_html_escapes_untrusted_recommended_action():
+    summary = aggregate([_row(recommended_action="<script>alert(4)</script>")], top_n=10)
+    html_out = render_report(summary)
+    assert "<script>alert(4)</script>" not in html_out
+    assert "&lt;script&gt;" in html_out
+
+
+def test_html_escapes_untrusted_methodology():
+    summary = aggregate([_row(methodology="<script>alert(5)</script>")], top_n=10)
+    html_out = render_report(summary)
+    assert "<script>alert(5)</script>" not in html_out
+    assert "&lt;script&gt;" in html_out
+
+
+def test_html_escapes_untrusted_category():
+    # category also lands inside an unquoted-looking CSS class attribute
+    # (badge-{category}), so this also guards against attribute breakout --
+    # html.escape's default quote=True escapes the quote characters too.
+    summary = aggregate([_row(category='idle"><script>alert(6)</script>')], top_n=10)
+    html_out = render_report(summary)
+    assert "<script>alert(6)</script>" not in html_out
+    assert "&lt;script&gt;" in html_out
+    assert '"><script>' not in html_out
+
+
 def test_unpriceable_section_shown_only_when_present():
     priced_only = aggregate([_row(priceable=True)], top_n=10)
     assert "Not priced" not in render_report(priced_only)
