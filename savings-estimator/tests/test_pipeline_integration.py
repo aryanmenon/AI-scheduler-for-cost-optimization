@@ -1,3 +1,5 @@
+import json
+
 from conftest import make_finding, make_rollup_record, write_findings, write_rollups
 
 from savings_estimator.config import Config
@@ -45,6 +47,40 @@ def test_run_once_prices_a_real_idle_finding(tmp_path):
     assert estimates[0]["priceable"] == 1
     assert estimates[0]["amount_inr"] == 4 * 300.00
 
+    findings_reader.close()
+    rollup_reader.close()
+    storage.close()
+
+
+def test_run_once_emits_structured_cycle_complete_log(tmp_path, caplog):
+    # Regression: an operator needs a consistent, parseable signal per
+    # cycle without reading source code to learn what each service's
+    # ad-hoc log message means. Schema shared across all five services:
+    # event/component/duration_ms/rows_in/rows_out/errors.
+    findings_path = str(tmp_path / "findings.db")
+    normalized_path = str(tmp_path / "normalized.db")
+    savings_path = str(tmp_path / "savings.db")
+
+    write_findings(findings_path, [make_finding("idle", window_start=0.0, window_end=4 * 3600.0, confidence=0.9)])
+    write_rollups(normalized_path, "hourly", [make_rollup_record(bucket_start=float(i * 3600)) for i in range(4)])
+
+    config = _config(findings_path, normalized_path, savings_path)
+    storage = SavingsStorage(config.savings_sqlite_path)
+    findings_reader = FindingsReader(config.findings_sqlite_path)
+    rollup_reader = RollupReader(config.normalized_sqlite_path)
+
+    with caplog.at_level("INFO", logger="savings_estimator.pipeline"):
+        run_once(config, findings_reader, rollup_reader, storage)
+
+    payloads = [json.loads(r.message) for r in caplog.records if r.message.startswith("{")]
+    cycle_logs = [p for p in payloads if p.get("event") == "cycle_complete"]
+    assert len(cycle_logs) == 1
+    log = cycle_logs[0]
+    assert log["component"] == "savings-estimator"
+    assert log["rows_in"] == 1
+    assert log["rows_out"] == 1
+    assert log["priceable"] == 1
+    assert log["errors"] == 0
     findings_reader.close()
     rollup_reader.close()
     storage.close()

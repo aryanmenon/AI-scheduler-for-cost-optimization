@@ -9,6 +9,7 @@ findings history grows large.
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 
@@ -22,12 +23,31 @@ from savings_estimator.storage import SavingsStorage
 logger = logging.getLogger(__name__)
 
 
+def _log_cycle(duration_ms: float, rows_in: int, rows_out: int, errors: int, **extra) -> None:
+    """One structured summary line per cycle, same core schema across all
+    five services (component/event/duration_ms/rows_in/rows_out/errors) so
+    an operator can query cycle health without reading source code to
+    learn what each service's ad-hoc log message meant.
+    """
+    payload = {
+        "event": "cycle_complete",
+        "component": "savings-estimator",
+        "duration_ms": round(duration_ms, 1),
+        "rows_in": rows_in,
+        "rows_out": rows_out,
+        "errors": errors,
+        **extra,
+    }
+    logger.info(json.dumps(payload))
+
+
 def run_once(
     config: Config,
     findings_reader: FindingsReader,
     rollup_reader: RollupReader,
     storage: SavingsStorage,
 ) -> int:
+    start = time.monotonic()
     now = time.time()
     rate_overrides = parse_rate_overrides(config.gpu_hourly_rates_json)
 
@@ -35,6 +55,7 @@ def run_once(
     if not findings:
         logger.info("no findings available yet (or none meet min_finding_confidence)")
         _prune(config, storage, now)
+        _log_cycle((time.monotonic() - start) * 1000, rows_in=0, rows_out=0, errors=0)
         return 0
 
     estimates = []
@@ -53,8 +74,12 @@ def run_once(
     _prune(config, storage, now)
 
     priceable = sum(1 for e in estimates if e.priceable)
-    logger.info(
-        "priced %d/%d findings (%d unpriceable)", priceable, len(estimates), len(estimates) - priceable
+    unpriceable = len(estimates) - priceable
+    duration_ms = (time.monotonic() - start) * 1000
+    logger.info("priced %d/%d findings (%d unpriceable)", priceable, len(estimates), unpriceable)
+    _log_cycle(
+        duration_ms, rows_in=len(findings), rows_out=len(estimates), errors=0,
+        priceable=priceable, unpriceable=unpriceable,
     )
     return len(estimates)
 
