@@ -122,6 +122,24 @@ def _estimate_idle(finding: FindingRow, price) -> SavingsEstimate:
 def _estimate_over_provisioned(
     finding: FindingRow, capability, price, config: Config, rate_overrides: dict[str, float]
 ) -> SavingsEstimate:
+    if finding.gpu_instance_id is not None:
+        # capability.fp16_tflops here is the *physical* GPU's full capacity
+        # (capability is re-derived from gpu_model alone, upstream of any
+        # MIG awareness), but finding.metric_value -- the observed peak
+        # utilization -- is relative to this MIG slice, not the whole GPU.
+        # DCGM carries no MIG profile/fraction label to translate between
+        # the two, so sizing a recommendation from full-GPU TFLOPS against
+        # slice-relative utilization mixes two different bases and can
+        # recommend a "smaller" SKU that's actually bigger than the slice
+        # already is. Same "admit unknown" choice as ingestion-normalization
+        # makes for MIG effective_tflops, rather than a misleading number.
+        return _unpriceable(
+            finding,
+            "right-sizing needs this workload's share of the physical GPU's capacity, but MIG "
+            "slice sizing data isn't available -- computing it against the full GPU's TFLOPS "
+            "would misprice the recommendation",
+        )
+
     # metric_value for this category IS the observed peak utilization %
     # (see waste_detector.over_provisioning) -- no need to re-derive it.
     rec = right_sized_capability(capability.fp16_tflops, finding.metric_value, config.sla_target_utilization_pct)

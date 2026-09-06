@@ -93,6 +93,23 @@ def test_over_provisioned_high_peak_may_yield_zero_savings():
     assert estimate.amount_usd >= 0.0
 
 
+def test_over_provisioned_mig_slice_is_unpriceable_not_mispriced():
+    # Regression: capability.fp16_tflops here is the *physical* GPU's full
+    # capacity (312 TFLOPS for an A100), but finding.metric_value (peak
+    # utilization) for a MIG slice is relative to that slice, not the whole
+    # GPU. Sizing a recommendation from full-GPU TFLOPS against
+    # slice-relative utilization mixed two different bases and could
+    # recommend a SKU actually bigger than the slice already is (e.g. "NVIDIA
+    # A10" for a workload confined to a small MIG slice). This must come back
+    # unpriceable instead of a misleading number.
+    finding = _finding(OVER_PROVISIONED, gpu_instance_id="1", metric_value=15.0)
+    rows = [_rollup(gpu_instance_id="1")]
+    estimate = estimate_for_finding(finding, rows, _config(), {})
+    assert not estimate.priceable
+    assert estimate.amount_usd is None
+    assert "MIG" in estimate.methodology
+
+
 def test_fragmented_priced_with_capture_discount():
     finding = _finding(FRAGMENTED, metric_value=2.0)
     rows = [_rollup(avg_utilization_pct=20.0)]
