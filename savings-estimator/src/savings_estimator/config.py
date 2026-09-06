@@ -45,9 +45,21 @@ class Config:
     # deleted. Kept as long as the dashboard might reasonably want
     # historical estimates for. 0 disables pruning.
     savings_estimates_retention_hours: float = 2160.0  # 90 days
+    # Touched with the current time at the end of every run_forever
+    # iteration, success or failure -- run_once's own exceptions are caught
+    # and logged (see main.py) so the process itself never crashes on a bad
+    # cycle, which means a plain "is the process alive" liveness check
+    # can't catch a genuinely stuck loop. A Kubernetes exec probe checking
+    # this file's mtime can. Defaults next to savings_sqlite_path (this
+    # component's own write target) so it lands on that writable volume
+    # without needing its own mount.
+    heartbeat_path: str = "/data/savings/.heartbeat"
 
     @classmethod
     def from_env(cls) -> "Config":
+        savings_sqlite_path = os.environ.get(
+            "SAVINGS_SQLITE_PATH", "/data/savings/savings.db"
+        )
         return cls(
             findings_sqlite_path=os.environ.get(
                 "FINDINGS_SQLITE_PATH", "/data/findings/findings.db"
@@ -55,9 +67,7 @@ class Config:
             normalized_sqlite_path=os.environ.get(
                 "NORMALIZED_SQLITE_PATH", "/data/normalized/normalized.db"
             ),
-            savings_sqlite_path=os.environ.get(
-                "SAVINGS_SQLITE_PATH", "/data/savings/savings.db"
-            ),
+            savings_sqlite_path=savings_sqlite_path,
             poll_interval_seconds=float(os.environ.get("ESTIMATOR_POLL_INTERVAL_SECONDS", "300")),
             min_finding_confidence=float(os.environ.get("MIN_FINDING_CONFIDENCE", "0.7")),
             sla_target_utilization_pct=float(
@@ -70,5 +80,9 @@ class Config:
             gpu_hourly_rates_json=os.environ.get("GPU_HOURLY_RATES_JSON"),
             savings_estimates_retention_hours=float(
                 os.environ.get("SAVINGS_ESTIMATES_RETENTION_HOURS", "2160")
+            ),
+            heartbeat_path=os.environ.get(
+                "HEARTBEAT_PATH",
+                os.path.join(os.path.dirname(savings_sqlite_path) or ".", ".heartbeat"),
             ),
         )

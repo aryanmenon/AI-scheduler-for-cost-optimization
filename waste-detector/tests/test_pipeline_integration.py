@@ -1,4 +1,5 @@
 import json
+import os
 
 from conftest import make_rollup_record, write_rollups
 
@@ -201,3 +202,47 @@ def test_run_forever_picks_up_new_rollups_across_cycles(tmp_path):
     storage = FindingsStorage(config.findings_sqlite_path)
     assert storage.count() == 1  # same finding both cycles, replaced not duplicated
     storage.close()
+
+
+def test_run_forever_writes_heartbeat_every_cycle_even_after_exception(tmp_path, monkeypatch):
+    # Regression: run_once's own exceptions are caught inside run_forever
+    # so the process never crashes on a bad cycle -- a plain "is the
+    # process alive" Kubernetes liveness check can't detect a genuinely
+    # stuck loop. The heartbeat file must be touched on every iteration
+    # regardless of whether that cycle succeeded, so an exec probe
+    # checking its mtime actually reflects loop liveness.
+    normalized_path = str(tmp_path / "normalized.db")
+    records = [
+        make_rollup_record(bucket_start=float(i * 3600), avg_utilization_pct=0.0, max_utilization_pct=0.0)
+        for i in range(6)
+    ]
+    write_rollups(normalized_path, "hourly", records)
+
+    config = _config(
+        normalized_path, str(tmp_path / "findings.db"),
+        heartbeat_path=str(tmp_path / "heartbeat"),
+    )
+
+    import waste_detector.main as main_module
+    real_run_once = main_module.run_once
+    calls = {"n": 0}
+
+    def flaky_run_once(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ValueError("boom - simulated unexpected bug")
+        return real_run_once(*args, **kwargs)
+
+    monkeypatch.setattr(main_module, "run_once", flaky_run_once)
+
+    main_module.run_forever(config, stop_after=1)
+
+    # The very first (and only) cycle raised, yet the heartbeat must still
+    # have been written -- it reflects loop liveness, not cycle success.
+    assert os.path.exists(config.heartbeat_path)
+    first_heartbeat = float(open(config.heartbeat_path).read())
+
+    main_module.run_forever(config, stop_after=1)
+    second_heartbeat = float(open(config.heartbeat_path).read())
+
+    assert second_heartbeat > first_heartbeat

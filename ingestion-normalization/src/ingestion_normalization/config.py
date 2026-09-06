@@ -38,16 +38,26 @@ class Config:
     # the dashboard's report draws on this history too. Kept far longer
     # than the raw samples above. 0 disables pruning.
     rollups_retention_hours: float = 2160.0  # 90 days
+    # Touched with the current time at the end of every run_forever
+    # iteration, success or failure -- run_once's own exceptions are caught
+    # and logged (see main.py) so the process itself never crashes on a bad
+    # cycle, which means a plain "is the process alive" liveness check
+    # can't catch a genuinely stuck loop. A Kubernetes exec probe checking
+    # this file's mtime can. Defaults next to normalized_sqlite_path (this
+    # component's own write target) so it lands on that writable volume
+    # without needing its own mount.
+    heartbeat_path: str = "/data/normalized/.heartbeat"
 
     @classmethod
     def from_env(cls) -> "Config":
+        normalized_sqlite_path = os.environ.get(
+            "NORMALIZED_SQLITE_PATH", "/data/normalized/normalized.db"
+        )
         return cls(
             raw_sqlite_path=os.environ.get(
                 "RAW_TELEMETRY_SQLITE_PATH", "/data/raw/telemetry.db"
             ),
-            normalized_sqlite_path=os.environ.get(
-                "NORMALIZED_SQLITE_PATH", "/data/normalized/normalized.db"
-            ),
+            normalized_sqlite_path=normalized_sqlite_path,
             poll_interval_seconds=float(
                 os.environ.get("INGESTION_POLL_INTERVAL_SECONDS", "60")
             ),
@@ -65,5 +75,9 @@ class Config:
             ),
             rollups_retention_hours=float(
                 os.environ.get("ROLLUPS_RETENTION_HOURS", "2160")
+            ),
+            heartbeat_path=os.environ.get(
+                "HEARTBEAT_PATH",
+                os.path.join(os.path.dirname(normalized_sqlite_path) or ".", ".heartbeat"),
             ),
         )

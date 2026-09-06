@@ -40,16 +40,26 @@ class Config:
     # forever without this. Kept as long as savings-estimator/dashboard
     # might reasonably want historical findings for. 0 disables pruning.
     findings_retention_hours: float = 2160.0  # 90 days
+    # Touched with the current time at the end of every run_forever
+    # iteration, success or failure -- run_once's own exceptions are caught
+    # and logged (see main.py) so the process itself never crashes on a bad
+    # cycle, which means a plain "is the process alive" liveness check
+    # can't catch a genuinely stuck loop. A Kubernetes exec probe checking
+    # this file's mtime can. Defaults next to findings_sqlite_path (this
+    # component's own write target) so it lands on that writable volume
+    # without needing its own mount.
+    heartbeat_path: str = "/data/findings/.heartbeat"
 
     @classmethod
     def from_env(cls) -> "Config":
+        findings_sqlite_path = os.environ.get(
+            "FINDINGS_SQLITE_PATH", "/data/findings/findings.db"
+        )
         return cls(
             normalized_sqlite_path=os.environ.get(
                 "NORMALIZED_SQLITE_PATH", "/data/normalized/normalized.db"
             ),
-            findings_sqlite_path=os.environ.get(
-                "FINDINGS_SQLITE_PATH", "/data/findings/findings.db"
-            ),
+            findings_sqlite_path=findings_sqlite_path,
             poll_interval_seconds=float(os.environ.get("DETECTOR_POLL_INTERVAL_SECONDS", "300")),
             min_coverage_ratio=float(os.environ.get("MIN_COVERAGE_RATIO", "0.8")),
             idle_threshold_pct=float(os.environ.get("IDLE_THRESHOLD_PCT", "2.0")),
@@ -78,5 +88,9 @@ class Config:
             ),
             findings_retention_hours=float(
                 os.environ.get("FINDINGS_RETENTION_HOURS", "2160")
+            ),
+            heartbeat_path=os.environ.get(
+                "HEARTBEAT_PATH",
+                os.path.join(os.path.dirname(findings_sqlite_path) or ".", ".heartbeat"),
             ),
         )

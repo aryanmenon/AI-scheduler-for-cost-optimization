@@ -80,7 +80,15 @@ jobs:
     # untested deployment. savings-estimator is the odd one out: it needs
     # its two sibling packages copied in (see its Dockerfile's own
     # comment), so it alone builds from the repo root.
+    #
+    # Every push builds (a broken Dockerfile on a feature branch should
+    # fail loudly), but only a push to the repo's default branch also
+    # publishes -- a PR or feature branch has no business landing images
+    # in the registry the Helm chart's values.yaml actually points at.
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -103,13 +111,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build ${{ matrix.component }} image
+      - name: Determine whether to publish
+        id: publish
+        # Only a push (not pull_request) to the repository's own default
+        # branch publishes. github.event.repository.default_branch is used
+        # instead of a hardcoded branch name since this repo's default
+        # branch isn't literally "main".
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/${{ github.event.repository.default_branch }}" ]; then
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "push=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute image name
+        id: image
+        # GHCR requires an all-lowercase path; github.repository preserves
+        # this repo's actual (mixed-case) casing, so it's lowercased here
+        # rather than assumed.
+        run: |
+          echo "prefix=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        if: steps.publish.outputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (and publish on the default branch) ${{ matrix.component }} image
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
-          push: false
-          tags: ${{ matrix.component }}:ci
+          push: ${{ steps.publish.outputs.push == 'true' }}
+          tags: |
+            ${{ steps.image.outputs.prefix }}/${{ matrix.component }}:latest
+            ${{ steps.image.outputs.prefix }}/${{ matrix.component }}:${{ github.sha }}
 
   dependency-audit:
     # Scans the pinned runtime dependency versions (requests,

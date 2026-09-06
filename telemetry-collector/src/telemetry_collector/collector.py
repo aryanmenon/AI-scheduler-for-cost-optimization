@@ -85,6 +85,14 @@ def run_once(config: Config, storage: Storage) -> int:
     return run_id
 
 
+def _write_heartbeat(path: str) -> None:
+    try:
+        with open(path, "w") as f:
+            f.write(str(time.time()))
+    except OSError:
+        logger.warning("failed to write heartbeat file %s", path)
+
+
 def _prune(config: Config, storage: Storage) -> None:
     if config.retention_hours <= 0:
         return
@@ -107,6 +115,12 @@ def run_forever(config: Config, storage: Storage, stop_after: int | None = None)
             run_once(config, storage)
         except Exception:
             logger.exception("unexpected error during scrape cycle; will retry next interval")
+        finally:
+            # Written whether or not the cycle above succeeded -- this
+            # proves the loop itself is iterating, not that scrapes are
+            # succeeding (that's what the cycle_complete log's "errors"
+            # field is for).
+            _write_heartbeat(config.heartbeat_path)
 
         cycles += 1
         if stop_after is not None and cycles >= stop_after:

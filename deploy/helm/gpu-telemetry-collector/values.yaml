@@ -1,9 +1,16 @@
 # Default values for gpu-telemetry-collector.
+#
+# The five app-component image tags below default to "latest" -- CI's
+# docker-build job (.github/workflows/ci.yml) publishes :latest and
+# :<git-sha> to GHCR on every push to the repo's default branch. :latest
+# is fine for a pilot install but floats; pin every image.tag to a
+# specific :<git-sha> instead for a reproducible/rollback-able production
+# deployment.
 
 collector:
   image:
-    repository: ghcr.io/example-org/gpu-cost-optimizer/telemetry-collector
-    tag: "0.1.0"
+    repository: ghcr.io/aryanmenon/ai-scheduler-for-cost-optimization/telemetry-collector
+    tag: "latest"
     pullPolicy: IfNotPresent
   scrapeIntervalSeconds: 30
   httpTimeoutSeconds: 10
@@ -22,8 +29,8 @@ collector:
 ingestion:
   enabled: true
   image:
-    repository: ghcr.io/example-org/gpu-cost-optimizer/ingestion-normalization
-    tag: "0.1.0"
+    repository: ghcr.io/aryanmenon/ai-scheduler-for-cost-optimization/ingestion-normalization
+    tag: "latest"
     pullPolicy: IfNotPresent
   pollIntervalSeconds: 60
   lowConfidenceCoverageThreshold: 0.5
@@ -49,8 +56,8 @@ ingestion:
 wasteDetector:
   enabled: true
   image:
-    repository: ghcr.io/example-org/gpu-cost-optimizer/waste-detector
-    tag: "0.1.0"
+    repository: ghcr.io/aryanmenon/ai-scheduler-for-cost-optimization/waste-detector
+    tag: "latest"
     pullPolicy: IfNotPresent
   pollIntervalSeconds: 300
   minCoverageRatio: 0.8
@@ -79,8 +86,8 @@ wasteDetector:
 savingsEstimator:
   enabled: true
   image:
-    repository: ghcr.io/example-org/gpu-cost-optimizer/savings-estimator
-    tag: "0.1.0"
+    repository: ghcr.io/aryanmenon/ai-scheduler-for-cost-optimization/savings-estimator
+    tag: "latest"
     pullPolicy: IfNotPresent
   pollIntervalSeconds: 300
   minFindingConfidence: 0.7
@@ -107,8 +114,8 @@ savingsEstimator:
 dashboard:
   enabled: true
   image:
-    repository: ghcr.io/example-org/gpu-cost-optimizer/dashboard
-    tag: "0.1.0"
+    repository: ghcr.io/aryanmenon/ai-scheduler-for-cost-optimization/dashboard
+    tag: "latest"
     pullPolicy: IfNotPresent
   port: 8080
   topFindingsLimit: 25

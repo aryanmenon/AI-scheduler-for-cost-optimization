@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 
@@ -281,3 +282,44 @@ def test_run_forever_ingests_across_multiple_polling_cycles(tmp_path, dcgm_text)
     assert storage.count_normalized_samples() == 10  # 2 runs x 5 GPUs
     assert storage.get_cursor() == 2
     storage.close()
+
+
+def test_run_forever_writes_heartbeat_every_cycle_even_after_exception(
+    tmp_path, dcgm_text, monkeypatch
+):
+    # Regression: run_once's own exceptions are caught inside run_forever
+    # so the process never crashes on a bad cycle -- a plain "is the
+    # process alive" Kubernetes liveness check can't detect a genuinely
+    # stuck loop. The heartbeat file must be touched on every iteration
+    # regardless of whether that cycle succeeded, so an exec probe
+    # checking its mtime actually reflects loop liveness.
+    raw_path = str(tmp_path / "telemetry.db")
+    populate_raw_db(raw_path, [(dcgm_text, 0.0)])
+    config = _config(
+        raw_path, str(tmp_path / "normalized.db"),
+        heartbeat_path=str(tmp_path / "heartbeat"),
+    )
+
+    calls = {"n": 0}
+    import ingestion_normalization.main as main_module
+    real_run_once = main_module.run_once
+
+    def flaky_run_once(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ValueError("boom - simulated unexpected bug")
+        return real_run_once(*args, **kwargs)
+
+    monkeypatch.setattr(main_module, "run_once", flaky_run_once)
+
+    main_module.run_forever(config, stop_after=1)
+
+    # The very first (and only) cycle raised, yet the heartbeat must still
+    # have been written -- it reflects loop liveness, not cycle success.
+    assert os.path.exists(config.heartbeat_path)
+    first_heartbeat = float(open(config.heartbeat_path).read())
+
+    main_module.run_forever(config, stop_after=1)
+    second_heartbeat = float(open(config.heartbeat_path).read())
+
+    assert second_heartbeat > first_heartbeat

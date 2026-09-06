@@ -201,12 +201,18 @@ pip install -e ../savings-estimator -e ".[dev]"  # dev-only (production code is 
 pytest
 ```
 
-Install onto a cluster with GPU nodes (once images are published):
+Install onto a cluster with GPU nodes:
 
 ```bash
 helm install gpu-telemetry deploy/helm/gpu-telemetry-collector \
   --namespace gpu-optimizer --create-namespace
 ```
+
+Images are built and published to GHCR by `.github/workflows/ci.yml`'s
+`docker-build` job on every push to this repo's default branch (`:latest`
+and `:<git-sha>` tags); `values.yaml`'s five `image.tag` fields default to
+`:latest` but should be pinned to a specific `:<git-sha>` for a
+reproducible/rollback-able production deployment.
 
 This deploys DCGM exporter (per-GPU utilization/memory/power),
 kube-state-metrics (pod/node metadata), and the collector — which
@@ -216,7 +222,12 @@ normalization + rollups), which feeds the waste-detector sidecar
 (idle/over-provisioned/fragmented/recurring-pattern findings), which
 feeds the savings-estimator sidecar (prices those findings into ₹
 impact), which finally feeds the dashboard sidecar + Service that renders
-it as the sales artifact. See
+it as the sales artifact. Every sidecar carries a livenessProbe: the four
+background loops each touch a heartbeat file at the end of every cycle
+(success or failure -- these loops catch their own exceptions and keep
+running, so a plain "is the process alive" check can't catch a genuinely
+stuck one) and the dashboard's own `/healthz` backs its liveness and
+readiness probes. See
 `deploy/helm/gpu-telemetry-collector/values.yaml` to toggle persistence,
 scrape/poll intervals, detector thresholds, and image tags — and set
 `savingsEstimator.gpuHourlyRatesJson` to the customer's actual contracted

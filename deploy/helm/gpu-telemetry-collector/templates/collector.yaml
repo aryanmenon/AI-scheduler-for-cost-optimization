@@ -121,6 +121,25 @@ spec:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 10001
+          # run_forever catches every exception from a scrape cycle and
+          # keeps looping (see collector.py) -- the process itself never
+          # crashes on a bad cycle, so a plain "is the process alive"
+          # check can't catch a genuinely stuck loop. This checks that
+          # /data/.heartbeat (touched at the end of every iteration,
+          # success or failure) is still fresh instead.
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  now=$(date +%s)
+                  hb=$(stat -c %Y /data/.heartbeat 2>/dev/null || echo 0)
+                  [ $((now - hb)) -lt {{ mul .Values.collector.scrapeIntervalSeconds 4 | add 60 }} ]
+            initialDelaySeconds: {{ add .Values.collector.scrapeIntervalSeconds 30 }}
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             # subPath "raw" isolates the collector's own database from the
             # "normalized" subdirectory the ingestion sidecar writes into,
@@ -142,6 +161,22 @@ spec:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 10002
+          # See the telemetry-collector container's livenessProbe comment
+          # above -- same reasoning, checking this component's own
+          # heartbeat file instead.
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  now=$(date +%s)
+                  hb=$(stat -c %Y /data/normalized/.heartbeat 2>/dev/null || echo 0)
+                  [ $((now - hb)) -lt {{ mul .Values.ingestion.pollIntervalSeconds 4 | add 60 }} ]
+            initialDelaySeconds: {{ add .Values.ingestion.pollIntervalSeconds 30 }}
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             # Read-only: this component must never be able to write into
             # the collector's raw data, even by accident (see
@@ -169,6 +204,22 @@ spec:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 10003
+          # See the telemetry-collector container's livenessProbe comment
+          # above -- same reasoning, checking this component's own
+          # heartbeat file instead.
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  now=$(date +%s)
+                  hb=$(stat -c %Y /data/findings/.heartbeat 2>/dev/null || echo 0)
+                  [ $((now - hb)) -lt {{ mul .Values.wasteDetector.pollIntervalSeconds 4 | add 60 }} ]
+            initialDelaySeconds: {{ add .Values.wasteDetector.pollIntervalSeconds 30 }}
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             # Read-only for the same reason as ingestion's mount above --
             # this component must never be able to write into
@@ -197,6 +248,22 @@ spec:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 10004
+          # See the telemetry-collector container's livenessProbe comment
+          # above -- same reasoning, checking this component's own
+          # heartbeat file instead.
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  now=$(date +%s)
+                  hb=$(stat -c %Y /data/savings/.heartbeat 2>/dev/null || echo 0)
+                  [ $((now - hb)) -lt {{ mul .Values.savingsEstimator.pollIntervalSeconds 4 | add 60 }} ]
+            initialDelaySeconds: {{ add .Values.savingsEstimator.pollIntervalSeconds 30 }}
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             # Read-only against both upstream outputs it prices findings
             # from -- same reasoning as every read-only mount above (see
@@ -233,6 +300,25 @@ spec:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 10005
+          # /healthz (see server.py) is deliberately unauthenticated and
+          # returns no report data -- a liveness/readiness probe can't
+          # carry the bearer token, and shouldn't need to.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.dashboard.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.dashboard.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             # Read-only: the dashboard only ever reads savings-estimator's
             # output (see dashboard's report_reader.py, opened in mode=ro).

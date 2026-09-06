@@ -12,6 +12,14 @@ from ingestion_normalization.storage import NormalizedStorage
 logger = logging.getLogger(__name__)
 
 
+def _write_heartbeat(path: str) -> None:
+    try:
+        with open(path, "w") as f:
+            f.write(str(time.time()))
+    except OSError:
+        logger.warning("failed to write heartbeat file %s", path)
+
+
 def run_forever(config: Config, stop_after: int | None = None) -> None:
     storage = NormalizedStorage(config.normalized_sqlite_path)
     cycles = 0
@@ -25,6 +33,12 @@ def run_forever(config: Config, stop_after: int | None = None) -> None:
                 reader.close()
         except Exception:
             logger.exception("unexpected error during ingestion cycle; will retry next interval")
+        finally:
+            # Written whether or not the cycle above succeeded -- this
+            # proves the loop itself is iterating, not that cycles are
+            # succeeding (that's what the cycle_complete log's "errors"
+            # field is for).
+            _write_heartbeat(config.heartbeat_path)
 
         cycles += 1
         if stop_after is not None and cycles >= stop_after:

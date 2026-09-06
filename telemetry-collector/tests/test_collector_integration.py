@@ -1,4 +1,5 @@
 import json
+import os
 
 import requests
 
@@ -35,6 +36,7 @@ def _config(tmp_path) -> Config:
         scrape_interval_seconds=0,
         http_timeout_seconds=1,
         max_scrape_retries=2,
+        heartbeat_path=str(tmp_path / "heartbeat"),
     )
 
 
@@ -196,4 +198,40 @@ def test_run_forever_continues_after_unexpected_exception(tmp_path, monkeypatch,
 
     # First cycle raised before any DB write; the loop must keep going.
     assert storage.count_scrape_runs() == 2
+    storage.close()
+
+
+def test_run_forever_writes_heartbeat_every_cycle_even_after_exception(
+    tmp_path, monkeypatch, dcgm_text, ksm_text
+):
+    # Regression: run_once's own exceptions are caught inside run_forever
+    # (see test above), so the process never crashes on a bad cycle -- a
+    # plain "is the process alive" Kubernetes liveness check can't detect
+    # a genuinely stuck loop. The heartbeat file must be touched on every
+    # iteration regardless of whether that cycle's scrape succeeded, so an
+    # exec probe checking its mtime actually reflects loop liveness.
+    calls = {"n": 0}
+    real_fake_get = _make_fake_get(dcgm_text, ksm_text)
+
+    def flaky_get(url, timeout):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ValueError("boom - simulated unexpected bug")
+        return real_fake_get(url, timeout)
+
+    monkeypatch.setattr("telemetry_collector.metrics_client.requests.get", flaky_get)
+    config = _config(tmp_path)
+    storage = Storage(config.sqlite_path)
+
+    run_forever(config, storage, stop_after=1)
+
+    # The very first (and only) cycle raised, yet the heartbeat must still
+    # have been written -- it reflects loop liveness, not cycle success.
+    assert os.path.exists(config.heartbeat_path)
+    first_heartbeat = float(open(config.heartbeat_path).read())
+
+    run_forever(config, storage, stop_after=2)
+    second_heartbeat = float(open(config.heartbeat_path).read())
+
+    assert second_heartbeat > first_heartbeat
     storage.close()
