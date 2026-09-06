@@ -66,11 +66,27 @@ class SavingsStorage:
             return
         with self._cursor() as cur:
             cur.executemany(
-                """INSERT OR REPLACE INTO savings_estimates
+                """INSERT INTO savings_estimates
                    (finding_id, category, node, gpu_index, gpu_instance_id, namespace, workload,
                     window_start, window_end, confidence, priceable, basis, amount_inr,
                     recommended_action, methodology, estimated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT (finding_id) DO UPDATE SET
+                       category = excluded.category,
+                       node = excluded.node,
+                       gpu_index = excluded.gpu_index,
+                       gpu_instance_id = excluded.gpu_instance_id,
+                       namespace = excluded.namespace,
+                       workload = excluded.workload,
+                       window_start = excluded.window_start,
+                       window_end = excluded.window_end,
+                       confidence = excluded.confidence,
+                       priceable = excluded.priceable,
+                       basis = excluded.basis,
+                       amount_inr = excluded.amount_inr,
+                       recommended_action = excluded.recommended_action,
+                       methodology = excluded.methodology,
+                       estimated_at = excluded.estimated_at""",
                 [
                     (
                         e.finding_id, e.category, e.node, e.gpu_index, e.gpu_instance_id,

@@ -105,10 +105,19 @@ class FindingsStorage:
             return
         with self._cursor() as cur:
             cur.executemany(
-                """INSERT OR REPLACE INTO waste_findings
+                """INSERT INTO waste_findings
                    (category, node, gpu_index, gpu_instance_id, namespace, workload,
                     window_start, window_end, confidence, metric_value, detail, detected_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT (
+                       category, node, gpu_index, COALESCE(gpu_instance_id, ''),
+                       namespace, COALESCE(workload, ''), window_start
+                   ) DO UPDATE SET
+                       window_end = excluded.window_end,
+                       confidence = excluded.confidence,
+                       metric_value = excluded.metric_value,
+                       detail = excluded.detail,
+                       detected_at = excluded.detected_at""",
                 [
                     (
                         f.category, f.node, f.gpu_index, f.gpu_instance_id, f.namespace,

@@ -88,6 +88,24 @@ def test_prune_older_than_removes_stale_findings_keeps_active(storage):
     assert remaining[0]["category"] == OVER_PROVISIONED
 
 
+def test_reinserting_same_window_preserves_row_id(storage):
+    # Regression: INSERT OR REPLACE against a secondary UNIQUE index (not
+    # the primary key) makes SQLite delete-then-insert on conflict, which
+    # hands the "replaced" row a brand-new autoincrement id every time.
+    # savings-estimator's SavingsEstimate.finding_id is sourced from this
+    # id, and its own storage dedupes on finding_id -- so an id that
+    # churns every cycle means savings-estimator's own dedup never
+    # matches, and a fresh row gets inserted every cycle for the same
+    # ongoing finding. The id must stay stable across a replace.
+    storage.insert_findings([_finding(metric_value=4.0)], detected_at=1000.0)
+    first_id = storage.all_findings()[0]["id"]
+
+    storage.insert_findings([_finding(metric_value=5.0)], detected_at=2000.0)
+    second_id = storage.all_findings()[0]["id"]
+
+    assert first_id == second_id
+
+
 def test_distinct_gpu_instances_are_separate_findings(storage):
     storage.insert_findings(
         [

@@ -45,6 +45,22 @@ def test_reinserting_same_finding_replaces_not_duplicates(storage):
     assert storage.all_estimates()[0]["amount_inr"] == 20.0
 
 
+def test_reinserting_same_finding_preserves_row_id(storage):
+    # Regression: INSERT OR REPLACE against a secondary UNIQUE index (not
+    # the primary key) makes SQLite delete-then-insert on conflict, which
+    # hands the replaced row a brand-new autoincrement id every time --
+    # same bug class as waste-detector's finding id churn, fixed for the
+    # same defensive-consistency reason even though nothing currently
+    # depends on this table's own id staying stable downstream.
+    storage.insert_estimates([_estimate(finding_id=1, amount_inr=10.0)], estimated_at=1000.0)
+    first_id = storage.all_estimates()[0]["id"]
+
+    storage.insert_estimates([_estimate(finding_id=1, amount_inr=20.0)], estimated_at=2000.0)
+    second_id = storage.all_estimates()[0]["id"]
+
+    assert first_id == second_id
+
+
 def test_total_priceable_amount_excludes_unpriceable(storage):
     storage.insert_estimates(
         [
