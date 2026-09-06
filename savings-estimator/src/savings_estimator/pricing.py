@@ -12,9 +12,12 @@ one thing this whole product is selling: trustworthy dollar figures.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 
 from ingestion_normalization.capability import GPUCapability
+
+logger = logging.getLogger(__name__)
 
 ILLUSTRATIVE_DEFAULT_SOURCE = "illustrative_public_list_price"
 CUSTOMER_PROVIDED_SOURCE = "customer_provided_rate"
@@ -47,15 +50,37 @@ class GPUPrice:
 
 
 def parse_rate_overrides(gpu_hourly_rates_json: str | None) -> dict[str, float]:
+    """Parse GPU_HOURLY_RATES_JSON into a {canonical_name: hourly_usd} map.
+
+    This runs once per pricing cycle (see pipeline.run_once), not once at
+    startup -- so a single bad entry (valid JSON, non-numeric value; an easy
+    admin typo) must never raise. Raising here would propagate out of
+    run_once and, since the value doesn't change between cycles, silently
+    zero out every future estimate forever rather than failing once and
+    getting noticed. Bad entries are dropped and logged instead; the rest
+    of a customer's rate card still takes effect.
+    """
     if not gpu_hourly_rates_json:
         return {}
     try:
         parsed = json.loads(gpu_hourly_rates_json)
     except (json.JSONDecodeError, TypeError):
+        logger.warning("GPU_HOURLY_RATES_JSON is not valid JSON; ignoring overrides")
         return {}
     if not isinstance(parsed, dict):
+        logger.warning("GPU_HOURLY_RATES_JSON must be a JSON object; ignoring overrides")
         return {}
-    return {str(k): float(v) for k, v in parsed.items()}
+
+    overrides: dict[str, float] = {}
+    for key, value in parsed.items():
+        try:
+            overrides[str(key)] = float(value)
+        except (TypeError, ValueError):
+            logger.warning(
+                "GPU_HOURLY_RATES_JSON entry %r has a non-numeric value %r; skipping it",
+                key, value,
+            )
+    return overrides
 
 
 def lookup_price(capability: GPUCapability, rate_overrides: dict[str, float]) -> GPUPrice:

@@ -51,3 +51,13 @@ def test_parse_rate_overrides_invalid_json_returns_empty():
 
 def test_parse_rate_overrides_non_object_json_returns_empty():
     assert parse_rate_overrides("[1, 2, 3]") == {}
+
+
+def test_parse_rate_overrides_drops_bad_value_without_raising():
+    # Regression: this is re-parsed every pricing cycle (see pipeline.py),
+    # not once at startup. A syntactically valid JSON object with one
+    # non-numeric value (an easy admin typo) must not raise -- doing so
+    # would propagate out of run_once and silently zero out every future
+    # estimate forever. The bad entry is dropped; good entries still apply.
+    overrides = parse_rate_overrides('{"NVIDIA A100 80GB": "cheap", "NVIDIA T4": 0.35}')
+    assert overrides == {"NVIDIA T4": 0.35}
