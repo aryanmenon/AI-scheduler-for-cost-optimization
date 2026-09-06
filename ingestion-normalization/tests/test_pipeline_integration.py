@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from ingestion_normalization.config import Config
@@ -38,6 +40,30 @@ def test_run_once_ingests_and_advances_cursor(tmp_path, raw_db_path):
     assert ingested == 5
     assert storage.count_normalized_samples() == 5
     assert storage.get_cursor() == 1
+    reader.close()
+    storage.close()
+
+
+def test_run_once_emits_structured_cycle_complete_log(tmp_path, raw_db_path, caplog):
+    # Regression: an operator needs a consistent, parseable signal per
+    # cycle without reading source code to learn what each service's
+    # ad-hoc log message means. Schema shared across all five services:
+    # event/component/duration_ms/rows_in/rows_out/errors.
+    config = _config(raw_db_path, str(tmp_path / "normalized.db"))
+    storage = NormalizedStorage(config.normalized_sqlite_path)
+    reader = RawReader(config.raw_sqlite_path)
+
+    with caplog.at_level("INFO", logger="ingestion_normalization.pipeline"):
+        run_once(config, reader, storage)
+
+    payloads = [json.loads(r.message) for r in caplog.records if r.message.startswith("{")]
+    cycle_logs = [p for p in payloads if p.get("event") == "cycle_complete"]
+    assert len(cycle_logs) == 1
+    log = cycle_logs[0]
+    assert log["component"] == "ingestion-normalization"
+    assert log["rows_in"] == 5
+    assert log["rows_out"] == 5
+    assert log["errors"] == 0
     reader.close()
     storage.close()
 

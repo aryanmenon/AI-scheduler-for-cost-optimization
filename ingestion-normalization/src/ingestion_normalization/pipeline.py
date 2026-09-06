@@ -8,6 +8,7 @@ see NormalizedStorage.replace_rollups for why that's safe to do repeatedly.
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 
@@ -43,13 +44,34 @@ def _row_to_normalized_record(row) -> NormalizedRecord:
     )
 
 
+def _log_cycle(duration_ms: float, rows_in: int, rows_out: int, errors: int, **extra) -> None:
+    """One structured summary line per cycle, same core schema across all
+    five services (component/event/duration_ms/rows_in/rows_out/errors) so
+    an operator can query cycle health without reading source code to
+    learn what each service's ad-hoc log message meant.
+    """
+    payload = {
+        "event": "cycle_complete",
+        "component": "ingestion-normalization",
+        "duration_ms": round(duration_ms, 1),
+        "rows_in": rows_in,
+        "rows_out": rows_out,
+        "errors": errors,
+        **extra,
+    }
+    logger.info(json.dumps(payload))
+
+
 def run_once(config: Config, reader: RawReader, storage: NormalizedStorage) -> int:
     """Run a single ingestion cycle. Returns the number of samples ingested."""
+    start = time.monotonic()
     cursor = storage.get_cursor()
     raw_samples = reader.fetch_since(cursor)
 
     if not raw_samples:
         logger.info("no new raw samples since run_id=%d", cursor)
+        _prune(config, storage)
+        _log_cycle((time.monotonic() - start) * 1000, rows_in=0, rows_out=0, errors=0)
         return 0
 
     normalized = normalize_samples(raw_samples)
@@ -63,10 +85,12 @@ def run_once(config: Config, reader: RawReader, storage: NormalizedStorage) -> i
     _recompute_touched_rollups(config, storage, min_ts, max_ts)
     _prune(config, storage)
 
+    duration_ms = (time.monotonic() - start) * 1000
     logger.info(
         "ingested %d samples (cursor %d -> %d), recomputed rollups for [%.0f, %.0f]",
         len(normalized), cursor, new_cursor, min_ts, max_ts,
     )
+    _log_cycle(duration_ms, rows_in=len(raw_samples), rows_out=len(normalized), errors=0)
     return len(normalized)
 
 
