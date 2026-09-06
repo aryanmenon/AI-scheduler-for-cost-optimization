@@ -25,7 +25,7 @@ def _config(savings_path: str, tmp_path, **overrides) -> Config:
 @pytest.fixture
 def running_server(tmp_path):
     savings_path = str(tmp_path / "savings.db")
-    write_estimates(savings_path, [make_estimate(1, category="idle", amount_usd=14.0)])
+    write_estimates(savings_path, [make_estimate(1, category="idle", amount_inr=14.0)])
     config = _config(savings_path, tmp_path)
 
     server = build_server(config)
@@ -46,7 +46,7 @@ def test_root_serves_html_report(running_server):
         assert resp.headers["Content-Type"].startswith("text/html")
         body = resp.read().decode("utf-8")
         assert "<!doctype html>" in body
-        assert "$14.00" in body
+        assert "₹14.00" in body
 
 
 def test_healthz_returns_ok(running_server):
@@ -65,7 +65,7 @@ def test_root_requires_auth_token_when_configured(tmp_path):
     # Regression: the server used to serve the report to anyone who could
     # reach the port, with no way to require a shared secret.
     savings_path = str(tmp_path / "savings.db")
-    write_estimates(savings_path, [make_estimate(1, category="idle", amount_usd=14.0)])
+    write_estimates(savings_path, [make_estimate(1, category="idle", amount_inr=14.0)])
     config = _config(savings_path, tmp_path, auth_token="s3cret")
 
     server = build_server(config)
@@ -96,7 +96,7 @@ def test_root_requires_auth_token_when_configured(tmp_path):
 def test_healthz_does_not_require_auth_token(tmp_path):
     # A liveness/readiness probe must keep working without a token.
     savings_path = str(tmp_path / "savings.db")
-    write_estimates(savings_path, [make_estimate(1, amount_usd=14.0)])
+    write_estimates(savings_path, [make_estimate(1, amount_inr=14.0)])
     config = _config(savings_path, tmp_path, auth_token="s3cret")
 
     server = build_server(config)
@@ -117,7 +117,7 @@ def test_root_rate_limits_repeated_requests_from_same_client(tmp_path):
     # cap, and every request re-reads the DB and re-renders -- an
     # unthrottled client could drive unbounded CPU/thread use.
     savings_path = str(tmp_path / "savings.db")
-    write_estimates(savings_path, [make_estimate(1, amount_usd=14.0)])
+    write_estimates(savings_path, [make_estimate(1, amount_inr=14.0)])
     config = _config(savings_path, tmp_path, rate_limit_max_requests=2, rate_limit_window_seconds=60.0)
 
     server = build_server(config)
@@ -142,7 +142,7 @@ def test_root_rate_limits_repeated_requests_from_same_client(tmp_path):
 
 def test_server_reflects_current_data_on_each_request(tmp_path):
     savings_path = str(tmp_path / "savings.db")
-    write_estimates(savings_path, [make_estimate(1, amount_usd=14.0)])
+    write_estimates(savings_path, [make_estimate(1, amount_inr=14.0)])
     config = _config(savings_path, tmp_path)
 
     server = build_server(config)
@@ -151,15 +151,15 @@ def test_server_reflects_current_data_on_each_request(tmp_path):
     try:
         port = server.server_address[1]
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as resp:
-            assert "$14.00" in resp.read().decode("utf-8")
+            assert "₹14.00" in resp.read().decode("utf-8")
 
         # A new finding lands (e.g. the next detection cycle) -- the next
         # request must reflect it without restarting the server.
-        write_estimates(savings_path, [make_estimate(2, amount_usd=99.0)])
+        write_estimates(savings_path, [make_estimate(2, amount_inr=99.0)])
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as resp:
             body = resp.read().decode("utf-8")
-            assert "$14.00" in body
-            assert "$99.00" in body
+            assert "₹14.00" in body
+            assert "₹99.00" in body
     finally:
         server.shutdown()
         thread.join(timeout=5)

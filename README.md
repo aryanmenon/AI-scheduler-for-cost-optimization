@@ -54,7 +54,7 @@ detail and status of each:
    anything, to keep false positives — which cost more customer trust than
    a missed detection — low.
 4. **Achievable ceiling & savings estimator** — SLA-aware target +
-   confidence-scored $ impact. *Built in this repo* (`savings-estimator/`):
+   confidence-scored INR impact. *Built in this repo* (`savings-estimator/`):
    prices each finding, distinguishing money already spent (idle, scoped
    strictly to its observed window) from projected monthly savings
    (over-provisioned/fragmented/recurring, extrapolated from a
@@ -118,17 +118,17 @@ waste-detector/                Python detector: rollups → waste findings
                                  (healthy bursty workload) guard
   Dockerfile
 
-savings-estimator/              Python pricer: findings → $ impact
+savings-estimator/              Python pricer: findings → INR impact
   src/savings_estimator/
     findings_reader.py           read-only reader of waste-detector's SQLite
     rollup_reader.py              read-only reader of ingestion's SQLite
                                    (including gpu_model/fp16_tflops)
-    pricing.py                    GPU $/hour lookup, illustrative defaults
+    pricing.py                    GPU ₹/hour lookup, illustrative defaults
                                    overridable with a customer's real rates
     ceiling.py                    SLA-aware right-sizing recommendation
                                    (smallest SKU meeting a utilization
                                    ceiling, not a naive 100% target)
-    estimator.py                  per-category $ calc: idle priced as
+    estimator.py                  per-category ₹ calc: idle priced as
                                    already-spent money in its exact
                                    observed window; over-provisioned/
                                    fragmented/recurring-pattern projected
@@ -141,7 +141,7 @@ savings-estimator/              Python pricer: findings → $ impact
                                  comment; this is the one component with
                                  real cross-package runtime dependencies)
 
-dashboard/                      Python report: $ estimates → sales artifact
+dashboard/                      Python report: ₹ estimates → sales artifact
   src/dashboard/
     report_reader.py             read-only reader of savings-estimator's SQLite
     aggregator.py                 estimates → summary (observed vs. projected
@@ -207,13 +207,13 @@ correlates the two into a raw SQLite time series, hands it to the
 ingestion-normalization sidecar (workload identity + capability
 normalization + rollups), which feeds the waste-detector sidecar
 (idle/over-provisioned/fragmented/recurring-pattern findings), which
-feeds the savings-estimator sidecar (prices those findings into $
+feeds the savings-estimator sidecar (prices those findings into ₹
 impact), which finally feeds the dashboard sidecar + Service that renders
 it as the sales artifact. See
 `deploy/helm/gpu-telemetry-collector/values.yaml` to toggle persistence,
 scrape/poll intervals, detector thresholds, and image tags — and set
 `savingsEstimator.gpuHourlyRatesJson` to the customer's actual contracted
-rates before trusting any dollar figure it produces. Then:
+rates before trusting any rupee figure it produces. Then:
 
 ```bash
 kubectl -n gpu-optimizer port-forward svc/gpu-telemetry-dashboard 8080:8080

@@ -31,10 +31,10 @@ def _category_label(category: str) -> str:
     return _CATEGORY_LABELS.get(category, category.replace("_", " ").title())
 
 
-def _fmt_usd(amount: float | None) -> str:
+def _fmt_inr(amount: float | None) -> str:
     if amount is None:
         return "n/a"
-    return f"${amount:,.2f}"
+    return f"₹{amount:,.2f}"
 
 
 def _fmt_ts(ts: float) -> str:
@@ -65,7 +65,7 @@ def _findings_table_rows(rows: list[EstimateRow]) -> str:
             f"<td>{_e(r.namespace)}</td>"
             f"<td>{_e(_gpu_identity(r))}</td>"
             f"<td>{_e(_fmt_window(r))}</td>"
-            f'<td class="amount">{_e(_fmt_usd(r.amount_usd))}{" /mo" if r.basis != BASIS_OBSERVED_WINDOW else ""}</td>'
+            f'<td class="amount">{_e(_fmt_inr(r.amount_inr))}{" /mo" if r.basis != BASIS_OBSERVED_WINDOW else ""}</td>'
             f"<td>{r.confidence * 100:.0f}%</td>"
             f"<td>{_e(r.recommended_action)}<div class=\"methodology\">{_e(r.methodology)}</div></td>"
             "</tr>"
@@ -83,7 +83,7 @@ def _category_table_rows(summary: ReportSummary) -> str:
             "<tr>"
             f'<td><span class="badge badge-{_e(c.category)}">{_e(_category_label(c.category))}</span></td>'
             f"<td>{c.count}</td>"
-            f'<td class="amount">{_e(_fmt_usd(c.total_usd))}{suffix}</td>'
+            f'<td class="amount">{_e(_fmt_inr(c.total_inr))}{suffix}</td>'
             f"<td>{c.avg_confidence * 100:.0f}%</td>"
             "</tr>"
         )
@@ -100,7 +100,7 @@ def _unpriceable_section(summary: ReportSummary) -> str:
     return f"""
     <section class="card">
       <h2>Not priced ({summary.unpriceable_count})</h2>
-      <p class="muted">These findings couldn't be converted to a dollar figure -- usually an
+      <p class="muted">These findings couldn't be converted to a rupee figure -- usually an
       unrecognized GPU model or no configured rate for it. They're real waste findings,
       just not quantified here.</p>
       <ul class="unpriceable-list">{samples}</ul>
@@ -182,13 +182,13 @@ def render_report(summary: ReportSummary) -> str:
   <div class="hero">
     <div class="stat projected">
       <div class="label">Projected Monthly Savings</div>
-      <div class="value">{_e(_fmt_usd(summary.projected_monthly_total_usd))}</div>
+      <div class="value">{_e(_fmt_inr(summary.projected_monthly_total_inr))}</div>
       <div class="note">If right-sizing / consolidation / scale-down recommendations below are
         acted on and current usage patterns continue. Not a guarantee.</div>
     </div>
     <div class="stat observed">
       <div class="label">Already-Wasted Spend Observed</div>
-      <div class="value">{_e(_fmt_usd(summary.observed_window_total_usd))}</div>
+      <div class="value">{_e(_fmt_inr(summary.observed_window_total_inr))}</div>
       <div class="note">Actual cost of idle GPU time during the exact windows observed --
         a lower bound, not extrapolated to a full month.</div>
     </div>
@@ -220,7 +220,7 @@ def render_report(summary: ReportSummary) -> str:
   {_unpriceable_section(summary)}
 
   <div class="disclaimer">
-    Dollar figures depend on the GPU hourly rates configured for this deployment -- verify
+    Rupee figures depend on the GPU hourly rates configured for this deployment -- verify
     against your actual contracted pricing before treating any number here as final.
     This report reflects observed telemetry only; results depend on the pilot window being
     representative of normal usage.

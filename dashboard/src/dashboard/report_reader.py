@@ -28,7 +28,7 @@ class EstimateRow:
     confidence: float
     priceable: bool
     basis: str | None
-    amount_usd: float | None
+    amount_inr: float | None
     recommended_action: str
     methodology: str
     estimated_at: float
@@ -40,7 +40,7 @@ class ReportReader:
         self._conn.row_factory = sqlite3.Row
 
     def all_estimates(self) -> list[EstimateRow]:
-        cur = self._conn.execute("SELECT * FROM savings_estimates ORDER BY amount_usd DESC")
+        cur = self._conn.execute("SELECT * FROM savings_estimates ORDER BY amount_inr DESC")
         return [
             EstimateRow(
                 id=row["id"],
@@ -56,7 +56,7 @@ class ReportReader:
                 confidence=row["confidence"],
                 priceable=bool(row["priceable"]),
                 basis=row["basis"],
-                amount_usd=row["amount_usd"],
+                amount_inr=row["amount_inr"],
                 recommended_action=row["recommended_action"],
                 methodology=row["methodology"],
                 estimated_at=row["estimated_at"],

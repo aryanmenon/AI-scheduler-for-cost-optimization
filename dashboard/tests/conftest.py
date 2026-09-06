@@ -24,7 +24,7 @@ def make_estimate(
     confidence: float = 0.9,
     priceable: bool = True,
     basis: str | None = "observed_window",
-    amount_usd: float | None = 14.0,
+    amount_inr: float | None = 14.0,
     recommended_action: str = "terminate",
     methodology: str = "test methodology",
 ) -> SavingsEstimate:
@@ -41,7 +41,7 @@ def make_estimate(
         confidence=confidence,
         priceable=priceable,
         basis=basis if priceable else None,
-        amount_usd=amount_usd if priceable else None,
+        amount_inr=amount_inr if priceable else None,
         recommended_action=recommended_action,
         methodology=methodology,
     )

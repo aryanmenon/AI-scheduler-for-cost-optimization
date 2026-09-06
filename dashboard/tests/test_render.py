@@ -3,13 +3,13 @@ from dashboard.render import render_report
 from dashboard.report_reader import EstimateRow
 
 
-def _row(id=1, category="idle", amount_usd=10.0, priceable=True, basis="observed_window",
+def _row(id=1, category="idle", amount_inr=10.0, priceable=True, basis="observed_window",
          workload="bert-large", methodology="test methodology", **overrides) -> EstimateRow:
     defaults = dict(
         id=id, finding_id=id, category=category, node="gpu-node-1", gpu_index="0",
         gpu_instance_id=None, namespace="inference", workload=workload,
         window_start=0.0, window_end=3600.0, confidence=0.9, priceable=priceable,
-        basis=basis if priceable else None, amount_usd=amount_usd if priceable else None,
+        basis=basis if priceable else None, amount_inr=amount_inr if priceable else None,
         recommended_action="terminate this GPU", methodology=methodology, estimated_at=1000.0,
     )
     defaults.update(overrides)
@@ -25,13 +25,13 @@ def test_renders_valid_html_document():
 
 def test_includes_projected_and_observed_totals_separately():
     rows = [
-        _row(id=1, category="idle", basis="observed_window", amount_usd=14.0),
-        _row(id=2, category="over_provisioned", basis="projected_monthly", amount_usd=250.0),
+        _row(id=1, category="idle", basis="observed_window", amount_inr=14.0),
+        _row(id=2, category="over_provisioned", basis="projected_monthly", amount_inr=250.0),
     ]
     summary = aggregate(rows, top_n=10)
     html_out = render_report(summary)
-    assert "$14.00" in html_out
-    assert "$250.00" in html_out
+    assert "₹14.00" in html_out
+    assert "₹250.00" in html_out
 
 
 def test_workload_and_namespace_appear_in_output():

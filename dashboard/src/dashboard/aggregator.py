@@ -2,7 +2,7 @@
 
 The observed/projected split from savings-estimator (see its estimator.py)
 is preserved here rather than collapsed into one number: an idle finding's
-already-spent dollars and a right-sizing recommendation's projected
+already-spent rupees and a right-sizing recommendation's projected
 monthly savings are different units of claim, and adding them together
 would produce a figure that overstates both -- a sales report that can't
 be defended line-by-line to a skeptical customer champion isn't worth
@@ -24,7 +24,7 @@ BASIS_PROJECTED_MONTHLY = "projected_monthly"
 class CategorySummary:
     category: str
     count: int
-    total_usd: float
+    total_inr: float
     avg_confidence: float
     basis: str | None
 
@@ -35,8 +35,8 @@ class ReportSummary:
     total_estimates: int
     priceable_count: int
     unpriceable_count: int
-    projected_monthly_total_usd: float
-    observed_window_total_usd: float
+    projected_monthly_total_inr: float
+    observed_window_total_inr: float
     by_category: list[CategorySummary]
     top_findings: list[EstimateRow]
     unpriceable_samples: list[EstimateRow]
@@ -49,10 +49,10 @@ def aggregate(rows: list[EstimateRow], top_n: int, generated_at: float | None = 
     unpriceable = [r for r in rows if not r.priceable]
 
     projected_total = sum(
-        r.amount_usd for r in priceable if r.basis == BASIS_PROJECTED_MONTHLY and r.amount_usd is not None
+        r.amount_inr for r in priceable if r.basis == BASIS_PROJECTED_MONTHLY and r.amount_inr is not None
     )
     observed_total = sum(
-        r.amount_usd for r in priceable if r.basis == BASIS_OBSERVED_WINDOW and r.amount_usd is not None
+        r.amount_inr for r in priceable if r.basis == BASIS_OBSERVED_WINDOW and r.amount_inr is not None
     )
 
     by_category_rows: dict[str, list[EstimateRow]] = defaultdict(list)
@@ -63,16 +63,16 @@ def aggregate(rows: list[EstimateRow], top_n: int, generated_at: float | None = 
         CategorySummary(
             category=category,
             count=len(category_rows),
-            total_usd=sum(r.amount_usd for r in category_rows if r.amount_usd is not None),
+            total_inr=sum(r.amount_inr for r in category_rows if r.amount_inr is not None),
             avg_confidence=sum(r.confidence for r in category_rows) / len(category_rows),
             basis=category_rows[0].basis,
         )
         for category, category_rows in by_category_rows.items()
     ]
-    by_category.sort(key=lambda c: c.total_usd, reverse=True)
+    by_category.sort(key=lambda c: c.total_inr, reverse=True)
 
     top_findings = sorted(
-        priceable, key=lambda r: r.amount_usd if r.amount_usd is not None else 0.0, reverse=True
+        priceable, key=lambda r: r.amount_inr if r.amount_inr is not None else 0.0, reverse=True
     )[:top_n]
 
     return ReportSummary(
@@ -80,8 +80,8 @@ def aggregate(rows: list[EstimateRow], top_n: int, generated_at: float | None = 
         total_estimates=len(rows),
         priceable_count=len(priceable),
         unpriceable_count=len(unpriceable),
-        projected_monthly_total_usd=projected_total,
-        observed_window_total_usd=observed_total,
+        projected_monthly_total_inr=projected_total,
+        observed_window_total_inr=observed_total,
         by_category=by_category,
         top_findings=top_findings,
         unpriceable_samples=unpriceable[:5],
