@@ -93,6 +93,35 @@ def test_over_provisioned_high_peak_may_yield_zero_savings():
     assert estimate.amount_usd >= 0.0
 
 
+def test_idle_with_inverted_window_is_unpriceable_not_negative():
+    # Regression: a corrupted or clock-skewed upstream finding with
+    # window_end before window_start must not silently produce a negative
+    # dollar "savings" figure shown to a customer.
+    finding = _finding(IDLE, window_start=3600.0, window_end=0.0)
+    rows = [_rollup()]
+    estimate = estimate_for_finding(finding, rows, _config(), {})
+    assert not estimate.priceable
+    assert estimate.amount_usd is None
+
+
+def test_recurring_pattern_out_of_range_fraction_is_unpriceable():
+    # Regression: metric_value here is a fraction in [0, 1] (share of
+    # observed days quiet at this hour). A corrupted upstream value above 1
+    # must not silently inflate the monthly projection without limit.
+    finding = _finding(RECURRING_PATTERN, metric_value=1.5)
+    rows = [_rollup()]
+    estimate = estimate_for_finding(finding, rows, _config(), {})
+    assert not estimate.priceable
+    assert estimate.amount_usd is None
+
+
+def test_recurring_pattern_negative_fraction_is_unpriceable():
+    finding = _finding(RECURRING_PATTERN, metric_value=-0.1)
+    rows = [_rollup()]
+    estimate = estimate_for_finding(finding, rows, _config(), {})
+    assert not estimate.priceable
+
+
 def test_over_provisioned_mig_slice_is_unpriceable_not_mispriced():
     # Regression: capability.fp16_tflops here is the *physical* GPU's full
     # capacity (312 TFLOPS for an A100), but finding.metric_value (peak

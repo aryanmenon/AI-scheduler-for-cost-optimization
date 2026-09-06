@@ -106,6 +106,12 @@ def _base_kwargs(finding: FindingRow) -> dict:
 
 def _estimate_idle(finding: FindingRow, price) -> SavingsEstimate:
     window_hours = (finding.window_end - finding.window_start) / _SECONDS_PER_HOUR
+    if window_hours < 0:
+        # A corrupted or clock-skewed upstream finding (window_end before
+        # window_start) must not silently produce a negative dollar figure
+        # -- admit we can't price this rather than show a customer a
+        # nonsensical "negative savings" number.
+        return _unpriceable(finding, "finding window is invalid (window_end precedes window_start)")
     amount = price.hourly_usd * window_hours
     return SavingsEstimate(
         **_base_kwargs(finding),
@@ -197,7 +203,13 @@ def _estimate_fragmented(finding: FindingRow, rollup_rows: list[RollupRow], pric
 def _estimate_recurring_pattern(finding: FindingRow, price, config: Config) -> SavingsEstimate:
     # metric_value for this category IS the consistent_fraction (see
     # waste_detector.patterns): the share of observed days this hour-of-day
-    # slot ran low. One hour/day is the pattern's own granularity.
+    # slot ran low, so it must be a fraction in [0, 1]. A corrupted upstream
+    # finding with a value outside that range would otherwise inflate (or
+    # invert) the monthly projection without limit -- admit we can't price
+    # it rather than show a wrong number.
+    if not (0.0 <= finding.metric_value <= 1.0):
+        return _unpriceable(finding, f"metric_value {finding.metric_value!r} is not a valid fraction in [0, 1]")
+
     monthly_wasted_hours = finding.metric_value * _DAYS_PER_MONTH
     monthly_savings = price.hourly_usd * monthly_wasted_hours
 
