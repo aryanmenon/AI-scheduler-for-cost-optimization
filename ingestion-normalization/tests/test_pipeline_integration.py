@@ -16,6 +16,13 @@ def _config(raw_path: str, normalized_path: str, **overrides) -> Config:
         poll_interval_seconds=0,
         source_scrape_interval_seconds=30,
         low_confidence_coverage_threshold=0.5,
+        # These tests use small synthetic timestamps (near epoch), not
+        # real wall-clock time, and aren't testing retention -- pruning
+        # against a real time.time() cutoff would delete every row they
+        # write. Off by default here; retention-specific tests below
+        # override these explicitly with a controlled `now`.
+        normalized_samples_retention_hours=0,
+        rollups_retention_hours=0,
     )
     defaults.update(overrides)
     return Config(**defaults)
@@ -175,6 +182,44 @@ def test_daily_rollup_recompute_happens_again_after_interval_elapses(tmp_path, d
 
     for row in storage.rollups("daily"):
         assert row["sample_count"] == 2
+    storage.close()
+
+
+def test_run_once_prunes_old_normalized_samples_and_rollups(tmp_path, dcgm_text, monkeypatch):
+    # Regression: normalized_samples and rollups had no pruning -- same
+    # unbounded-growth risk telemetry-collector's raw store had. A short
+    # retention window must actually get enforced by run_once.
+    raw_path = str(tmp_path / "telemetry.db")
+    populate_raw_db(raw_path, [(dcgm_text, 0.0)])  # ancient, pre-existing
+
+    config = _config(
+        raw_path, str(tmp_path / "normalized.db"),
+        normalized_samples_retention_hours=1.0,
+        rollups_retention_hours=1.0,
+    )
+    storage = NormalizedStorage(config.normalized_sqlite_path)
+
+    wall_clock = {"now": 1000.0}
+    monkeypatch.setattr("ingestion_normalization.pipeline.time.time", lambda: wall_clock["now"])
+
+    reader1 = RawReader(config.raw_sqlite_path)
+    run_once(config, reader1, storage)
+    reader1.close()
+    assert storage.count_normalized_samples() == 5  # well within the 1h retention window
+
+    # A fresh cycle's worth of samples lands 2 hours later (wall clock
+    # advances with it) -- now well past the 1h retention window for the
+    # first cycle's data.
+    populate_raw_db(raw_path, [(dcgm_text, 7200.0)])
+    wall_clock["now"] = 7200.0
+
+    reader2 = RawReader(config.raw_sqlite_path)
+    run_once(config, reader2, storage)
+    reader2.close()
+
+    assert storage.count_normalized_samples() == 5  # only the fresh cycle's samples remain
+    for row in storage.rollups("5m"):
+        assert row["bucket_start"] >= 7200.0 - 300.0  # only the fresh bucket remains
     storage.close()
 
 

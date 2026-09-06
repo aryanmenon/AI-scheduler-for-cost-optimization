@@ -61,12 +61,34 @@ def run_once(config: Config, reader: RawReader, storage: NormalizedStorage) -> i
     min_ts = min(r.scraped_at for r in normalized)
     max_ts = max(r.scraped_at for r in normalized)
     _recompute_touched_rollups(config, storage, min_ts, max_ts)
+    _prune(config, storage)
 
     logger.info(
         "ingested %d samples (cursor %d -> %d), recomputed rollups for [%.0f, %.0f]",
         len(normalized), cursor, new_cursor, min_ts, max_ts,
     )
     return len(normalized)
+
+
+def _prune(config: Config, storage: NormalizedStorage, now: float | None = None) -> None:
+    now = now if now is not None else time.time()
+
+    if config.normalized_samples_retention_hours > 0:
+        cutoff = now - config.normalized_samples_retention_hours * 3600
+        deleted = storage.prune_normalized_samples_older_than(cutoff)
+        if deleted:
+            logger.info(
+                "pruned %d normalized_samples rows older than %.1fh",
+                deleted, config.normalized_samples_retention_hours,
+            )
+
+    if config.rollups_retention_hours > 0:
+        cutoff = now - config.rollups_retention_hours * 3600
+        deleted = storage.prune_rollups_older_than(cutoff)
+        if deleted:
+            logger.info(
+                "pruned %d rollups rows older than %.1fh", deleted, config.rollups_retention_hours
+            )
 
 
 def _daily_recompute_due(config: Config, storage: NormalizedStorage, now: float) -> bool:

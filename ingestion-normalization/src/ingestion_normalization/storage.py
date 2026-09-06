@@ -196,6 +196,28 @@ class NormalizedStorage:
                 ],
             )
 
+    def prune_normalized_samples_older_than(self, cutoff: float) -> int:
+        """Delete normalized_samples rows with scraped_at < cutoff.
+
+        This raw, per-scrape data is superseded by rollups almost
+        immediately; kept only long enough to support the daily rollup
+        recompute rescanning a full day's worth of it. Without pruning
+        this grows unbounded, same as telemetry-collector's raw store.
+        """
+        with self._cursor() as cur:
+            cur.execute("DELETE FROM normalized_samples WHERE scraped_at < ?", (cutoff,))
+            return cur.rowcount
+
+    def prune_rollups_older_than(self, cutoff: float) -> int:
+        """Delete rollups rows with bucket_start < cutoff, across all
+        granularities. Unlike normalized_samples, this is the durable
+        historical record consumers rely on, so the cutoff is expected to
+        be far more generous.
+        """
+        with self._cursor() as cur:
+            cur.execute("DELETE FROM rollups WHERE bucket_start < ?", (cutoff,))
+            return cur.rowcount
+
     def count_normalized_samples(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM normalized_samples").fetchone()[0]
 

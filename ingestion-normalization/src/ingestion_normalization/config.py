@@ -27,6 +27,17 @@ class Config:
     # daily recompute is throttled to at most once per this interval. 0
     # disables throttling (recompute daily every cycle, like before).
     daily_rollup_min_recompute_interval_seconds: float = 3600.0
+    # normalized_samples is per-scrape raw data, superseded by rollups
+    # almost immediately -- kept only long enough to support the daily
+    # rollup recompute above, which rescans a full day's worth of it. Must
+    # stay well above 24h or a late daily recompute could rescan a window
+    # whose raw samples have already been pruned. 0 disables pruning.
+    normalized_samples_retention_hours: float = 72.0
+    # rollups are the durable historical record: waste-detector's
+    # recurring-pattern detector wants many observed calendar days, and
+    # the dashboard's report draws on this history too. Kept far longer
+    # than the raw samples above. 0 disables pruning.
+    rollups_retention_hours: float = 2160.0  # 90 days
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -48,5 +59,11 @@ class Config:
             ),
             daily_rollup_min_recompute_interval_seconds=float(
                 os.environ.get("DAILY_ROLLUP_MIN_RECOMPUTE_INTERVAL_SECONDS", "3600")
+            ),
+            normalized_samples_retention_hours=float(
+                os.environ.get("NORMALIZED_SAMPLES_RETENTION_HOURS", "72")
+            ),
+            rollups_retention_hours=float(
+                os.environ.get("ROLLUPS_RETENTION_HOURS", "2160")
             ),
         )
