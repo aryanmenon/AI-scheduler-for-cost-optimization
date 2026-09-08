@@ -38,7 +38,7 @@ def test_reads_unpriceable_rows_with_null_fields(tmp_path):
     try:
         rows = reader.all_estimates()
         assert rows[0].priceable is False
-        assert rows[0].amount_usd is None
+        assert rows[0].amount_inr is None
         assert rows[0].basis is None
     finally:
         reader.close()

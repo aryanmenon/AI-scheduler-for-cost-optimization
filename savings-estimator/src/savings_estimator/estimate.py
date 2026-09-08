@@ -1,4 +1,4 @@
-"""The dollar-impact estimate produced for one waste finding."""
+"""The rupee-impact estimate produced for one waste finding."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -28,6 +28,6 @@ class SavingsEstimate:
     confidence: float
     priceable: bool
     basis: str | None
-    amount_usd: float | None
+    amount_inr: float | None
     recommended_action: str
     methodology: str

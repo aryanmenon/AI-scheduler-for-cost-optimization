@@ -46,6 +46,57 @@ def test_normalize_unknown_gpu_model_leaves_effective_tflops_none():
     assert record.effective_tflops is None
 
 
+def test_mig_slice_effective_tflops_not_computed_from_full_gpu_capacity():
+    # Regression: DCGM carries no MIG profile/fraction label, so a slice's
+    # utilization_pct is relative to its own slice, not the full physical
+    # GPU. Multiplying it by the physical GPU's fp16_tflops silently
+    # overcounts capacity -- summed across enough slices it can exceed
+    # what the physical card can actually do (an A100 80GB tops out at
+    # 312 TFLOPS; 4 slices each reading ~90% "effective" of the whole GPU
+    # would sum to ~1123 TFLOPS under the old, buggy math). Until MIG
+    # profile data is available, these samples must report capacity as
+    # unknown rather than a wrong, overcounted number.
+    slices = [
+        normalize_sample(_raw(gpu_instance_id=str(i), utilization_pct=90.0))
+        for i in range(1, 5)
+    ]
+
+    assert all(r.effective_tflops is None for r in slices)
+    assert all(r.capability_known is False for r in slices)
+
+    physical_gpu_capacity = 312.0  # NVIDIA A100 80GB fp16 TFLOPS
+    summed_effective_tflops = sum(r.effective_tflops or 0.0 for r in slices)
+    assert summed_effective_tflops <= physical_gpu_capacity
+
+
+def test_out_of_range_utilization_treated_as_missing_not_trusted():
+    # Regression: a corrupted reading (driver bug, disk corruption) is worse
+    # than a missing one -- fed verbatim into effective_tflops it silently
+    # produces a wrong number instead of just lowering coverage_ratio.
+    record = normalize_sample(_raw(utilization_pct=250.0))
+    assert record.utilization_pct is None
+    assert record.effective_tflops is None
+
+
+def test_negative_utilization_treated_as_missing():
+    record = normalize_sample(_raw(utilization_pct=-5.0))
+    assert record.utilization_pct is None
+    assert record.effective_tflops is None
+
+
+def test_nan_utilization_treated_as_missing():
+    record = normalize_sample(_raw(utilization_pct=float("nan")))
+    assert record.utilization_pct is None
+    assert record.effective_tflops is None
+
+
+def test_negative_memory_and_power_treated_as_missing():
+    record = normalize_sample(_raw(memory_used_mb=-1.0, memory_free_mb=float("nan"), power_draw_w=-200.0))
+    assert record.memory_used_mb is None
+    assert record.memory_free_mb is None
+    assert record.power_draw_w is None
+
+
 def test_normalize_unattributed_sample_has_no_workload():
     record = normalize_sample(_raw(namespace=UNATTRIBUTED, pod=None, container=None))
     assert record.workload is None

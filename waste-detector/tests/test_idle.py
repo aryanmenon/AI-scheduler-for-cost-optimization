@@ -101,6 +101,16 @@ def test_time_gap_between_buckets_breaks_streak_continuity():
     assert len(findings) == 2
 
 
+def test_utilization_exactly_at_threshold_counts_as_idle():
+    # Boundary semantics: idle_threshold_pct=2.0 is inclusive -- exactly at
+    # the threshold qualifies, consistent across every detector in this
+    # module (see fragmentation.py, which was the one exception until it
+    # was aligned to match).
+    rows = [_row(i * 3600.0, avg_utilization_pct=2.0, max_utilization_pct=2.0) for i in range(6)]
+    findings = detect_idle(rows, _config())
+    assert len(findings) == 1
+
+
 def test_unattributed_gpu_never_flagged():
     rows = [_row(i * 3600.0, namespace="unattributed", workload=None) for i in range(6)]
     findings = detect_idle(rows, _config())

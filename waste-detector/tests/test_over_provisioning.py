@@ -85,6 +85,15 @@ def test_low_coverage_rows_excluded_from_observation_count():
     assert findings[0].metric_value == 20.0
 
 
+def test_peak_exactly_at_threshold_still_flagged():
+    # Boundary semantics: over_provision_threshold_pct=30.0 is inclusive --
+    # a peak exactly at the threshold still qualifies (only a peak *above*
+    # it excludes the workload), consistent across every detector.
+    rows = [_row(i * 3600.0, max_utilization_pct=30.0) for i in range(24)]
+    findings = detect_over_provisioning(rows, _config())
+    assert len(findings) == 1
+
+
 def test_unattributed_rows_never_flagged():
     rows = [_row(i * 3600.0, max_utilization_pct=20.0, namespace="unattributed", workload=None) for i in range(24)]
     findings = detect_over_provisioning(rows, _config())

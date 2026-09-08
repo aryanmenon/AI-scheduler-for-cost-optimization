@@ -1,9 +1,9 @@
 # savings-estimator
 
 Phase 1, Component 4 of the GPU cost-optimization SaaS: prices
-waste-detector's findings into confidence-scored dollar figures, sizing
-right-sizing recommendations against an SLA-aware utilization ceiling
-rather than a naive "run at 100%" target.
+waste-detector's findings into confidence-scored rupee (INR) figures,
+sizing right-sizing recommendations against an SLA-aware utilization
+ceiling rather than a naive "run at 100%" target.
 
 ## Estimate basis: observed vs. projected
 
@@ -28,13 +28,13 @@ more customer trust than the waste it fixed.
 
 ## Pricing is configurable, not asserted
 
-`pricing.py` ships illustrative public on-demand list-price approximations
-as a fallback, but a real deployment should always set
-`GPU_HOURLY_RATES_JSON` to the customer's actual contracted rate. A GPU
-model with no known rate anywhere is marked explicitly `unpriceable`
-rather than priced against a guess -- a wrong "savings" number computed
-against a rate the customer doesn't pay would undermine the one thing
-this product is selling: a trustworthy dollar figure.
+`pricing.py` ships illustrative Indian GPU-cloud on-demand list-price
+approximations (in INR) as a fallback, but a real deployment should
+always set `GPU_HOURLY_RATES_JSON` to the customer's actual contracted
+rate. A GPU model with no known rate anywhere is marked explicitly
+`unpriceable` rather than priced against a guess -- a wrong "savings"
+number computed against a rate the customer doesn't pay would undermine
+the one thing this product is selling: a trustworthy rupee figure.
 
 ## Local development
 

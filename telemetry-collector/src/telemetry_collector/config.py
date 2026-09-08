@@ -18,9 +18,38 @@ class Config:
     scrape_interval_seconds: float
     http_timeout_seconds: float
     max_scrape_retries: int
+    # This runs unattended, scraping every ~30s, for weeks at a time (see
+    # storage.py's module docstring) -- without a retention window,
+    # gpu_metrics/scrape_runs grow without bound and eventually exhaust
+    # disk. The default (14 days) must stay generous enough that
+    # ingestion-normalization -- which reads this same file by
+    # scrape_run_id, not by age -- has always caught up well before data
+    # this old is pruned. 0 (or less) disables pruning.
+    retention_hours: float = 14 * 24.0
+    # Touched with the current time at the end of every run_forever
+    # iteration, success or failure -- run_once's own exceptions are caught
+    # and logged (see collector.py) so the process itself never crashes on
+    # a bad cycle, which means a plain "is the process alive" liveness
+    # check can't catch a genuinely stuck loop. A Kubernetes exec probe
+    # checking this file's mtime can. Defaults alongside sqlite_path so it
+    # lands on the same writable volume without needing its own mount.
+    heartbeat_path: str = "/data/.heartbeat"
+    # A Slack-compatible incoming webhook URL to POST a human-visible
+    # alert to once a chronic failure is detected -- a structured log line
+    # only reaches someone already looking. Unset (the default) disables
+    # alerting entirely; this runs fine without it, same as
+    # DASHBOARD_AUTH_TOKEN being optional.
+    alert_webhook_url: str | None = None
+    # How many *consecutive* failed cycles trigger an alert. Edge-
+    # triggered (fires once on crossing this, once again on recovery), not
+    # on every cycle past it -- one transient blip shouldn't page anyone,
+    # matching the same false-positive-cost principle waste-detector's own
+    # thresholds are built on.
+    alert_consecutive_failure_threshold: int = 3
 
     @classmethod
     def from_env(cls) -> "Config":
+        sqlite_path = os.environ.get("TELEMETRY_SQLITE_PATH", "/data/telemetry.db")
         return cls(
             dcgm_exporter_url=os.environ.get(
                 "DCGM_EXPORTER_URL", "http://dcgm-exporter:9400/metrics"
@@ -28,9 +57,7 @@ class Config:
             kube_state_metrics_url=os.environ.get(
                 "KUBE_STATE_METRICS_URL", "http://kube-state-metrics:8080/metrics"
             ),
-            sqlite_path=os.environ.get(
-                "TELEMETRY_SQLITE_PATH", "/data/telemetry.db"
-            ),
+            sqlite_path=sqlite_path,
             scrape_interval_seconds=float(
                 os.environ.get("SCRAPE_INTERVAL_SECONDS", "30")
             ),
@@ -38,4 +65,12 @@ class Config:
                 os.environ.get("HTTP_TIMEOUT_SECONDS", "10")
             ),
             max_scrape_retries=int(os.environ.get("MAX_SCRAPE_RETRIES", "3")),
+            retention_hours=float(os.environ.get("TELEMETRY_RETENTION_HOURS", str(14 * 24))),
+            heartbeat_path=os.environ.get(
+                "HEARTBEAT_PATH", os.path.join(os.path.dirname(sqlite_path) or ".", ".heartbeat")
+            ),
+            alert_webhook_url=os.environ.get("ALERT_WEBHOOK_URL") or None,
+            alert_consecutive_failure_threshold=int(
+                os.environ.get("ALERT_CONSECUTIVE_FAILURE_THRESHOLD", "3")
+            ),
         )

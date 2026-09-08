@@ -34,6 +34,17 @@ def test_cursor_roundtrip(storage):
     assert storage.get_cursor() == 99
 
 
+def test_rollup_recompute_watermark_defaults_to_none(storage):
+    assert storage.get_last_rollup_recompute_at("daily") is None
+
+
+def test_rollup_recompute_watermark_roundtrip(storage):
+    storage.set_last_rollup_recompute_at("daily", 1000.0)
+    assert storage.get_last_rollup_recompute_at("daily") == 1000.0
+    storage.set_last_rollup_recompute_at("daily", 2000.0)
+    assert storage.get_last_rollup_recompute_at("daily") == 2000.0
+
+
 def test_insert_normalized_samples(storage):
     records = [normalize_sample(_raw(i, i * 30)) for i in range(1, 4)]
     storage.insert_normalized_samples(records)
@@ -61,3 +72,34 @@ def test_replace_rollups_is_idempotent_over_overlapping_windows(storage):
     all_rollups = storage.rollups("5m")
     assert len(all_rollups) == 1
     assert all_rollups[0]["sample_count"] == 10
+
+
+def test_prune_normalized_samples_older_than_removes_old_keeps_recent(storage):
+    # Regression: this raw per-scrape table had no pruning -- same
+    # unbounded-growth risk telemetry-collector's gpu_metrics table had.
+    old = [normalize_sample(_raw(1, scraped_at=1000.0))]
+    recent = [normalize_sample(_raw(2, scraped_at=2_000_000.0))]
+    storage.insert_normalized_samples(old + recent)
+
+    deleted = storage.prune_normalized_samples_older_than(cutoff=1_000_000.0)
+
+    assert deleted == 1
+    assert storage.count_normalized_samples() == 1
+
+
+def test_prune_rollups_older_than_removes_old_keeps_recent(storage):
+    old_rollup = compute_rollups(
+        [normalize_sample(_raw(1, scraped_at=1000.0))], "5m", scrape_interval_seconds=30
+    )
+    recent_rollup = compute_rollups(
+        [normalize_sample(_raw(2, scraped_at=2_000_000.0))], "5m", scrape_interval_seconds=30
+    )
+    storage.replace_rollups("5m", 0, 300, old_rollup)
+    storage.replace_rollups("5m", 1_999_800, 2_000_100, recent_rollup)
+
+    deleted = storage.prune_rollups_older_than(cutoff=1_000_000.0)
+
+    assert deleted == 1
+    remaining = storage.rollups("5m")
+    assert len(remaining) == 1
+    assert remaining[0]["bucket_start"] == 1_999_800

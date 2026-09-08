@@ -50,6 +50,62 @@ def test_reinserting_same_window_replaces_not_duplicates(storage):
     assert row["metric_value"] == 5.0
 
 
+def test_growing_window_end_replaces_not_duplicates(storage):
+    # Regression: every detection cycle re-derives findings from scratch, so
+    # an *ongoing* waste condition keeps the same window_start (the streak's
+    # stable start) but a window_end that grows each cycle as more hourly
+    # rollups arrive. The uniqueness key must not include window_end, or
+    # each cycle inserts a new row instead of replacing the prior one --
+    # silently duplicating (and downstream, double-counting) the same
+    # ongoing finding.
+    cycle_1 = _finding(window_start=0.0, window_end=3 * 3600.0, metric_value=3.0)
+    storage.insert_findings([cycle_1], detected_at=1000.0)
+
+    cycle_2 = _finding(window_start=0.0, window_end=6 * 3600.0, metric_value=6.0)
+    storage.insert_findings([cycle_2], detected_at=2000.0)
+
+    assert storage.count() == 1
+    row = storage.all_findings()[0]
+    assert row["window_end"] == 6 * 3600.0
+    assert row["metric_value"] == 6.0
+
+
+def test_prune_older_than_removes_stale_findings_keeps_active(storage):
+    # Regression: findings had no pruning -- a resolved condition's last
+    # finding just stops being refreshed rather than being deleted, so old,
+    # no-longer-active findings accumulate forever without this.
+    stale = _finding(category=IDLE, window_start=0.0)
+    storage.insert_findings([stale], detected_at=1000.0)
+
+    active = _finding(category=OVER_PROVISIONED, window_start=100.0)
+    storage.insert_findings([active], detected_at=2_000_000.0)
+
+    deleted = storage.prune_older_than(cutoff=1_000_000.0)
+
+    assert deleted == 1
+    remaining = storage.all_findings()
+    assert len(remaining) == 1
+    assert remaining[0]["category"] == OVER_PROVISIONED
+
+
+def test_reinserting_same_window_preserves_row_id(storage):
+    # Regression: INSERT OR REPLACE against a secondary UNIQUE index (not
+    # the primary key) makes SQLite delete-then-insert on conflict, which
+    # hands the "replaced" row a brand-new autoincrement id every time.
+    # savings-estimator's SavingsEstimate.finding_id is sourced from this
+    # id, and its own storage dedupes on finding_id -- so an id that
+    # churns every cycle means savings-estimator's own dedup never
+    # matches, and a fresh row gets inserted every cycle for the same
+    # ongoing finding. The id must stay stable across a replace.
+    storage.insert_findings([_finding(metric_value=4.0)], detected_at=1000.0)
+    first_id = storage.all_findings()[0]["id"]
+
+    storage.insert_findings([_finding(metric_value=5.0)], detected_at=2000.0)
+    second_id = storage.all_findings()[0]["id"]
+
+    assert first_id == second_id
+
+
 def test_distinct_gpu_instances_are_separate_findings(storage):
     storage.insert_findings(
         [

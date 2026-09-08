@@ -33,14 +33,42 @@ class Config:
     fragmentation_capture_fraction: float
 
     # JSON object mapping a GPU capability's canonical_name (see
-    # ingestion_normalization.capability) to a $/hour rate. Overrides the
+    # ingestion_normalization.capability) to a ₹/hour rate. Overrides the
     # illustrative defaults in pricing.py -- always prefer a customer's
-    # actual contracted rate over the public on-demand list-price
+    # actual contracted rate over the Indian GPU-cloud on-demand list-price
     # approximations shipped as fallbacks.
     gpu_hourly_rates_json: str | None
 
+    # savings_estimates has no natural cap: every cycle re-prices all
+    # findings currently in waste-detector's database, and a resolved
+    # finding's estimate just stops being refreshed rather than being
+    # deleted. Kept as long as the dashboard might reasonably want
+    # historical estimates for. 0 disables pruning.
+    savings_estimates_retention_hours: float = 2160.0  # 90 days
+    # Touched with the current time at the end of every run_forever
+    # iteration, success or failure -- run_once's own exceptions are caught
+    # and logged (see main.py) so the process itself never crashes on a bad
+    # cycle, which means a plain "is the process alive" liveness check
+    # can't catch a genuinely stuck loop. A Kubernetes exec probe checking
+    # this file's mtime can. Defaults next to savings_sqlite_path (this
+    # component's own write target) so it lands on that writable volume
+    # without needing its own mount.
+    heartbeat_path: str = "/data/savings/.heartbeat"
+    # A Slack-compatible incoming webhook URL to POST a human-visible
+    # alert to once a chronic failure is detected -- a structured log line
+    # only reaches someone already looking. Unset (the default) disables
+    # alerting entirely.
+    alert_webhook_url: str | None = None
+    # How many *consecutive* failed cycles trigger an alert. Edge-
+    # triggered (fires once on crossing this, once again on recovery), not
+    # on every cycle past it -- one transient blip shouldn't page anyone.
+    alert_consecutive_failure_threshold: int = 3
+
     @classmethod
     def from_env(cls) -> "Config":
+        savings_sqlite_path = os.environ.get(
+            "SAVINGS_SQLITE_PATH", "/data/savings/savings.db"
+        )
         return cls(
             findings_sqlite_path=os.environ.get(
                 "FINDINGS_SQLITE_PATH", "/data/findings/findings.db"
@@ -48,9 +76,7 @@ class Config:
             normalized_sqlite_path=os.environ.get(
                 "NORMALIZED_SQLITE_PATH", "/data/normalized/normalized.db"
             ),
-            savings_sqlite_path=os.environ.get(
-                "SAVINGS_SQLITE_PATH", "/data/savings/savings.db"
-            ),
+            savings_sqlite_path=savings_sqlite_path,
             poll_interval_seconds=float(os.environ.get("ESTIMATOR_POLL_INTERVAL_SECONDS", "300")),
             min_finding_confidence=float(os.environ.get("MIN_FINDING_CONFIDENCE", "0.7")),
             sla_target_utilization_pct=float(
@@ -61,4 +87,15 @@ class Config:
                 os.environ.get("FRAGMENTATION_CAPTURE_FRACTION", "0.5")
             ),
             gpu_hourly_rates_json=os.environ.get("GPU_HOURLY_RATES_JSON"),
+            savings_estimates_retention_hours=float(
+                os.environ.get("SAVINGS_ESTIMATES_RETENTION_HOURS", "2160")
+            ),
+            heartbeat_path=os.environ.get(
+                "HEARTBEAT_PATH",
+                os.path.join(os.path.dirname(savings_sqlite_path) or ".", ".heartbeat"),
+            ),
+            alert_webhook_url=os.environ.get("ALERT_WEBHOOK_URL") or None,
+            alert_consecutive_failure_threshold=int(
+                os.environ.get("ALERT_CONSECUTIVE_FAILURE_THRESHOLD", "3")
+            ),
         )

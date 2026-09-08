@@ -59,8 +59,19 @@ CREATE TABLE IF NOT EXISTS waste_findings (
 
 CREATE INDEX IF NOT EXISTS idx_findings_category ON waste_findings (category);
 CREATE INDEX IF NOT EXISTS idx_findings_workload ON waste_findings (namespace, workload);
+-- Keyed on window_start (not window_end): every detector computes
+-- window_start as the stable start of a streak/observation window that
+-- only grows monotonically while the underlying condition persists (see
+-- idle.py, over_provisioning.py, fragmentation.py, patterns.py). Each
+-- detection cycle re-derives the *entire* history from scratch, so an
+-- ongoing waste condition produces a growing window_end every cycle;
+-- keying on window_end too would make each cycle's row fail to match the
+-- previous one and insert a duplicate instead of replacing it.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_findings_window
-    ON waste_findings (category, node, gpu_index, COALESCE(gpu_instance_id, ''), window_start, window_end);
+    ON waste_findings (
+        category, node, gpu_index, COALESCE(gpu_instance_id, ''),
+        namespace, COALESCE(workload, ''), window_start
+    );
 """
 
 
@@ -94,10 +105,19 @@ class FindingsStorage:
             return
         with self._cursor() as cur:
             cur.executemany(
-                """INSERT OR REPLACE INTO waste_findings
+                """INSERT INTO waste_findings
                    (category, node, gpu_index, gpu_instance_id, namespace, workload,
                     window_start, window_end, confidence, metric_value, detail, detected_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT (
+                       category, node, gpu_index, COALESCE(gpu_instance_id, ''),
+                       namespace, COALESCE(workload, ''), window_start
+                   ) DO UPDATE SET
+                       window_end = excluded.window_end,
+                       confidence = excluded.confidence,
+                       metric_value = excluded.metric_value,
+                       detail = excluded.detail,
+                       detected_at = excluded.detected_at""",
                 [
                     (
                         f.category, f.node, f.gpu_index, f.gpu_instance_id, f.namespace,
@@ -107,6 +127,19 @@ class FindingsStorage:
                     for f in findings
                 ],
             )
+
+    def prune_older_than(self, cutoff: float) -> int:
+        """Delete findings whose detected_at < cutoff.
+
+        detected_at is refreshed to "now" every cycle a finding is still
+        active (see insert_findings' INSERT OR REPLACE), so a finding that
+        hasn't been refreshed in a long time is one whose condition ended
+        -- it's stale, not just old. Without this, every category ever
+        detected accumulates forever with no way to know it's resolved.
+        """
+        with self._cursor() as cur:
+            cur.execute("DELETE FROM waste_findings WHERE detected_at < ?", (cutoff,))
+            return cur.rowcount
 
     def all_findings(self, category: str | None = None) -> list[sqlite3.Row]:
         if category is None:

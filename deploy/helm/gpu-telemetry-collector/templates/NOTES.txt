@@ -19,18 +19,32 @@ This deployed, read-only:
 {{- end }}
 {{- if .Values.savingsEstimator.enabled }}
   - savings-estimator (sidecar)             -- prices those findings into
-                                               confidence-scored $ impact
+                                               confidence-scored INR impact
                                                against an SLA-aware
                                                right-sizing ceiling
 {{- end }}
 {{- if .Values.dashboard.enabled }}
   - dashboard (sidecar + Service)           -- the self-serve sales
-                                               artifact: renders those $
+                                               artifact: renders those ₹
                                                estimates as a live report
 {{- end }}
 
 Nothing here can create, update, or delete anything in your cluster --
 every RBAC rule granted is get/list/watch only.
+
+{{- if .Values.alerting.webhookUrl }}
+
+Human-visible alerting is configured: a webhook message fires once a
+service's consecutive cycle/request failures cross
+alerting.consecutiveFailureThreshold ({{ .Values.alerting.consecutiveFailureThreshold }}), and again on recovery.
+{{- else }}
+
+Human-visible alerting is NOT configured (alerting.webhookUrl is empty).
+Each service still logs a structured line per cycle and gets restarted by
+its own liveness probe if it hangs, but nothing pages anyone if it's
+chronically failing without hanging. Set alerting.webhookUrl to a
+Slack-compatible incoming webhook to change that.
+{{- end }}
 
 Check that GPUs are being scraped:
 
@@ -49,25 +63,46 @@ Check that waste findings are being produced:
 {{- end }}
 {{- if .Values.savingsEstimator.enabled }}
 
-Check that $ savings estimates are being produced:
+Check that ₹ savings estimates are being produced:
 
   kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "gpu-telemetry-collector.fullname" . }}-collector -c savings-estimator -f
 
 IMPORTANT: savingsEstimator.gpuHourlyRatesJson is empty by default, which
-means estimates are priced against illustrative public list rates, not
-your actual cost. Set it to your contracted $/hour rates before trusting
-any dollar figure this produces.
+means estimates are priced against illustrative Indian GPU-cloud list
+rates, not your actual cost. Set it to your contracted INR/hour rates
+before trusting any rupee figure this produces.
 {{- end }}
 {{- if .Values.dashboard.enabled }}
+
+The dashboard requires a bearer token. Retrieve the one this install
+generated (or set yourself via dashboard.authToken):
+
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "gpu-telemetry-collector.fullname" . }}-dashboard-auth -o jsonpath='{.data.DASHBOARD_AUTH_TOKEN}' | base64 -d; echo
 
 View the report:
 
   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "gpu-telemetry-collector.fullname" . }}-dashboard {{ .Values.dashboard.port }}:{{ .Values.dashboard.port }}
 
-then open http://localhost:{{ .Values.dashboard.port }} -- it always reflects
-the current data, no refresh/rebuild needed. To generate a standalone HTML
-file to share (e.g. by email), run `generate-report` inside the dashboard
-container:
+then, with the token above:
+
+  curl -H "Authorization: Bearer <token>" http://localhost:{{ .Values.dashboard.port }}/
+
+kubectl port-forward is safe to use as-is here -- it's tunneled through
+the Kubernetes API server's own TLS/mTLS, so the token and every cost
+figure in the report stay encrypted end to end.
+{{- if ne .Values.dashboard.serviceType "ClusterIP" }}
+
+*** dashboard.serviceType is "{{ .Values.dashboard.serviceType }}", not the
+*** default ClusterIP -- that exposes the dashboard beyond port-forward
+*** with NO TLS of its own. You MUST terminate TLS in front of it
+*** (an Ingress with TLS, a load balancer with TLS passthrough disabled
+*** and a cert attached, etc.) or the bearer token and all cost data in
+*** the report travel in plaintext.
+{{- end }}
+
+The report always reflects the current data, no refresh/rebuild needed.
+To generate a standalone HTML file to share (e.g. by email), run
+`generate-report` inside the dashboard container:
 
   kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "gpu-telemetry-collector.fullname" . }}-collector -c dashboard -- generate-report
   kubectl -n {{ .Release.Namespace }} cp {{ "{POD}" }}:/app/report.html ./report.html -c dashboard

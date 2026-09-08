@@ -61,3 +61,44 @@ def test_latest_metrics_returns_rows(storage, dcgm_text):
     rows = storage.latest_metrics(limit=10)
     assert len(rows) == 5
     assert rows[0]["node"] in {"gpu-node-1", "gpu-node-2", "gpu-node-3"}
+
+
+def test_prune_older_than_removes_old_rows_but_keeps_recent(storage, dcgm_text):
+    # Regression: nothing pruned this unattended-for-weeks database, so it
+    # grew without bound. Old rows (both gpu_metrics and their parent
+    # scrape_runs, which the foreign key requires deleting in that order)
+    # must go; recent rows must survive.
+    records = correlate(parse_metrics(dcgm_text))
+    storage.record_scrape(records, duration_ms=1.0, scraped_at=1000.0)  # old
+    storage.record_scrape(records, duration_ms=1.0, scraped_at=2_000_000.0)  # recent
+
+    deleted = storage.prune_older_than(cutoff=1_000_000.0)
+
+    assert deleted == 5
+    assert storage.count_gpu_metrics() == 5
+    assert storage.count_scrape_runs() == 1
+    remaining_run = storage._conn.execute("SELECT scraped_at FROM scrape_runs").fetchone()
+    assert remaining_run[0] == 2_000_000.0
+
+
+def test_prune_older_than_deletes_children_before_parent_without_fk_violation(storage, dcgm_text):
+    records = correlate(parse_metrics(dcgm_text))
+    storage.record_scrape(records, duration_ms=1.0, scraped_at=1000.0)
+
+    # Must not raise sqlite3.IntegrityError -- gpu_metrics.scrape_run_id is
+    # a foreign key with foreign_keys=ON, so gpu_metrics rows have to be
+    # gone before their parent scrape_runs row is deleted.
+    storage.prune_older_than(cutoff=1_000_000.0)
+
+    assert storage.count_gpu_metrics() == 0
+    assert storage.count_scrape_runs() == 0
+
+
+def test_prune_older_than_is_a_noop_when_nothing_is_old(storage, dcgm_text):
+    records = correlate(parse_metrics(dcgm_text))
+    storage.record_scrape(records, duration_ms=1.0, scraped_at=2_000_000.0)
+
+    deleted = storage.prune_older_than(cutoff=1000.0)
+
+    assert deleted == 0
+    assert storage.count_gpu_metrics() == 5

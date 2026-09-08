@@ -11,6 +11,7 @@ data:
   SCRAPE_INTERVAL_SECONDS: {{ .Values.collector.scrapeIntervalSeconds | quote }}
   HTTP_TIMEOUT_SECONDS: {{ .Values.collector.httpTimeoutSeconds | quote }}
   MAX_SCRAPE_RETRIES: {{ .Values.collector.maxScrapeRetries | quote }}
+  TELEMETRY_RETENTION_HOURS: {{ .Values.collector.retentionHours | quote }}
   # Consumed by the ingestion sidecar below. RAW_TELEMETRY_SQLITE_PATH
   # intentionally points at the same file as TELEMETRY_SQLITE_PATH above --
   # the collector and ingestion containers reach it via different mounts
@@ -20,6 +21,9 @@ data:
   INGESTION_POLL_INTERVAL_SECONDS: {{ .Values.ingestion.pollIntervalSeconds | quote }}
   SOURCE_SCRAPE_INTERVAL_SECONDS: {{ .Values.collector.scrapeIntervalSeconds | quote }}
   LOW_CONFIDENCE_COVERAGE_THRESHOLD: {{ .Values.ingestion.lowConfidenceCoverageThreshold | quote }}
+  DAILY_ROLLUP_MIN_RECOMPUTE_INTERVAL_SECONDS: {{ .Values.ingestion.dailyRollupMinRecomputeIntervalSeconds | quote }}
+  NORMALIZED_SAMPLES_RETENTION_HOURS: {{ .Values.ingestion.normalizedSamplesRetentionHours | quote }}
+  ROLLUPS_RETENTION_HOURS: {{ .Values.ingestion.rollupsRetentionHours | quote }}
   # Consumed by the waste-detector sidecar below.
   FINDINGS_SQLITE_PATH: "/data/findings/findings.db"
   DETECTOR_POLL_INTERVAL_SECONDS: {{ .Values.wasteDetector.pollIntervalSeconds | quote }}
@@ -34,6 +38,7 @@ data:
   PATTERN_MIN_DAYS_OBSERVED: {{ .Values.wasteDetector.patternMinDaysObserved | quote }}
   PATTERN_IDLE_THRESHOLD_PCT: {{ .Values.wasteDetector.patternIdleThresholdPct | quote }}
   PATTERN_MIN_CONSISTENT_FRACTION: {{ .Values.wasteDetector.patternMinConsistentFraction | quote }}
+  FINDINGS_RETENTION_HOURS: {{ .Values.wasteDetector.findingsRetentionHours | quote }}
   # Consumed by the savings-estimator sidecar below.
   SAVINGS_SQLITE_PATH: "/data/savings/savings.db"
   ESTIMATOR_POLL_INTERVAL_SECONDS: {{ .Values.savingsEstimator.pollIntervalSeconds | quote }}
@@ -46,10 +51,23 @@ data:
   # over the illustrative public list-price defaults baked into pricing.py.
   GPU_HOURLY_RATES_JSON: {{ .Values.savingsEstimator.gpuHourlyRatesJson | quote }}
   {{- end }}
+  SAVINGS_ESTIMATES_RETENTION_HOURS: {{ .Values.savingsEstimator.savingsEstimatesRetentionHours | quote }}
   # Consumed by the dashboard sidecar below -- the self-serve sales artifact.
+  # 0.0.0.0 is required here, not a leftover default: dashboard-service.yaml
+  # is a real ClusterIP Service routing to this pod's actual network
+  # interface, not to loopback, so binding to 127.0.0.1 would make the
+  # Service unable to reach the container at all. DASHBOARD_AUTH_TOKEN
+  # below (not the bind address) is what actually gates access.
   DASHBOARD_HOST: "0.0.0.0"
   DASHBOARD_PORT: {{ .Values.dashboard.port | quote }}
   TOP_FINDINGS_LIMIT: {{ .Values.dashboard.topFindingsLimit | quote }}
+  DASHBOARD_RATE_LIMIT_MAX_REQUESTS: {{ .Values.dashboard.rateLimitMaxRequests | quote }}
+  DASHBOARD_RATE_LIMIT_WINDOW_SECONDS: {{ .Values.dashboard.rateLimitWindowSeconds | quote }}
+  # Consumed by all five sidecars: how many *consecutive* cycle/request
+  # failures trigger a human-visible webhook alert (see
+  # alert-webhook-secret.yaml for the URL itself, which is a credential
+  # and lives in a Secret instead). Not sensitive on its own.
+  ALERT_CONSECUTIVE_FAILURE_THRESHOLD: {{ .Values.alerting.consecutiveFailureThreshold | quote }}
 ---
 {{- if .Values.persistence.enabled }}
 apiVersion: v1
@@ -101,6 +119,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "gpu-telemetry-collector.fullname" . }}-collector-config
+            {{- if .Values.alerting.webhookUrl }}
+            - secretRef:
+                name: {{ include "gpu-telemetry-collector.fullname" . }}-alert-webhook
+            {{- end }}
           resources:
             {{- toYaml .Values.collector.resources | nindent 12 }}
           securityContext:
@@ -108,6 +130,25 @@ spec:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 10001
+          # run_forever catches every exception from a scrape cycle and
+          # keeps looping (see collector.py) -- the process itself never
+          # crashes on a bad cycle, so a plain "is the process alive"
+          # check can't catch a genuinely stuck loop. This checks that
+          # /data/.heartbeat (touched at the end of every iteration,
+          # success or failure) is still fresh instead.
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  now=$(date +%s)
+                  hb=$(stat -c %Y /data/.heartbeat 2>/dev/null || echo 0)
+                  [ $((now - hb)) -lt {{ mul .Values.collector.scrapeIntervalSeconds 4 | add 60 }} ]
+            initialDelaySeconds: {{ add .Values.collector.scrapeIntervalSeconds 30 }}
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             # subPath "raw" isolates the collector's own database from the
             # "normalized" subdirectory the ingestion sidecar writes into,
@@ -122,6 +163,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "gpu-telemetry-collector.fullname" . }}-collector-config
+            {{- if .Values.alerting.webhookUrl }}
+            - secretRef:
+                name: {{ include "gpu-telemetry-collector.fullname" . }}-alert-webhook
+            {{- end }}
           resources:
             {{- toYaml .Values.ingestion.resources | nindent 12 }}
           securityContext:
@@ -129,6 +174,22 @@ spec:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 10002
+          # See the telemetry-collector container's livenessProbe comment
+          # above -- same reasoning, checking this component's own
+          # heartbeat file instead.
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  now=$(date +%s)
+                  hb=$(stat -c %Y /data/normalized/.heartbeat 2>/dev/null || echo 0)
+                  [ $((now - hb)) -lt {{ mul .Values.ingestion.pollIntervalSeconds 4 | add 60 }} ]
+            initialDelaySeconds: {{ add .Values.ingestion.pollIntervalSeconds 30 }}
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             # Read-only: this component must never be able to write into
             # the collector's raw data, even by accident (see
@@ -149,6 +210,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "gpu-telemetry-collector.fullname" . }}-collector-config
+            {{- if .Values.alerting.webhookUrl }}
+            - secretRef:
+                name: {{ include "gpu-telemetry-collector.fullname" . }}-alert-webhook
+            {{- end }}
           resources:
             {{- toYaml .Values.wasteDetector.resources | nindent 12 }}
           securityContext:
@@ -156,6 +221,22 @@ spec:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 10003
+          # See the telemetry-collector container's livenessProbe comment
+          # above -- same reasoning, checking this component's own
+          # heartbeat file instead.
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  now=$(date +%s)
+                  hb=$(stat -c %Y /data/findings/.heartbeat 2>/dev/null || echo 0)
+                  [ $((now - hb)) -lt {{ mul .Values.wasteDetector.pollIntervalSeconds 4 | add 60 }} ]
+            initialDelaySeconds: {{ add .Values.wasteDetector.pollIntervalSeconds 30 }}
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             # Read-only for the same reason as ingestion's mount above --
             # this component must never be able to write into
@@ -177,6 +258,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "gpu-telemetry-collector.fullname" . }}-collector-config
+            {{- if .Values.alerting.webhookUrl }}
+            - secretRef:
+                name: {{ include "gpu-telemetry-collector.fullname" . }}-alert-webhook
+            {{- end }}
           resources:
             {{- toYaml .Values.savingsEstimator.resources | nindent 12 }}
           securityContext:
@@ -184,6 +269,22 @@ spec:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 10004
+          # See the telemetry-collector container's livenessProbe comment
+          # above -- same reasoning, checking this component's own
+          # heartbeat file instead.
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  now=$(date +%s)
+                  hb=$(stat -c %Y /data/savings/.heartbeat 2>/dev/null || echo 0)
+                  [ $((now - hb)) -lt {{ mul .Values.savingsEstimator.pollIntervalSeconds 4 | add 60 }} ]
+            initialDelaySeconds: {{ add .Values.savingsEstimator.pollIntervalSeconds 30 }}
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             # Read-only against both upstream outputs it prices findings
             # from -- same reasoning as every read-only mount above (see
@@ -208,6 +309,12 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "gpu-telemetry-collector.fullname" . }}-collector-config
+            {{- if .Values.alerting.webhookUrl }}
+            - secretRef:
+                name: {{ include "gpu-telemetry-collector.fullname" . }}-alert-webhook
+            {{- end }}
+            - secretRef:
+                name: {{ include "gpu-telemetry-collector.fullname" . }}-dashboard-auth
           ports:
             - name: dashboard
               containerPort: {{ .Values.dashboard.port }}
@@ -218,6 +325,25 @@ spec:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 10005
+          # /healthz (see server.py) is deliberately unauthenticated and
+          # returns no report data -- a liveness/readiness probe can't
+          # carry the bearer token, and shouldn't need to.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.dashboard.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.dashboard.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             # Read-only: the dashboard only ever reads savings-estimator's
             # output (see dashboard's report_reader.py, opened in mode=ro).

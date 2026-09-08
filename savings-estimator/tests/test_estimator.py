@@ -1,3 +1,4 @@
+import pytest
 from waste_detector.findings import FRAGMENTED, IDLE, OVER_PROVISIONED, RECURRING_PATTERN
 
 from savings_estimator.config import Config
@@ -70,8 +71,8 @@ def test_idle_priced_as_observed_window_not_projected():
     estimate = estimate_for_finding(finding, rows, _config(), {})
     assert estimate.priceable
     assert estimate.basis == BASIS_OBSERVED_WINDOW
-    # 4 hours idle at the A100 default illustrative rate ($3.50/hr).
-    assert estimate.amount_usd == 4 * 3.50
+    # 4 hours idle at the A100 default illustrative rate (₹300.00/hr).
+    assert estimate.amount_inr == 4 * 300.00
 
 
 def test_over_provisioned_recommends_smaller_sku_and_monthly_savings():
@@ -80,7 +81,7 @@ def test_over_provisioned_recommends_smaller_sku_and_monthly_savings():
     estimate = estimate_for_finding(finding, rows, _config(), {})
     assert estimate.priceable
     assert estimate.basis == BASIS_PROJECTED_MONTHLY
-    assert estimate.amount_usd > 0
+    assert estimate.amount_inr > 0
     assert "T4" in estimate.recommended_action
 
 
@@ -90,7 +91,53 @@ def test_over_provisioned_high_peak_may_yield_zero_savings():
     finding = _finding(OVER_PROVISIONED, metric_value=68.0)
     rows = [_rollup()]
     estimate = estimate_for_finding(finding, rows, _config(sla_target_utilization_pct=70.0), {})
-    assert estimate.amount_usd >= 0.0
+    assert estimate.amount_inr >= 0.0
+
+
+def test_idle_with_inverted_window_is_unpriceable_not_negative():
+    # Regression: a corrupted or clock-skewed upstream finding with
+    # window_end before window_start must not silently produce a negative
+    # rupee "savings" figure shown to a customer.
+    finding = _finding(IDLE, window_start=3600.0, window_end=0.0)
+    rows = [_rollup()]
+    estimate = estimate_for_finding(finding, rows, _config(), {})
+    assert not estimate.priceable
+    assert estimate.amount_inr is None
+
+
+def test_recurring_pattern_out_of_range_fraction_is_unpriceable():
+    # Regression: metric_value here is a fraction in [0, 1] (share of
+    # observed days quiet at this hour). A corrupted upstream value above 1
+    # must not silently inflate the monthly projection without limit.
+    finding = _finding(RECURRING_PATTERN, metric_value=1.5)
+    rows = [_rollup()]
+    estimate = estimate_for_finding(finding, rows, _config(), {})
+    assert not estimate.priceable
+    assert estimate.amount_inr is None
+
+
+def test_recurring_pattern_negative_fraction_is_unpriceable():
+    finding = _finding(RECURRING_PATTERN, metric_value=-0.1)
+    rows = [_rollup()]
+    estimate = estimate_for_finding(finding, rows, _config(), {})
+    assert not estimate.priceable
+
+
+def test_over_provisioned_mig_slice_is_unpriceable_not_mispriced():
+    # Regression: capability.fp16_tflops here is the *physical* GPU's full
+    # capacity (312 TFLOPS for an A100), but finding.metric_value (peak
+    # utilization) for a MIG slice is relative to that slice, not the whole
+    # GPU. Sizing a recommendation from full-GPU TFLOPS against
+    # slice-relative utilization mixed two different bases and could
+    # recommend a SKU actually bigger than the slice already is (e.g. "NVIDIA
+    # A10" for a workload confined to a small MIG slice). This must come back
+    # unpriceable instead of a misleading number.
+    finding = _finding(OVER_PROVISIONED, gpu_instance_id="1", metric_value=15.0)
+    rows = [_rollup(gpu_instance_id="1")]
+    estimate = estimate_for_finding(finding, rows, _config(), {})
+    assert not estimate.priceable
+    assert estimate.amount_inr is None
+    assert "MIG" in estimate.methodology
 
 
 def test_fragmented_priced_with_capture_discount():
@@ -100,8 +147,34 @@ def test_fragmented_priced_with_capture_discount():
     estimate = estimate_for_finding(finding, rows, config, {})
     assert estimate.priceable
     assert estimate.basis == BASIS_PROJECTED_MONTHLY
-    # wasted_fraction = (1 - 0.20) * 0.5 = 0.40; monthly = 3.50 * 0.40 * 730
-    assert estimate.amount_usd == 3.50 * 0.40 * 730.0
+    # wasted_fraction = (1 - 0.20) * 0.5 = 0.40; monthly = 300.00 * 0.40 * 730
+    assert estimate.amount_inr == 300.00 * 0.40 * 730.0
+
+
+def test_fragmented_weights_avg_utilization_by_coverage_ratio():
+    # Regression: a low-coverage bucket (mostly missing data, reading near
+    # zero) must not count the same as a full-coverage one in the average
+    # -- that would understate a workload's real utilization and overstate
+    # its fragmentation waste. One reliable, busy hour and one sparse,
+    # near-empty hour should land close to the reliable reading, not
+    # halfway between them.
+    finding = _finding(FRAGMENTED, metric_value=2.0)
+    rows = [
+        _rollup(avg_utilization_pct=90.0, coverage_ratio=1.0),
+        _rollup(avg_utilization_pct=0.0, coverage_ratio=0.05),
+    ]
+    config = _config(fragmentation_capture_fraction=0.5)
+    estimate = estimate_for_finding(finding, rows, config, {})
+
+    # weighted avg = (90*1.0 + 0*0.05) / 1.05 =~ 85.7%
+    weighted_avg = (90.0 * 1.0 + 0.0 * 0.05) / 1.05
+    unweighted_avg = (90.0 + 0.0) / 2  # what the old, buggy average would give: 45%
+
+    wasted_fraction = max(0.0, 1 - weighted_avg / 100.0) * 0.5
+    assert estimate.amount_inr == pytest.approx(300.00 * wasted_fraction * 730.0)
+
+    wrong_wasted_fraction = max(0.0, 1 - unweighted_avg / 100.0) * 0.5
+    assert estimate.amount_inr != pytest.approx(300.00 * wrong_wasted_fraction * 730.0)
 
 
 def test_recurring_pattern_priced_from_consistent_fraction():
@@ -110,8 +183,8 @@ def test_recurring_pattern_priced_from_consistent_fraction():
     estimate = estimate_for_finding(finding, rows, _config(), {})
     assert estimate.priceable
     assert estimate.basis == BASIS_PROJECTED_MONTHLY
-    # 0.9 * 30 days * $3.50/hr
-    assert estimate.amount_usd == 0.9 * 30.0 * 3.50
+    # 0.9 * 30 days * ₹300.00/hr
+    assert estimate.amount_inr == 0.9 * 30.0 * 300.00
 
 
 def test_unknown_gpu_model_is_unpriceable():
@@ -119,7 +192,7 @@ def test_unknown_gpu_model_is_unpriceable():
     rows = [_rollup(gpu_model="Some Future GPU")]
     estimate = estimate_for_finding(finding, rows, _config(), {})
     assert not estimate.priceable
-    assert estimate.amount_usd is None
+    assert estimate.amount_inr is None
     assert estimate.basis is None
 
 
@@ -132,8 +205,8 @@ def test_no_rollup_data_is_unpriceable():
 def test_customer_rate_override_changes_amount():
     finding = _finding(IDLE, window_start=0.0, window_end=3600.0)
     rows = [_rollup()]
-    estimate = estimate_for_finding(finding, rows, _config(), {"NVIDIA A100 80GB": 1.00})
-    assert estimate.amount_usd == 1.00
+    estimate = estimate_for_finding(finding, rows, _config(), {"NVIDIA A100 80GB": 120.00})
+    assert estimate.amount_inr == 120.00
 
 
 def test_estimate_preserves_finding_identity():

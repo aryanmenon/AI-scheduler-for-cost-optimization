@@ -1,3 +1,6 @@
+import json
+import os
+
 from conftest import make_rollup_record, write_rollups
 
 from waste_detector.config import Config
@@ -49,6 +52,37 @@ def test_run_once_produces_idle_finding_from_real_rollups(tmp_path):
     storage.close()
 
 
+def test_run_once_emits_structured_cycle_complete_log(tmp_path, caplog):
+    # Regression: an operator needs a consistent, parseable signal per
+    # cycle without reading source code to learn what each service's
+    # ad-hoc log message means. Schema shared across all five services:
+    # event/component/duration_ms/rows_in/rows_out/errors.
+    normalized_path = str(tmp_path / "normalized.db")
+    records = [
+        make_rollup_record(bucket_start=float(i * 3600), avg_utilization_pct=0.0, max_utilization_pct=0.0)
+        for i in range(6)
+    ]
+    write_rollups(normalized_path, "hourly", records)
+
+    config = _config(normalized_path, str(tmp_path / "findings.db"))
+    storage = FindingsStorage(config.findings_sqlite_path)
+    reader = RollupReader(config.normalized_sqlite_path)
+
+    with caplog.at_level("INFO", logger="waste_detector.pipeline"):
+        run_once(config, reader, storage)
+
+    payloads = [json.loads(r.message) for r in caplog.records if r.message.startswith("{")]
+    cycle_logs = [p for p in payloads if p.get("event") == "cycle_complete"]
+    assert len(cycle_logs) == 1
+    log = cycle_logs[0]
+    assert log["component"] == "waste-detector"
+    assert log["rows_in"] == 6
+    assert log["rows_out"] == 1
+    assert log["errors"] == 0
+    reader.close()
+    storage.close()
+
+
 def test_run_once_is_idempotent_on_unchanged_rollups(tmp_path):
     normalized_path = str(tmp_path / "normalized.db")
     records = [
@@ -69,6 +103,71 @@ def test_run_once_is_idempotent_on_unchanged_rollups(tmp_path):
     reader2.close()
 
     assert storage.count() == 1  # re-running over the same data doesn't duplicate
+    storage.close()
+
+
+def test_run_once_does_not_flag_corrupted_peak_as_over_provisioned(tmp_path):
+    # Regression: a corrupted, negative max_utilization_pct (a bad
+    # driver/DCGM read) reads as "below threshold" just like a genuinely
+    # idle peak would, and must be excluded as untrustworthy rather than
+    # trusted into flagging the workload as over-provisioned on garbage
+    # data.
+    normalized_path = str(tmp_path / "normalized.db")
+    records = [
+        make_rollup_record(bucket_start=float(i * 3600), avg_utilization_pct=10.0, max_utilization_pct=-5.0)
+        for i in range(24)
+    ]
+    write_rollups(normalized_path, "hourly", records)
+
+    config = _config(normalized_path, str(tmp_path / "findings.db"))
+    storage = FindingsStorage(config.findings_sqlite_path)
+    reader = RollupReader(config.normalized_sqlite_path)
+
+    run_once(config, reader, storage)
+
+    from waste_detector.findings import OVER_PROVISIONED
+
+    assert storage.all_findings(category=OVER_PROVISIONED) == []
+    reader.close()
+    storage.close()
+
+
+def test_run_once_prunes_stale_findings_no_longer_redetected(tmp_path, monkeypatch):
+    # Regression: waste_findings had no pruning -- once a condition
+    # resolves (the workload is decommissioned, or simply stops being
+    # idle), its last finding just stops being refreshed rather than
+    # being deleted, so it would linger forever without this.
+    normalized_path = str(tmp_path / "normalized.db")
+    records = [
+        make_rollup_record(bucket_start=float(i * 3600), avg_utilization_pct=0.0, max_utilization_pct=0.0)
+        for i in range(6)
+    ]
+    write_rollups(normalized_path, "hourly", records)
+
+    findings_path = str(tmp_path / "findings.db")
+    config = _config(normalized_path, findings_path, findings_retention_hours=1.0)
+    storage = FindingsStorage(findings_path)
+
+    wall_clock = {"now": 1000.0}
+    monkeypatch.setattr("waste_detector.pipeline.time.time", lambda: wall_clock["now"])
+
+    reader1 = RollupReader(normalized_path)
+    run_once(config, reader1, storage)
+    reader1.close()
+    assert storage.count() == 1
+
+    # A later cycle's rollup data no longer includes this workload at all
+    # -- nothing re-detects/refreshes the earlier finding -- and enough
+    # wall-clock time has passed to exceed the 1h retention window.
+    empty_normalized_path = str(tmp_path / "empty_normalized.db")
+    write_rollups(empty_normalized_path, "hourly", [])
+    wall_clock["now"] = 10_000.0
+
+    reader2 = RollupReader(empty_normalized_path)
+    run_once(config, reader2, storage)
+    reader2.close()
+
+    assert storage.count() == 0
     storage.close()
 
 
@@ -103,3 +202,104 @@ def test_run_forever_picks_up_new_rollups_across_cycles(tmp_path):
     storage = FindingsStorage(config.findings_sqlite_path)
     assert storage.count() == 1  # same finding both cycles, replaced not duplicated
     storage.close()
+
+
+def test_run_forever_writes_heartbeat_every_cycle_even_after_exception(tmp_path, monkeypatch):
+    # Regression: run_once's own exceptions are caught inside run_forever
+    # so the process never crashes on a bad cycle -- a plain "is the
+    # process alive" Kubernetes liveness check can't detect a genuinely
+    # stuck loop. The heartbeat file must be touched on every iteration
+    # regardless of whether that cycle succeeded, so an exec probe
+    # checking its mtime actually reflects loop liveness.
+    normalized_path = str(tmp_path / "normalized.db")
+    records = [
+        make_rollup_record(bucket_start=float(i * 3600), avg_utilization_pct=0.0, max_utilization_pct=0.0)
+        for i in range(6)
+    ]
+    write_rollups(normalized_path, "hourly", records)
+
+    config = _config(
+        normalized_path, str(tmp_path / "findings.db"),
+        heartbeat_path=str(tmp_path / "heartbeat"),
+    )
+
+    import waste_detector.main as main_module
+    real_run_once = main_module.run_once
+    calls = {"n": 0}
+
+    def flaky_run_once(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ValueError("boom - simulated unexpected bug")
+        return real_run_once(*args, **kwargs)
+
+    monkeypatch.setattr(main_module, "run_once", flaky_run_once)
+
+    main_module.run_forever(config, stop_after=1)
+
+    # The very first (and only) cycle raised, yet the heartbeat must still
+    # have been written -- it reflects loop liveness, not cycle success.
+    assert os.path.exists(config.heartbeat_path)
+    first_heartbeat = float(open(config.heartbeat_path).read())
+
+    main_module.run_forever(config, stop_after=1)
+    second_heartbeat = float(open(config.heartbeat_path).read())
+
+    assert second_heartbeat > first_heartbeat
+
+
+def test_run_forever_alerts_after_consecutive_failures_then_on_recovery(tmp_path, monkeypatch):
+    # Regression: a structured cycle_complete log line only reaches an
+    # operator who's already looking for it. Once failures cross the
+    # configured threshold, a human-visible webhook alert must fire -- and
+    # exactly once (edge-triggered), not on every cycle past the
+    # threshold. A second alert must fire once the loop recovers.
+    normalized_path = str(tmp_path / "normalized.db")
+    records = [
+        make_rollup_record(bucket_start=float(i * 3600), avg_utilization_pct=0.0, max_utilization_pct=0.0)
+        for i in range(6)
+    ]
+    write_rollups(normalized_path, "hourly", records)
+
+    config = _config(
+        normalized_path, str(tmp_path / "findings.db"),
+        heartbeat_path=str(tmp_path / "heartbeat"),
+        alert_webhook_url="https://hooks.example.test/webhook",
+    )
+
+    posted = []
+
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=None):
+        posted.append(json.loads(req.data.decode("utf-8"))["text"])
+        return _FakeResponse()
+
+    import waste_detector.main as main_module
+
+    monkeypatch.setattr(main_module.urllib.request, "urlopen", fake_urlopen)
+
+    calls = {"n": 0}
+
+    def flaky_run_once(*args, **kwargs):
+        calls["n"] += 1
+        # Cycles 1-4 fail (crossing the default threshold of 3 on cycle 3,
+        # staying failed on cycle 4); cycle 5 recovers.
+        if calls["n"] <= 4:
+            raise ValueError("boom - simulated persistent failure")
+        return 0
+
+    monkeypatch.setattr(main_module, "run_once", flaky_run_once)
+
+    main_module.run_forever(config, stop_after=5)
+
+    # Cycle 3 crosses the threshold (one alert); cycle 4 stays failed past
+    # it (no new alert); cycle 5 recovers (a second, distinct alert).
+    assert len(posted) == 2
+    assert "3 consecutive failed" in posted[0]
+    assert "recovered" in posted[1]

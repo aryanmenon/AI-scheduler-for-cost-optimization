@@ -1,13 +1,23 @@
 # Default values for gpu-telemetry-collector.
+#
+# The five app-component image tags below default to "latest" -- CI's
+# docker-build job (.github/workflows/ci.yml) publishes :latest and
+# :<git-sha> to GHCR on every push to the repo's default branch. :latest
+# is fine for a pilot install but floats; pin every image.tag to a
+# specific :<git-sha> instead for a reproducible/rollback-able production
+# deployment.
 
 collector:
   image:
-    repository: ghcr.io/example-org/gpu-cost-optimizer/telemetry-collector
-    tag: "0.1.0"
+    repository: ghcr.io/aryanmenon/ai-scheduler-for-cost-optimization/telemetry-collector
+    tag: "latest"
     pullPolicy: IfNotPresent
   scrapeIntervalSeconds: 30
   httpTimeoutSeconds: 10
   maxScrapeRetries: 3
+  # This runs unattended for weeks; without a retention window the raw
+  # SQLite store grows without bound. 0 disables pruning.
+  retentionHours: 336 # 14 days
   resources:
     requests:
       cpu: 50m
@@ -19,11 +29,22 @@ collector:
 ingestion:
   enabled: true
   image:
-    repository: ghcr.io/example-org/gpu-cost-optimizer/ingestion-normalization
-    tag: "0.1.0"
+    repository: ghcr.io/aryanmenon/ai-scheduler-for-cost-optimization/ingestion-normalization
+    tag: "latest"
     pullPolicy: IfNotPresent
   pollIntervalSeconds: 60
   lowConfidenceCoverageThreshold: 0.5
+  # Daily rollups accumulate all day; fully recomputing one on every
+  # ingestion cycle makes per-cycle work grow with the day, so it's
+  # throttled to at most once per this interval. 0 recomputes every cycle.
+  dailyRollupMinRecomputeIntervalSeconds: 3600 # 1 hour
+  # normalized_samples is raw, per-scrape data superseded by rollups
+  # almost immediately -- kept only long enough to cover a full day's
+  # recompute above. rollups are the durable historical record consumers
+  # read for trend/pattern detection, so it's kept far longer. 0 disables
+  # pruning for either.
+  normalizedSamplesRetentionHours: 72 # 3 days
+  rollupsRetentionHours: 2160 # 90 days
   resources:
     requests:
       cpu: 50m
@@ -35,8 +56,8 @@ ingestion:
 wasteDetector:
   enabled: true
   image:
-    repository: ghcr.io/example-org/gpu-cost-optimizer/waste-detector
-    tag: "0.1.0"
+    repository: ghcr.io/aryanmenon/ai-scheduler-for-cost-optimization/waste-detector
+    tag: "latest"
     pullPolicy: IfNotPresent
   pollIntervalSeconds: 300
   minCoverageRatio: 0.8
@@ -50,6 +71,10 @@ wasteDetector:
   patternMinDaysObserved: 7
   patternIdleThresholdPct: 5.0
   patternMinConsistentFraction: 0.8
+  # A resolved waste condition's finding just stops being refreshed
+  # rather than being deleted -- without this, every category ever
+  # detected accumulates forever. 0 disables pruning.
+  findingsRetentionHours: 2160 # 90 days
   resources:
     requests:
       cpu: 50m
@@ -61,18 +86,23 @@ wasteDetector:
 savingsEstimator:
   enabled: true
   image:
-    repository: ghcr.io/example-org/gpu-cost-optimizer/savings-estimator
-    tag: "0.1.0"
+    repository: ghcr.io/aryanmenon/ai-scheduler-for-cost-optimization/savings-estimator
+    tag: "latest"
     pullPolicy: IfNotPresent
   pollIntervalSeconds: 300
   minFindingConfidence: 0.7
   slaTargetUtilizationPct: 70.0
   hoursPerMonth: 730.0
   fragmentationCaptureFraction: 0.5
-  # Set this to the customer's actual contracted $/hour rates, e.g.:
-  # gpuHourlyRatesJson: '{"NVIDIA A100 80GB": 2.75, "NVIDIA T4": 0.35}'
-  # Left empty, pricing.py falls back to illustrative public list prices.
+  # Set this to the customer's actual contracted INR/hour rates, e.g.:
+  # gpuHourlyRatesJson: '{"NVIDIA A100 80GB": 275, "NVIDIA T4": 35}'
+  # Left empty, pricing.py falls back to illustrative Indian GPU-cloud
+  # on-demand list prices.
   gpuHourlyRatesJson: ""
+  # A resolved finding's estimate just stops being refreshed rather than
+  # being deleted -- without this, every finding ever priced accumulates
+  # forever. 0 disables pruning.
+  savingsEstimatesRetentionHours: 2160 # 90 days
   resources:
     requests:
       cpu: 50m
@@ -84,15 +114,33 @@ savingsEstimator:
 dashboard:
   enabled: true
   image:
-    repository: ghcr.io/example-org/gpu-cost-optimizer/dashboard
-    tag: "0.1.0"
+    repository: ghcr.io/aryanmenon/ai-scheduler-for-cost-optimization/dashboard
+    tag: "latest"
     pullPolicy: IfNotPresent
   port: 8080
   topFindingsLimit: 25
   # ClusterIP by default -- reach it with:
   #   kubectl -n <namespace> port-forward svc/<release>-dashboard 8080:8080
-  # Set to LoadBalancer/NodePort if you want it reachable without port-forward.
+  # kubectl port-forward is safe as-is: it's tunneled through the
+  # Kubernetes API server's own TLS/mTLS connection, so the auth token
+  # below and the cost data it protects never touch the network in
+  # cleartext. Setting this to LoadBalancer/NodePort, or putting an
+  # Ingress in front, is a DIFFERENT exposure with no such protection --
+  # you MUST terminate TLS there yourself (Ingress TLS, a service mesh,
+  # etc.) before doing so, or the auth token and every cost figure in the
+  # report travel in plaintext.
   serviceType: ClusterIP
+  # A bearer token the dashboard checks with a constant-time comparison
+  # (see server.py). Left empty, this chart auto-generates a random one
+  # on first install and keeps it stable across upgrades -- retrieve it
+  # with the command printed after `helm install`/`helm upgrade`. Set it
+  # explicitly here (or via --set, or a values file kept out of version
+  # control) to pin a known value instead.
+  authToken: ""
+  # A cheap in-memory per-IP cap on the report route -- every request
+  # re-reads the database and re-renders. 0 disables the cap.
+  rateLimitMaxRequests: 60
+  rateLimitWindowSeconds: 60
   resources:
     requests:
       cpu: 25m
@@ -100,6 +148,24 @@ dashboard:
     limits:
       cpu: 100m
       memory: 128Mi
+
+alerting:
+  # A Slack-compatible incoming webhook URL (Slack's own "Incoming
+  # Webhooks" feature, or anything else that accepts a plain
+  # {"text": "..."} JSON POST). Left empty (the default), every service
+  # still writes its per-cycle structured log line, but nothing pages a
+  # human -- these background loops catch their own exceptions and keep
+  # running (see each main.py), so a chronic failure can go unnoticed
+  # indefinitely without this. Treated as a credential (see
+  # alert-webhook-secret.yaml), not a plain values.yaml string, since
+  # anyone holding it can post into that channel -- set it via --set or a
+  # values file kept out of version control, not committed here.
+  webhookUrl: ""
+  # How many *consecutive* cycle/request failures trigger an alert.
+  # Edge-triggered (fires once on crossing this, once again on recovery),
+  # not on every cycle past it -- one transient blip shouldn't page
+  # anyone.
+  consecutiveFailureThreshold: 3
 
 persistence:
   # Toggleable: pilots without a storage class can run with an emptyDir

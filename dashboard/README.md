@@ -68,3 +68,34 @@ building realistic test fixtures against its real SQLite schema.
 See `../deploy/helm/gpu-telemetry-collector` for how this is exposed
 in-cluster (a Service in front of the collector pod, so `kubectl
 port-forward` reaches it without any extra infrastructure).
+
+## Security: this server speaks plain HTTP -- know what protects the token
+
+`server.py` has no TLS of its own. `DASHBOARD_AUTH_TOKEN` (checked with a
+constant-time comparison, see `_authorized()`) is a bearer token, and a
+bearer token sent over a connection that isn't encrypted is exactly as
+good as no token at all -- so what protects it depends entirely on how
+you reach this server:
+
+- **`kubectl port-forward` is safe as-is.** It's tunneled through the
+  Kubernetes API server's own TLS/mTLS connection (kubectl authenticates
+  to the API server over HTTPS, and the forwarded stream rides inside
+  that same connection) -- the token and every cost figure in the report
+  stay encrypted end to end. This is the deployment path the Helm chart
+  defaults to (`dashboard.serviceType: ClusterIP`), and it needs nothing
+  extra from you.
+- **Anything else does not inherit that protection.** Setting
+  `dashboard.serviceType` to `LoadBalancer`/`NodePort`, or putting an
+  Ingress in front, exposes this server directly -- if that path isn't
+  independently TLS-terminated (Ingress TLS, a load balancer with a real
+  cert, a service mesh's mTLS, etc.), the bearer token and the full
+  contents of the report travel in plaintext to anyone positioned to
+  observe that connection.
+- **No token configured at all** means the report is served to anyone
+  who can reach the port, full stop -- `run_server()` logs a warning on
+  startup if this is the case, but still starts. Set
+  `dashboard.authToken` (or let the Helm chart auto-generate one; see its
+  NOTES.txt) for anything beyond a disposable local/dev instance.
+
+The short version: don't change `serviceType` away from `ClusterIP`
+without first deciding, deliberately, where TLS gets terminated.

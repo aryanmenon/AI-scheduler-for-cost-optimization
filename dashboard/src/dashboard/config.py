@@ -11,6 +11,27 @@ class Config:
     server_host: str
     server_port: int
     top_findings_limit: int
+    # Optional shared-secret check on the live server: unset by default so
+    # local/dev usage stays zero-config, but a customer deployment should
+    # set DASHBOARD_AUTH_TOKEN so the report isn't served to anyone who can
+    # merely reach the port.
+    auth_token: str | None = None
+    # A cheap in-memory per-IP cap: each request does a full SQLite read
+    # and re-render (see server.py's docstring), and ThreadingHTTPServer
+    # itself has no connection/thread cap, so an unauthenticated or
+    # unthrottled deployment is a trivial CPU/thread-exhaustion target.
+    rate_limit_max_requests: int = 60
+    rate_limit_window_seconds: float = 60.0
+    # A Slack-compatible incoming webhook URL to POST a human-visible
+    # alert to once report generation is chronically failing -- a
+    # structured log line only reaches someone already looking. Unset
+    # (the default) disables alerting entirely.
+    alert_webhook_url: str | None = None
+    # How many *consecutive* failed report-generation requests trigger an
+    # alert. Edge-triggered (fires once on crossing this, once again on
+    # recovery), not on every request past it -- one transient blip
+    # shouldn't page anyone.
+    alert_consecutive_failure_threshold: int = 3
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -19,7 +40,20 @@ class Config:
                 "SAVINGS_SQLITE_PATH", "/data/savings/savings.db"
             ),
             report_output_path=os.environ.get("REPORT_OUTPUT_PATH", "./report.html"),
-            server_host=os.environ.get("DASHBOARD_HOST", "0.0.0.0"),
+            # Loopback by default -- kubectl port-forward reaches a pod's
+            # own network namespace directly, so it works even when the
+            # app binds only to 127.0.0.1 inside the container. Binding
+            # wider (e.g. for a ClusterIP Service reaching it over the pod
+            # network) is an explicit opt-in via DASHBOARD_HOST, not a
+            # silent default.
+            server_host=os.environ.get("DASHBOARD_HOST", "127.0.0.1"),
             server_port=int(os.environ.get("DASHBOARD_PORT", "8080")),
             top_findings_limit=int(os.environ.get("TOP_FINDINGS_LIMIT", "25")),
+            auth_token=os.environ.get("DASHBOARD_AUTH_TOKEN") or None,
+            rate_limit_max_requests=int(os.environ.get("DASHBOARD_RATE_LIMIT_MAX_REQUESTS", "60")),
+            rate_limit_window_seconds=float(os.environ.get("DASHBOARD_RATE_LIMIT_WINDOW_SECONDS", "60")),
+            alert_webhook_url=os.environ.get("ALERT_WEBHOOK_URL") or None,
+            alert_consecutive_failure_threshold=int(
+                os.environ.get("ALERT_CONSECUTIVE_FAILURE_THRESHOLD", "3")
+            ),
         )

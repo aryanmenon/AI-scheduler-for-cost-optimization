@@ -1,6 +1,6 @@
 from conftest import make_rollup_record, write_rollups
 
-from waste_detector.rollup_reader import RollupReader
+from waste_detector.rollup_reader import RollupReader, _valid_pct, _valid_ratio
 
 
 def test_fetch_returns_rows_for_granularity(tmp_path):
@@ -53,6 +53,39 @@ def test_latest_bucket_start(tmp_path):
     try:
         assert reader.latest_bucket_start("hourly") == 7200.0
         assert reader.latest_bucket_start("daily") is None
+    finally:
+        reader.close()
+
+
+def test_valid_pct_rejects_nan():
+    # Regression: NaN is neither > nor <= any threshold, so a raw NaN could
+    # slip past a detector's "continue if above threshold" guard and get
+    # flagged as waste on garbage data. It must be sanitized to missing.
+    # (sqlite3 itself round-trips a stored NaN as NULL already -- see
+    # test_out_of_range_utilization_sanitized_to_none for the reachable
+    # case -- so this exercises the sanitizer directly as a hard invariant.)
+    assert _valid_pct(float("nan")) is None
+
+
+def test_valid_ratio_rejects_nan_and_negative():
+    assert _valid_ratio(float("nan")) == 0.0
+    assert _valid_ratio(-1.0) == 0.0
+    assert _valid_ratio(1.5) == 1.0
+
+
+def test_out_of_range_utilization_sanitized_to_none(tmp_path):
+    path = str(tmp_path / "normalized.db")
+    write_rollups(
+        path,
+        "hourly",
+        [make_rollup_record(bucket_start=0.0, avg_utilization_pct=-5.0, max_utilization_pct=250.0)],
+    )
+
+    reader = RollupReader(path)
+    try:
+        row = reader.fetch("hourly")[0]
+        assert row.avg_utilization_pct is None
+        assert row.max_utilization_pct is None
     finally:
         reader.close()
 

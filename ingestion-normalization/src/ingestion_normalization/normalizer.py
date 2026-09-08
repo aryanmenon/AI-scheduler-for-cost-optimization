@@ -19,6 +19,7 @@ treated as exact per-tenant accounting.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from ingestion_normalization.capability import GPUCapability, lookup_capability
@@ -60,8 +61,47 @@ def _effective_tflops(utilization_pct: float | None, capability: GPUCapability) 
     return (utilization_pct / 100.0) * capability.fp16_tflops
 
 
+def _valid_pct(value: float | None) -> float | None:
+    """A corrupted reading (NaN, negative, or >100%) is worse than a missing
+    one: fed into effective_tflops or a rollup average it silently produces
+    a wrong number, where a missing sample just lowers coverage_ratio.
+    Treat it as absent rather than trust it -- this is external data
+    (a driver/DCGM read) crossing a trust boundary, same as an unrecognized
+    GPU model gets reported unknown rather than guessed.
+    """
+    if value is None or math.isnan(value) or value < 0.0 or value > 100.0:
+        return None
+    return value
+
+
+def _valid_nonnegative(value: float | None) -> float | None:
+    if value is None or math.isnan(value) or value < 0.0:
+        return None
+    return value
+
+
 def normalize_sample(raw: RawGPUSample) -> NormalizedRecord:
     capability = lookup_capability(raw.gpu_model)
+    utilization_pct = _valid_pct(raw.utilization_pct)
+    memory_used_mb = _valid_nonnegative(raw.memory_used_mb)
+    memory_free_mb = _valid_nonnegative(raw.memory_free_mb)
+    power_draw_w = _valid_nonnegative(raw.power_draw_w)
+
+    # A MIG instance's utilization_pct is relative to its own slice, not
+    # the full physical GPU capability.fp16_tflops resolves to -- and DCGM
+    # carries no MIG profile/fraction label (see module docstring) from
+    # which to derive the slice's actual share of that capacity. Treating
+    # a slice's utilization as if it applied to the whole GPU overcounts
+    # capacity: summed effective_tflops across a GPU's slices could exceed
+    # what the physical card can do. Until MIG profile data is available,
+    # capacity-normalized figures are reported as unknown for these
+    # samples -- the same "admit we don't know" choice this table already
+    # makes for unrecognized models -- rather than silently wrong.
+    is_mig_slice = raw.gpu_instance_id is not None
+    capability_known = capability.known and not is_mig_slice
+    fp16_tflops = None if is_mig_slice else capability.fp16_tflops
+    effective_tflops = None if is_mig_slice else _effective_tflops(utilization_pct, capability)
+
     return NormalizedRecord(
         scrape_run_id=raw.scrape_run_id,
         scraped_at=raw.scraped_at,
@@ -74,13 +114,13 @@ def normalize_sample(raw: RawGPUSample) -> NormalizedRecord:
         workload=derive_workload_name(raw.pod),
         pod=raw.pod,
         container=raw.container,
-        utilization_pct=raw.utilization_pct,
-        memory_used_mb=raw.memory_used_mb,
-        memory_free_mb=raw.memory_free_mb,
-        power_draw_w=raw.power_draw_w,
-        capability_known=capability.known,
-        fp16_tflops=capability.fp16_tflops,
-        effective_tflops=_effective_tflops(raw.utilization_pct, capability),
+        utilization_pct=utilization_pct,
+        memory_used_mb=memory_used_mb,
+        memory_free_mb=memory_free_mb,
+        power_draw_w=power_draw_w,
+        capability_known=capability_known,
+        fp16_tflops=fp16_tflops,
+        effective_tflops=effective_tflops,
     )
 
 

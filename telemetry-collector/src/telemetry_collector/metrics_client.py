@@ -63,4 +63,12 @@ def parse_metrics(text: str) -> list[MetricSample]:
 
 def scrape(url: str, timeout: float, max_retries: int) -> list[MetricSample]:
     text = fetch_text(url, timeout=timeout, max_retries=max_retries)
-    return parse_metrics(text)
+    try:
+        return parse_metrics(text)
+    except Exception as exc:
+        # A malformed/unparseable body is a scrape failure just like an
+        # unreachable endpoint -- the caller only catches ScrapeError to
+        # still record a (failed) scrape_runs row, so a raw parser
+        # exception here would skip that entirely and leave zero audit
+        # trail for the cycle instead of a recorded failure.
+        raise ScrapeError(f"failed to parse metrics from {url}: {exc}") from exc

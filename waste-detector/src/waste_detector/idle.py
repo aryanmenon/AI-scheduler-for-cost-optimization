@@ -15,10 +15,10 @@ costly than a missed detection.
 from __future__ import annotations
 
 import time
-from collections import defaultdict
 
 from waste_detector.config import Config
 from waste_detector.findings import IDLE, WasteFinding
+from waste_detector.grouping import group_by, usable_rows
 from waste_detector.rollup_reader import RollupRow
 
 _BUCKET_SECONDS = 3600  # hourly rollups only
@@ -71,11 +71,8 @@ def detect_idle(rows: list[RollupRow], config: Config, now: float | None = None)
     # missing data reading as near-zero utilization is "we don't know,"
     # not confirmed idle, and letting it slip into a streak would credit
     # unobserved time as evidence.
-    usable = [r for r in rows if r.attributed and r.coverage_ratio >= config.min_coverage_ratio]
-
-    groups: dict[tuple, list[RollupRow]] = defaultdict(list)
-    for row in usable:
-        groups[_group_key(row)].append(row)
+    usable = usable_rows(rows, config)
+    groups = group_by(usable, _group_key)
 
     findings = []
     for key, group_rows in groups.items():

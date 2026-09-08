@@ -14,10 +14,10 @@ has a real, actionable pattern even though night 7 had a burst.
 from __future__ import annotations
 
 import time
-from collections import defaultdict
 
 from waste_detector.config import Config
 from waste_detector.findings import RECURRING_PATTERN, WasteFinding
+from waste_detector.grouping import group_by, usable_rows
 from waste_detector.rollup_reader import RollupRow
 
 _HOUR_SECONDS = 3600
@@ -41,17 +41,10 @@ def detect_recurring_patterns(
 ) -> list[WasteFinding]:
     now = now if now is not None else time.time()
 
-    usable = [
-        r for r in rows
-        if r.attributed and r.coverage_ratio >= config.min_coverage_ratio
-        and r.avg_utilization_pct is not None
-    ]
+    usable = usable_rows(rows, config, require_utilization=True)
 
     # (group_key, hour_of_day) -> rows, one per observed calendar day.
-    slots: dict[tuple, list[RollupRow]] = defaultdict(list)
-    for row in usable:
-        key = (_group_key(row), _hour_of_day(row.bucket_start))
-        slots[key].append(row)
+    slots = group_by(usable, lambda r: (_group_key(r), _hour_of_day(r.bucket_start)))
 
     findings = []
     for (group_key, hour_of_day), slot_rows in slots.items():

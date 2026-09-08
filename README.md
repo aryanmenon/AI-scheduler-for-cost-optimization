@@ -54,7 +54,7 @@ detail and status of each:
    anything, to keep false positives — which cost more customer trust than
    a missed detection — low.
 4. **Achievable ceiling & savings estimator** — SLA-aware target +
-   confidence-scored $ impact. *Built in this repo* (`savings-estimator/`):
+   confidence-scored INR impact. *Built in this repo* (`savings-estimator/`):
    prices each finding, distinguishing money already spent (idle, scoped
    strictly to its observed window) from projected monthly savings
    (over-provisioned/fragmented/recurring, extrapolated from a
@@ -118,17 +118,17 @@ waste-detector/                Python detector: rollups → waste findings
                                  (healthy bursty workload) guard
   Dockerfile
 
-savings-estimator/              Python pricer: findings → $ impact
+savings-estimator/              Python pricer: findings → INR impact
   src/savings_estimator/
     findings_reader.py           read-only reader of waste-detector's SQLite
     rollup_reader.py              read-only reader of ingestion's SQLite
                                    (including gpu_model/fp16_tflops)
-    pricing.py                    GPU $/hour lookup, illustrative defaults
+    pricing.py                    GPU ₹/hour lookup, illustrative defaults
                                    overridable with a customer's real rates
     ceiling.py                    SLA-aware right-sizing recommendation
                                    (smallest SKU meeting a utilization
                                    ceiling, not a naive 100% target)
-    estimator.py                  per-category $ calc: idle priced as
+    estimator.py                  per-category ₹ calc: idle priced as
                                    already-spent money in its exact
                                    observed window; over-provisioned/
                                    fragmented/recurring-pattern projected
@@ -141,7 +141,7 @@ savings-estimator/              Python pricer: findings → $ impact
                                  comment; this is the one component with
                                  real cross-package runtime dependencies)
 
-dashboard/                      Python report: $ estimates → sales artifact
+dashboard/                      Python report: ₹ estimates → sales artifact
   src/dashboard/
     report_reader.py             read-only reader of savings-estimator's SQLite
     aggregator.py                 estimates → summary (observed vs. projected
@@ -155,6 +155,13 @@ dashboard/                      Python report: $ estimates → sales artifact
   tests/                         unit tests + a real HTTP server integration
                                  test + an XSS-escaping guard
   Dockerfile
+
+integration-tests/              End-to-end test wiring all five services'
+                                 real entrypoints together against real,
+                                 on-disk SQLite files -- proves the schema
+                                 handoffs between components actually
+                                 hold, not just that each one's own test
+                                 suite is internally consistent.
 
 deploy/helm/gpu-telemetry-collector/
                                one-command Helm chart: DCGM exporter
@@ -194,12 +201,18 @@ pip install -e ../savings-estimator -e ".[dev]"  # dev-only (production code is 
 pytest
 ```
 
-Install onto a cluster with GPU nodes (once images are published):
+Install onto a cluster with GPU nodes:
 
 ```bash
 helm install gpu-telemetry deploy/helm/gpu-telemetry-collector \
   --namespace gpu-optimizer --create-namespace
 ```
+
+Images are built and published to GHCR by `.github/workflows/ci.yml`'s
+`docker-build` job on every push to this repo's default branch (`:latest`
+and `:<git-sha>` tags); `values.yaml`'s five `image.tag` fields default to
+`:latest` but should be pinned to a specific `:<git-sha>` for a
+reproducible/rollback-able production deployment.
 
 This deploys DCGM exporter (per-GPU utilization/memory/power),
 kube-state-metrics (pod/node metadata), and the collector — which
@@ -207,18 +220,37 @@ correlates the two into a raw SQLite time series, hands it to the
 ingestion-normalization sidecar (workload identity + capability
 normalization + rollups), which feeds the waste-detector sidecar
 (idle/over-provisioned/fragmented/recurring-pattern findings), which
-feeds the savings-estimator sidecar (prices those findings into $
+feeds the savings-estimator sidecar (prices those findings into ₹
 impact), which finally feeds the dashboard sidecar + Service that renders
-it as the sales artifact. See
+it as the sales artifact. Every sidecar carries a livenessProbe: the four
+background loops each touch a heartbeat file at the end of every cycle
+(success or failure -- these loops catch their own exceptions and keep
+running, so a plain "is the process alive" check can't catch a genuinely
+stuck one) and the dashboard's own `/healthz` backs its liveness and
+readiness probes. A heartbeat-driven restart is self-healing, not
+alerting, though -- set `alerting.webhookUrl` to a Slack-compatible
+incoming webhook (kept in a Secret, not values.yaml, since it's a
+credential) to also get a human-visible message once a service's
+consecutive cycle/request failures cross `alerting.consecutiveFailureThreshold`
+(default 3), and a second message once it recovers. See
 `deploy/helm/gpu-telemetry-collector/values.yaml` to toggle persistence,
 scrape/poll intervals, detector thresholds, and image tags — and set
 `savingsEstimator.gpuHourlyRatesJson` to the customer's actual contracted
-rates before trusting any dollar figure it produces. Then:
+rates before trusting any rupee figure it produces. Then:
 
 ```bash
+kubectl -n gpu-optimizer get secret gpu-telemetry-dashboard-auth \
+  -o jsonpath='{.data.DASHBOARD_AUTH_TOKEN}' | base64 -d; echo
 kubectl -n gpu-optimizer port-forward svc/gpu-telemetry-dashboard 8080:8080
-# open http://localhost:8080
+# then, with the token above:
+curl -H "Authorization: Bearer <token>" http://localhost:8080/
 ```
+
+`kubectl port-forward` is safe to use as-is here — it's tunneled through
+the Kubernetes API server's own TLS/mTLS, so the token and every rupee
+figure in the report stay encrypted end to end. See
+`dashboard/README.md`'s Security section before changing
+`dashboard.serviceType` away from the default `ClusterIP`.
 
 ## Key risk / decision gate
 
