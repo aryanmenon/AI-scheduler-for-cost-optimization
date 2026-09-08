@@ -77,14 +77,18 @@ def test_html_escapes_untrusted_methodology():
 
 
 def test_html_escapes_untrusted_category():
-    # category also lands inside an unquoted-looking CSS class attribute
-    # (badge-{category}), so this also guards against attribute breakout --
-    # html.escape's default quote=True escapes the quote characters too.
+    # category is never interpolated into an HTML attribute -- chip color
+    # comes from a fixed category->hex lookup table, not the raw string --
+    # so attribute breakout is structurally impossible regardless of
+    # escaping. Its only appearance as visible text (the title-cased
+    # fallback label for an unrecognized category) still goes through
+    # html.escape; .lower() sidesteps the incidental case change .title()
+    # applies to the injected text itself.
     summary = aggregate([_row(category='idle"><script>alert(6)</script>')], top_n=10)
     html_out = render_report(summary)
     assert "<script>alert(6)</script>" not in html_out
-    assert "&lt;script&gt;" in html_out
     assert '"><script>' not in html_out
+    assert "&lt;script&gt;" in html_out.lower()
 
 
 def test_unpriceable_section_shown_only_when_present():
@@ -112,3 +116,45 @@ def test_unattributed_workload_shown_as_such():
     summary = aggregate([_row(workload=None)], top_n=10)
     html_out = render_report(summary)
     assert "unattributed" in html_out
+
+
+def test_category_breakdown_bar_orders_segments_by_fixed_category_not_by_size():
+    # Regression: aggregate() sorts by_category by total_inr descending, so
+    # a naive render would put whichever category happens to be biggest
+    # this cycle first -- meaning a category's position (and hue) would
+    # shift report to report. The stacked bar must instead use a fixed
+    # category order so color always means the same thing.
+    rows = [
+        _row(id=1, category="recurring_pattern", basis="projected_monthly", amount_inr=999.0),
+        _row(id=2, category="idle", basis="observed_window", amount_inr=1.0),
+    ]
+    summary = aggregate(rows, top_n=10)
+    html_out = render_report(summary)
+
+    idle_pos = html_out.index('title="Idle GPUs')
+    recurring_pos = html_out.index('title="Recurring Low-Usage Pattern')
+    assert idle_pos < recurring_pos  # idle first despite being far smaller
+
+
+def test_category_breakdown_bar_segment_sized_by_amount():
+    rows = [
+        _row(id=1, category="idle", basis="observed_window", amount_inr=100.0),
+        _row(id=2, category="over_provisioned", basis="projected_monthly", amount_inr=400.0),
+    ]
+    summary = aggregate(rows, top_n=10)
+    html_out = render_report(summary)
+    assert "flex-grow:100.0" in html_out
+    assert "flex-grow:400.0" in html_out
+
+
+def test_category_breakdown_unrecognized_category_gets_fallback_color_and_trailing_position():
+    rows = [
+        _row(id=1, category="idle", basis="observed_window", amount_inr=1.0),
+        _row(id=2, category="future_detector_category", basis="observed_window", amount_inr=1.0),
+    ]
+    summary = aggregate(rows, top_n=10)
+    html_out = render_report(summary)
+    assert "#676761" in html_out  # neutral fallback, not an arbitrary cycled hue
+    idle_pos = html_out.index('title="Idle GPUs')
+    unknown_pos = html_out.index("Future Detector Category")
+    assert idle_pos < unknown_pos
