@@ -1,0 +1,81 @@
+# Overlay for a full-pipeline smoke test on rented GPU hardware -- layer
+# this on top of values.yaml, don't replace it:
+#
+#   helm install gpu-telemetry deploy/helm/gpu-telemetry-collector \
+#     --namespace gpu-optimizer --create-namespace \
+#     -f deploy/helm/gpu-telemetry-collector/values.yaml \
+#     -f deploy/helm/gpu-telemetry-collector/values-smoke-test.yaml
+#
+# What this changes and why: waste-detector's four categories are gated on
+# real elapsed wall-clock time (a "4-hour idle streak" means 4 real hourly
+# rollup buckets, regardless of how often you poll), not on how much you're
+# paying per hour for the instance. Left at their real-pilot defaults,
+# proving all four detectors fire at least once would mean leaving a paid
+# GPU rental running for the better part of a week. This overlay lowers
+# every *time* threshold to the practical minimum -- enough to prove the
+# detection mechanism works end-to-end, not to produce a realistic waste
+# number. NEVER deploy a real pilot with this file: revert to values.yaml
+# alone once the smoke test is done, or every finding will be built on an
+# evidence bar too low to trust.
+#
+# Two categories still need more than a lowered threshold, and no values
+# override changes that -- see the callouts below.
+
+persistence:
+  # Vast.ai (and similar bare rental) instances usually have no default
+  # StorageClass to bind a PVC against -- emptyDir avoids a PVC stuck
+  # Pending for a reason that has nothing to do with what you're testing.
+  # Fine for a smoke test; a real pilot should go back to a real PVC so
+  # data survives a pod restart.
+  enabled: false
+
+collector:
+  # Default 30s. Lowered so a scrape cycle completes fast enough to watch
+  # live in `kubectl logs -f`, matching the 10s cadence already proven in
+  # the collector-only smoke test.
+  scrapeIntervalSeconds: 10
+
+ingestion:
+  # Default 60s -- lowered so a completed hourly rollup gets picked up
+  # within seconds of the hour rolling over, instead of up to a minute
+  # later.
+  pollIntervalSeconds: 15
+
+wasteDetector:
+  # Default 300s (5 min) -- lowered so a fresh rollup gets evaluated
+  # almost immediately instead of up to 5 minutes later.
+  pollIntervalSeconds: 20
+
+  # --- Idle: default 4 consecutive hourly buckets -> 1 hour of real idle
+  # time (at 0% GPU util, matching your collector smoke test) gets you a
+  # finding.
+  minIdleStreakHours: 1
+
+  # --- Over-provisioned: default 24 observed hours -> 1 hour. Run a
+  # workload whose peak utilization never exceeds overProvisionThresholdPct
+  # (30% by default) for that one hour and it'll fire.
+  overProvisionMinObservationHours: 1
+
+  # --- Fragmented: default 4 consecutive hours -> 1 hour. IMPORTANT: this
+  # alone is not enough to see a fragmentation finding. The detector also
+  # requires >= 2 distinct underutilized GPUs owned by >= 2 distinct
+  # workloads, simultaneously, on the SAME node (see fragmentation.py) --
+  # a scenario constraint, not a time constraint. You need an instance
+  # with >= 2 GPUs and 2+ separate low-utilization pods scheduled on it at
+  # once to exercise this category at all; a single-GPU rental structurally
+  # cannot trigger it, no matter how long it runs.
+  fragmentationMinStreakHours: 1
+
+  # --- Recurring pattern: default 7 distinct calendar days -> 2, the
+  # practical floor (the detector's own math needs at least 2 days to
+  # compute a "consistent fraction"). IMPORTANT: unlike the others, this
+  # genuinely cannot be compressed below crossing one real UTC midnight
+  # boundary -- "recurring" is a calendar concept. Start the instance
+  # before midnight UTC if you want a chance at seeing this one fire
+  # without a 2-day rental.
+  patternMinDaysObserved: 2
+
+savingsEstimator:
+  # Default 300s (5 min) -- lowered so a fresh finding gets priced almost
+  # immediately instead of up to 5 minutes later.
+  pollIntervalSeconds: 20
