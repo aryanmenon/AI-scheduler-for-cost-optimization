@@ -1,0 +1,52 @@
+# One of two distinct "customer" workloads this test needs on separate
+# GPUs of the same node -- fragmentation.py requires >= 2 distinct
+# (namespace, workload) pairs simultaneously underutilized on the same
+# node, which a single workload (however many replicas) can never
+# satisfy. workload-b.yaml is this file's twin under a different name.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tiny-model-a
+  namespace: inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tiny-model-a
+  template:
+    metadata:
+      labels:
+        app: tiny-model-a
+    spec:
+      containers:
+        - name: server
+          image: tiny-model-server:test
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: "1"
+              memory: 4Gi
+              nvidia.com/gpu: "1"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tiny-model-a
+  namespace: inference
+spec:
+  selector:
+    app: tiny-model-a
+  ports:
+    - port: 8000
+      targetPort: 8000

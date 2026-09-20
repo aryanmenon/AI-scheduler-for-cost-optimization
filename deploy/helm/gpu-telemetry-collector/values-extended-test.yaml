@@ -1,0 +1,44 @@
+# Overlay for the fragmentation / realistic-traffic / real-duration test
+# (see testing/fragmentation-and-load-test/) -- layer on top of
+# values.yaml, don't replace it:
+#
+#   helm install gpu-telemetry deploy/helm/gpu-telemetry-collector \
+#     --namespace gpu-optimizer --create-namespace \
+#     -f deploy/helm/gpu-telemetry-collector/values.yaml \
+#     -f deploy/helm/gpu-telemetry-collector/values-extended-test.yaml
+#
+# Unlike values-smoke-test.yaml, this overlay does NOT lower any
+# waste-detector threshold -- the whole point of this test is proving the
+# real pilot-default evidence bars (4h idle streak, 24h over-provisioned
+# observation, 4h fragmented streak) hold up under genuinely varying,
+# real-inference-driven load, not just that the mechanism can be made to
+# fire quickly. Only the polling/scrape cadence is tightened, purely so
+# you can watch results land in `kubectl logs -f` without extra lag on
+# top of the real hours you're already waiting out.
+
+persistence:
+  # Same reasoning as values-smoke-test.yaml: a bare GPU rental usually
+  # has no default StorageClass. If yours does (or you're on a managed
+  # cluster for this run), flip this to true -- a multi-day test losing
+  # its data to a pod restart partway through is a worse failure mode
+  # than the disk space an emptyDir costs you.
+  enabled: false
+
+collector:
+  scrapeIntervalSeconds: 15
+
+ingestion:
+  pollIntervalSeconds: 20
+
+wasteDetector:
+  pollIntervalSeconds: 30
+  # Every threshold below is intentionally left at the values.yaml
+  # default -- listed here only so it's obvious, reading this file, that
+  # nothing about the evidence bar was changed:
+  #   minIdleStreakHours: 4
+  #   overProvisionMinObservationHours: 24
+  #   fragmentationMinStreakHours: 4
+  #   patternMinDaysObserved: 7
+
+savingsEstimator:
+  pollIntervalSeconds: 30
