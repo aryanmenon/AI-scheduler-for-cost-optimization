@@ -136,6 +136,16 @@ back with results to interpret, or with problems to debug.
 
 ## 5. Key gotchas (learned the hard way, don't re-break these)
 
+- **vast.ai instance type**: the earlier attempt to get k8s + the NVIDIA
+  device plugin running on a vast.ai rental failed because the default
+  vast.ai instance type is itself a Docker container, which blocks nested
+  virtualization/privileged workloads/kernel modules — k3s can't run
+  properly inside it. Fix: rent vast.ai's **Linux Virtual Machine**
+  instance type instead (full root, systemd, explicitly supports
+  Kubernetes/Docker-in-Docker per their own docs). Full bring-up recipe
+  (k3s install, NVIDIA Container Toolkit, containerd runtime config,
+  device plugin DaemonSet, verification command) is now in
+  `testing/fragmentation-and-load-test/README.md` step 0.
 - **emptyDir persistence**: survives individual container restarts within
   a pod (e.g. liveness-probe kills), but is **wiped by pod
   recreation** (`helm upgrade` under `Recreate` strategy, `kubectl delete

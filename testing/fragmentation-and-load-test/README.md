@@ -19,15 +19,68 @@ discussion.
 
 ## Prerequisites
 
-- A rented instance with **>= 2 GPUs** and a working Kubernetes
-  distribution + NVIDIA device plugin already installed (however you set
-  up the collector-only smoke test, just with a multi-GPU instance type
-  this time).
+- A rented instance with **>= 2 GPUs**, a **Linux Virtual Machine**
+  instance type (see step 0 below -- this matters, don't skip it), and
+  Kubernetes + the NVIDIA device plugin installed on it per step 0.
 - `kubectl` pointed at it.
 - Confirm the device plugin is actually exposing GPUs before deploying
   anything: `kubectl get nodes -o json | jq '.items[].status.capacity."nvidia.com/gpu"'`
   should show a number >= 2. If it's missing or 0, the fragmentation test
   can't run no matter what else is correct -- fix the device plugin first.
+
+## 0. Rent the box and bring up Kubernetes
+
+**Rent a VM instance type, not the default container instance type.**
+vast.ai's default/most common instance type is itself a Docker container --
+it explicitly blocks nested virtualization, privileged workloads, and
+kernel module loading. k3s needs to run its own containerd, manage its own
+cgroups/CNI, and the NVIDIA device plugin needs a *second* layer of real
+GPU passthrough into the pods k3s schedules -- none of that works inside
+that container-instance type, no matter how correctly it's configured.
+vast.ai separately offers a **Linux Virtual Machine** instance type (full
+root, systemd, SSH-only access) whose own docs list Kubernetes and
+Docker-in-Docker as supported use cases -- rent that type, with >= 2 GPUs,
+for this test. (If this is why an earlier attempt at this stalled: this is
+almost certainly it -- it's a platform restriction on the container
+instance type, not a config mistake.)
+
+Once SSH'd into the VM instance:
+
+```bash
+# 1. Install k3s (bundles containerd, so no separate Docker/Kubernetes install needed)
+curl -sfL https://get.k3s.io | sh -
+
+# 2. Install the NVIDIA Container Toolkit so containerd can talk to the GPUs
+#    (see NVIDIA's current install docs for your distro's package manager;
+#    on Ubuntu/Debian this is the nvidia-container-toolkit apt package)
+
+# 3. Point k3s's bundled containerd at the nvidia runtime
+sudo mkdir -p /var/lib/rancher/k3s/agent/etc/containerd
+cat <<'EOF' | sudo tee /var/lib/rancher/k3s/agent/etc/containerd/config.toml.tmpl
+{{ template "base" . }}
+
+[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.nvidia]
+  runtime_type = "io.containerd.runc.v2"
+  [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.nvidia.options]
+    BinaryName = "/usr/bin/nvidia-container-runtime"
+EOF
+sudo systemctl restart k3s
+
+# 4. Deploy the NVIDIA device plugin DaemonSet (pick the current release tag
+#    from https://github.com/NVIDIA/k8s-device-plugin -- version pinned
+#    deliberately omitted here so this doesn't silently go stale)
+kubectl apply -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/<release-tag>/deployments/static/nvidia-device-plugin.yml
+
+# 5. Verify -- this must show a number >= 2 before going any further
+kubectl get nodes -o json | jq '.items[].status.capacity."nvidia.com/gpu"'
+```
+
+If step 5 comes back missing or 0, don't proceed to the rest of this
+runbook -- check `kubectl -n kube-system logs -l name=nvidia-device-plugin-ds`
+first; the usual cause is the containerd runtime config in step 3 not
+matching the actual `nvidia-container-runtime` binary path (`which
+nvidia-container-runtime` to confirm) or the toolkit from step 2 not
+actually being installed yet when k3s was restarted.
 
 ## 1. Build the test model server (on the rented box, no registry needed)
 
