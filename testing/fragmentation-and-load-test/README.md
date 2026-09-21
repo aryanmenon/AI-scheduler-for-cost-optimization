@@ -44,6 +44,14 @@ for this test. (If this is why an earlier attempt at this stalled: this is
 almost certainly it -- it's a platform restriction on the container
 instance type, not a config mistake.)
 
+To actually find/rent one on vast.ai: either pick a VM-flagged template
+from `cloud.vast.ai/templates` (simplest -- it auto-applies the right
+machine filter), or on the instance search page add `vms_enabled=true` to
+the **Extra Filters** field, combined with your usual GPU filters (e.g.
+`num_gpus>=2 gpu_name=T4`). Either way, add your SSH key on the Account
+page *before* renting -- VM instances are SSH-only and vast.ai does not
+support adding/editing keys after the VM is already running.
+
 Once SSH'd into the VM instance:
 
 ```bash
