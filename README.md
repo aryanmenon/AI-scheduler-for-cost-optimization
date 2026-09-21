@@ -208,6 +208,30 @@ helm install gpu-telemetry deploy/helm/gpu-telemetry-collector \
   --namespace gpu-optimizer --create-namespace
 ```
 
+Two prerequisites this command assumes are already true on the target
+cluster:
+
+- **A pull secret for GHCR**, since the five `image.repository` defaults
+  below are not public images. Without one, every container in the
+  collector pod fails with `ImagePullBackOff`/`401 Unauthorized` --
+  this chart creates its own dedicated ServiceAccounts rather than using
+  `default`, so a secret patched onto `default` never reaches these pods.
+  Create one and set `global.imagePullSecrets` (see values.yaml):
+  ```bash
+  kubectl create secret docker-registry ghcr-secret \
+    --docker-server=ghcr.io --docker-username=<user> \
+    --docker-password=<PAT-with-read:packages> -n gpu-optimizer
+  ```
+- **GPU nodes labeled `nvidia.com/gpu.present=true`**, which
+  `dcgmExporter.nodeSelector` requires by default so its DaemonSet never
+  lands on a non-GPU node. NVIDIA's GPU Feature Discovery add-on sets
+  this automatically on a real production cluster; without it (a bare
+  single-node rental, for instance), the DaemonSet shows `0 desired, 0
+  scheduled` until you label the node yourself:
+  ```bash
+  kubectl label node <node-name> nvidia.com/gpu.present=true
+  ```
+
 Images are built and published to GHCR by `.github/workflows/ci.yml`'s
 `docker-build` job on every push to this repo's default branch (`:latest`
 and `:<git-sha>` tags); `values.yaml`'s five `image.tag` fields default to

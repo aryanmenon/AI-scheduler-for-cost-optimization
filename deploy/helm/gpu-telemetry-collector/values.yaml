@@ -7,6 +7,22 @@
 # specific :<git-sha> instead for a reproducible/rollback-able production
 # deployment.
 
+global:
+  # The five image.repository fields below (and dcgm-exporter/
+  # kube-state-metrics) default to GHCR paths that are NOT public --
+  # pulling them without a pull secret fails with ImagePullBackOff /
+  # 401 Unauthorized on every one of this chart's ServiceAccounts (it
+  # creates its own dedicated ones rather than using "default", so a
+  # secret patched onto "default" never reaches these pods). Create a
+  # docker-registry Secret for your GHCR credentials, then reference it
+  # here, e.g.:
+  #   kubectl create secret docker-registry ghcr-secret \
+  #     --docker-server=ghcr.io --docker-username=<user> \
+  #     --docker-password=<PAT-with-read:packages> -n <namespace>
+  #   imagePullSecrets: [{name: ghcr-secret}]
+  # Left empty (the default), pulls only work against public images.
+  imagePullSecrets: []
+
 collector:
   image:
     repository: ghcr.io/aryanmenon/ai-scheduler-for-cost-optimization/telemetry-collector

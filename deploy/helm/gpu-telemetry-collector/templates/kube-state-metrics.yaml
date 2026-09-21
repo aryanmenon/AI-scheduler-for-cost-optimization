@@ -32,6 +32,13 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
+            # registry.k8s.io/kube-state-metrics declares its non-root user
+            # by name ("nobody"), not a numeric UID -- runAsNonRoot alone
+            # can't verify a non-numeric user is actually non-root, so
+            # Kubernetes refuses to start the container
+            # (CreateContainerConfigError) without an explicit runAsUser.
+            # 65534 is that image's actual "nobody" UID.
+            runAsUser: 65534
 ---
 apiVersion: v1
 kind: Service

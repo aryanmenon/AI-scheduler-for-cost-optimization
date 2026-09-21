@@ -37,8 +37,24 @@ Branch this was written on: `claude/cost-optimization-saas-telemetry-w4zbhb`
 - **Fast smoke-test overlay**: `deploy/helm/gpu-telemetry-collector/values-smoke-test.yaml`
   — lowers waste-detector thresholds so findings can be checked quickly on
   a short-lived rental. Committed, `helm lint`/`template` verified, CI-green.
-- **Fragmentation / realistic-traffic / real-duration test kit**: built and
-  pushed, not yet run. See section 3 and 4.
+- **Fragmentation / realistic-traffic / real-duration test kit**: built,
+  pushed, and now actually running on a real 2x RTX 4060 vast.ai VM
+  instance ($0.485/hr, on-demand). Full pipeline deployed and healthy,
+  pod-to-GPU correlation confirmed working end-to-end for the first time.
+  See section 2.
+- **Three real Helm chart bugs found and fixed** during that deployment
+  (all three block ANY real cluster, not just this environment): (1)
+  kube-state-metrics' hardcoded `runAsNonRoot: true` with no `runAsUser`
+  crashed with `CreateContainerConfigError` since its image declares a
+  non-numeric "nobody" user; (2) no `imagePullSecrets` mechanism existed
+  on any of the chart's ServiceAccounts, so GHCR images (private) could
+  never be pulled without a live `kubectl patch` workaround; (3)
+  dcgm-exporter's `nvidia.com/gpu.present=true` nodeSelector requirement
+  was never documented, so its DaemonSet silently sat at 0 scheduled on
+  any cluster without NVIDIA's GPU Feature Discovery add-on. All three
+  fixed in the actual chart/README (see section 3), verified via
+  `helm lint`/`helm template` with and without the new value set,
+  committed and pushed.
 
 ## 2. What's in progress right now
 

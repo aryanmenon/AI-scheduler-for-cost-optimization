@@ -127,13 +127,38 @@ kubectl -n inference exec deploy/tiny-model-b -- nvidia-smi -L
 
 ## 3. Deploy the actual product
 
+Two things this single-node rental won't have unless you set them up:
+
+- **GHCR pull secret** -- the chart's five image.repository defaults are
+  private GHCR images, not public. Without this, every container in the
+  collector pod fails `ImagePullBackOff`/`401 Unauthorized`:
+  ```bash
+  kubectl create secret docker-registry ghcr-secret \
+    --docker-server=ghcr.io --docker-username=<user> \
+    --docker-password=<PAT-with-read:packages> -n gpu-optimizer --dry-run=client -o yaml \
+    | kubectl apply -f -
+  # (create the namespace first if it doesn't exist yet: kubectl create namespace gpu-optimizer)
+  ```
+  then pass `--set global.imagePullSecrets[0].name=ghcr-secret` on the
+  `helm install` below (or set it in a values file).
+- **GPU node label** -- `dcgmExporter.nodeSelector` requires
+  `nvidia.com/gpu.present=true` on the node so its DaemonSet only ever
+  schedules onto a GPU node. A real cluster normally gets this from
+  NVIDIA's GPU Feature Discovery add-on; a bare single-node rental like
+  this one doesn't have it, so the DaemonSet sits at `0 desired, 0
+  scheduled` until you label the node yourself:
+  ```bash
+  kubectl label node $(kubectl get nodes -o jsonpath='{.items[0].metadata.name}') nvidia.com/gpu.present=true
+  ```
+
 Run this from the repo root (not from `testing/fragmentation-and-load-test/`):
 
 ```bash
 helm install gpu-telemetry deploy/helm/gpu-telemetry-collector \
   --namespace gpu-optimizer --create-namespace \
   -f deploy/helm/gpu-telemetry-collector/values.yaml \
-  -f deploy/helm/gpu-telemetry-collector/values-extended-test.yaml
+  -f deploy/helm/gpu-telemetry-collector/values-extended-test.yaml \
+  --set global.imagePullSecrets[0].name=ghcr-secret
 ```
 
 ## 4. Start the bursty load
