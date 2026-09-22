@@ -37,11 +37,19 @@ Branch this was written on: `claude/cost-optimization-saas-telemetry-w4zbhb`
 - **Fast smoke-test overlay**: `deploy/helm/gpu-telemetry-collector/values-smoke-test.yaml`
   — lowers waste-detector thresholds so findings can be checked quickly on
   a short-lived rental. Committed, `helm lint`/`template` verified, CI-green.
-- **Fragmentation / realistic-traffic / real-duration test kit**: built,
-  pushed, and now actually running on a real 2x RTX 4060 vast.ai VM
-  instance ($0.485/hr, on-demand). Full pipeline deployed and healthy,
-  pod-to-GPU correlation confirmed working end-to-end for the first time.
-  See section 2.
+- **Fragmentation / realistic-traffic / real-duration test: COMPLETE and
+  PASSED.** Ran ~25h on a real 2x RTX 4060 vast.ai VM instance ($0.485/hr,
+  on-demand, ~$12 total). Both target findings confirmed with real
+  evidence at real (not lowered) thresholds:
+  - `fragmented`: confidence 1.0, both `tiny-model-a`/`tiny-model-b`
+    workloads simultaneously <50% utilized across the full ~25h window.
+  - `over_provisioned`: confidence 1.0, "peak utilization 5.0% across 25h
+    observed, never exceeded the 30% threshold" -- the real 24h
+    observation floor, met and exceeded.
+  Pod-to-GPU correlation confirmed working end-to-end for the first time.
+  This closes item 1 of the 3-item pre-pilot technical list. Instance
+  torn down after this result. Raw findings.db pulled off the box before
+  teardown for the record.
 - **Three real Helm chart bugs found and fixed** during that deployment
   (all three block ANY real cluster, not just this environment): (1)
   kube-state-metrics' hardcoded `runAsNonRoot: true` with no `runAsUser`
@@ -158,18 +166,32 @@ back with results to interpret, or with problems to debug.
 
 ## 4. The plan / pilot-readiness roadmap
 
-1. **Fragmentation + realistic traffic + real duration** (in progress,
-   ~48h on 2x T4) — targets Fragmented + Over-provisioned findings under
-   real thresholds. Idle may fire incidentally; Recurring-pattern is out of
-   reach in this timeframe (needs to cross real calendar-day boundaries).
-2. **Heterogeneous GPU SKU test** — not started. Separate future work.
-3. **Real managed-Kubernetes-cluster test** — not started (StorageClass,
-   RBAC, network policy quirks a bare GPU rental doesn't have). Separate
-   future work.
-4. **Genuine design-partner pilot** — only after the above. Explicitly
+1. **Fragmentation + realistic traffic + real duration — DONE, PASSED.**
+   Ran ~25h on 2x RTX 4060 (T4 unavailable on vast.ai at rental time).
+   Both Fragmented and Over-provisioned confirmed at confidence 1.0 under
+   real (not lowered) thresholds. See section 1 for the actual finding
+   data. Idle never fired (expected -- no quiet gap ran long enough by
+   chance); Recurring-pattern was never in scope for this rental (needs
+   real calendar-day boundaries).
+2. **Heterogeneous GPU SKU test + Real managed-Kubernetes-cluster test —
+   PLANNED TO RUN TOGETHER**, not started yet. Decided against vast.ai for
+   this one: recognized-SKU availability (T4/A10/L4/V100) was unreliable
+   every time it was checked. Instead: one managed cluster (GKE/EKS/AKS --
+   provider not yet chosen) with two GPU node pools of different
+   recognized types (e.g. T4 + L4), `persistence.enabled: true` for the
+   first real PVC test, running only a few hours (not 24h -- this test
+   isn't re-proving the 24h threshold, just cross-SKU capability/pricing
+   correctness and real StorageClass/RBAC survival). Estimated combined
+   cost ~$5-7 total across both providers' on-demand GPU node pricing.
+   Verify the dcgm-exporter NODE_NAME fix (section 1, 4th bug) actually
+   reports real node hostnames before trusting per-node findings here.
+3. **Genuine design-partner pilot** — only after the above two. Explicitly
    discussed and agreed: the actual 30-40% utilization-gain business
    thesis can only be validated against real organic traffic on a real
    client's cluster — never provable by a self-run test, however good.
+   Operational readiness (onboarding/RBAC scope, rollback story, false-
+   positive response process, pricing mechanics) is a parallel written-
+   answers task, not a blocker to starting outreach conversations.
 
 ## 5. Key gotchas (learned the hard way, don't re-break these)
 
