@@ -55,6 +55,27 @@ Branch this was written on: `claude/cost-optimization-saas-telemetry-w4zbhb`
   fixed in the actual chart/README (see section 3), verified via
   `helm lint`/`helm template` with and without the new value set,
   committed and pushed.
+- **4th bug found from the actual 4h fragmentation result**: a real
+  Fragmented finding fired correctly (high confidence, correct
+  tiny-model-a/tiny-model-b attribution) -- but its `node` field was
+  `gpu-telemetry-dcgm-exporter-d5gfj`, DCGM's DaemonSet pod's own name,
+  not the real Kubernetes node hostname. Root cause: DCGM self-reports
+  `os.Hostname()` (== its own pod name without extra config) as its
+  `Hostname` metric label, which `telemetry-collector/correlator.py`
+  reads as node identity. Harmless on this single-node test, but a real
+  problem before the multi-node test: if the DCGM pod is ever recreated
+  on the *same* physical node (crash/restart/upgrade), it gets a new
+  random suffix and every finding silently loses continuity for that
+  node -- same failure class as the id-churn bug fixed earlier. Fixed by
+  adding a `NODE_NAME` downward-API env var to `dcgm-exporter.yaml`,
+  matching NVIDIA's own upstream dcgm-exporter DaemonSet template (which
+  wires the identical env var, per public GitHub issues describing this
+  exact symptom). **Not yet verified against a live DCGM binary** --
+  confidence is high (matches upstream's own fix for this exact
+  symptom) but should be confirmed on the next real deployment by
+  checking the DCGM `/metrics` endpoint's `Hostname` label directly
+  before trusting `node` identity in the heterogeneous-SKU/managed-cluster
+  test.
 
 ## 2. What's in progress right now
 

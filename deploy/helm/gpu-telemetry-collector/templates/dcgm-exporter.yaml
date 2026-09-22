@@ -35,6 +35,20 @@ spec:
             # reading the kubelet's local pod-resources socket below.
             - name: DCGM_EXPORTER_KUBERNETES
               value: "true"
+            # Without this, DCGM self-reports its own container hostname
+            # (== this DaemonSet pod's name, e.g. "...-d5gfj") as the
+            # "Hostname" metric label -- which correlator.py in
+            # telemetry-collector reads as the physical node identity. That
+            # both displays wrong (a pod name, not a node name) and is
+            # unstable: if this pod is ever recreated on the SAME node
+            # (crash, restart, upgrade), it gets a new random suffix and
+            # every downstream finding silently loses continuity for that
+            # node. NVIDIA's own upstream dcgm-exporter DaemonSet template
+            # wires this same NODE_NAME env var for the same reason.
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
           ports:
             - name: metrics
               containerPort: 9400
