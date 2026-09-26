@@ -115,6 +115,14 @@ _CAPABILITY_TABLE: list[tuple[tuple[str, ...], GPUCapability]] = [
         ("3090",),
         GPUCapability("NVIDIA GeForce RTX 3090", 71.0, 936.0, 24.0, recommendable=False),
     ),
+    # "4060 TI" must come before the plain "4060" entry below -- its DCGM
+    # modelName also contains "4060" as a substring, so the looser pattern
+    # would otherwise shadow it and report the wrong TFLOPS/price (same
+    # ordering rule as H100/A100's SXM-vs-PCIe entries above).
+    (
+        ("4060", "TI"),
+        GPUCapability("NVIDIA GeForce RTX 4060 Ti", 88.25, 288.0, 16.0, recommendable=False),
+    ),
     (
         ("4060",),
         GPUCapability("NVIDIA GeForce RTX 4060", 60.5, 272.0, 8.0, recommendable=False),

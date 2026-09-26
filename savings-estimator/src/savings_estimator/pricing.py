@@ -48,6 +48,7 @@ _ILLUSTRATIVE_DEFAULT_RATES: dict[str, float] = {
     # verified against live listings.
     "NVIDIA GeForce RTX 3090": 35.00,
     "NVIDIA GeForce RTX 4060": 20.00,
+    "NVIDIA GeForce RTX 4060 Ti": 28.00,
     "NVIDIA GeForce RTX 3060": 18.00,
 }
 

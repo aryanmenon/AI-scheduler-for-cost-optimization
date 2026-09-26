@@ -70,10 +70,26 @@ def test_consumer_gpu_known_and_priceable_but_not_recommendable():
     # priced) but never recommendable (so ceiling.py's right-sizing search
     # never suggests one as a target for someone else's finding -- no
     # real cluster racks a GeForce card as a node pool option).
-    for name in ["NVIDIA GeForce RTX 3060", "NVIDIA GeForce RTX 3090", "NVIDIA GeForce RTX 4060"]:
+    for name in [
+        "NVIDIA GeForce RTX 3060",
+        "NVIDIA GeForce RTX 3090",
+        "NVIDIA GeForce RTX 4060",
+        "NVIDIA GeForce RTX 4060 Ti",
+    ]:
         cap = lookup_capability(name)
         assert cap.known, f"{name} should be known/priceable"
         assert not cap.recommendable, f"{name} should not be recommendable"
+
+
+def test_4060_ti_not_confused_with_plain_4060():
+    # "4060 Ti"'s DCGM modelName also contains "4060" as a substring --
+    # without the more specific pattern taking precedence, this would
+    # silently resolve to the plain 4060's TFLOPS/price instead.
+    ti = lookup_capability("NVIDIA GeForce RTX 4060 Ti")
+    plain = lookup_capability("NVIDIA GeForce RTX 4060")
+    assert ti.fp16_tflops != plain.fp16_tflops
+    assert ti.fp16_tflops == 88.25
+    assert plain.fp16_tflops == 60.5
 
 
 def test_datacenter_gpus_remain_recommendable():
