@@ -78,12 +78,38 @@ Branch this was written on: `claude/cost-optimization-saas-telemetry-w4zbhb`
   adding a `NODE_NAME` downward-API env var to `dcgm-exporter.yaml`,
   matching NVIDIA's own upstream dcgm-exporter DaemonSet template (which
   wires the identical env var, per public GitHub issues describing this
-  exact symptom). **Not yet verified against a live DCGM binary** --
-  confidence is high (matches upstream's own fix for this exact
-  symptom) but should be confirmed on the next real deployment by
-  checking the DCGM `/metrics` endpoint's `Hostname` label directly
-  before trusting `node` identity in the heterogeneous-SKU/managed-cluster
-  test.
+  exact symptom). Verified live in the heterogeneous-SKU test below --
+  each dcgm-exporter pod correctly reports its real node hostname
+  (`ubuntu`, `node-b`), not its own pod name.
+- **Heterogeneous GPU SKU test: COMPLETE and PASSED.** Ran on a real 2-node
+  k3s cluster spanning 2 independently-rented vast.ai VM instances (RTX
+  4060 Ti + RTX 4000 Ada Generation -- neither a previously-recognized SKU,
+  both added to `capability.py`/`pricing.py` for this test, see section 4
+  item 2's earlier entry). Bringing the two nodes onto one cluster required
+  real infra work beyond the runbook as originally written: Tailscale mesh
+  VPN + an SSH tunnel to bridge the two NAT'd VMs, `--flannel-iface`
+  explicitly set alongside `--node-ip` (flannel does **not** follow
+  `--node-ip` on its own -- a real, easy-to-miss gotcha, see section 5), a
+  `default_runtime_name = "nvidia"` fix to containerd config on both nodes,
+  and recovering from an NVML driver/library version mismatch via reboot.
+  A genuine product bug was found and fixed along the way (not a test-
+  environment artifact -- see section 5's "single-Service DCGM scrape"
+  gotcha): `telemetry-collector` only ever scraped one node's DCGM exporter
+  per cycle because `DCGM_EXPORTER_URL` pointed at a normal (load-balanced)
+  ClusterIP Service fronting the DaemonSet, silently starving both nodes'
+  rollup `coverage_ratio` to ~0.3-0.6 -- below waste-detector's
+  `min_coverage_ratio=0.8` gate -- indefinitely, with `scrape_runs` showing
+  100% scrape success the whole time. Fixed by resolving the DCGM hostname
+  to every backing pod IP and scraping each individually
+  (`metrics_client.resolve_targets`), plus making the Service headless.
+  After the fix and one full clean hourly bucket, both target findings
+  fired at confidence 1.0 and were correctly priced at two **distinct**
+  INR rates on the actual dashboard: `ubuntu` (RTX 4060 Ti) at ₹28.00/hr,
+  `node-b` (RTX 4000 Ada Generation) at ₹40.00/hr -- confirming
+  `capability.py` correctly identifies different real GPU models from real
+  DCGM output and `savings-estimator` prices each independently rather than
+  conflating them. This closes item 2 of the 3-item pre-pilot technical
+  list.
 
 ## 2. What's in progress right now
 
@@ -295,10 +321,23 @@ back with results to interpret, or with problems to debug.
   IP. A partial failure (one node's exporter briefly down) now still
   stores the other node(s)' data with a note in `scrape_runs.error`,
   mirroring the existing kube-state-metrics non-fatal-failure pattern.
-  **Still needs to be applied to the live rented cluster** (rebuild+deploy
-  the collector image, recreate the dcgm-exporter Service since
-  `clusterIP` is immutable on an existing Service) before the
-  heterogeneous-SKU test can actually produce findings.
+  Applied to the live rented cluster (rebuilt image, deleted+recreated the
+  Service via `helm upgrade` since `clusterIP` is immutable on an existing
+  Service) and confirmed: `gpu_count` went to 2 immediately, `coverage_ratio`
+  reached `1.0` on the first full clean hourly bucket on both nodes, and
+  real findings fired -- see section 1's heterogeneous-SKU test entry.
+- **Flannel does not follow `--node-ip`**: k3s's own advertised address
+  (API server/kubelet traffic) can be pinned to a Tailscale IP via
+  `--node-ip`, but flannel (the CNI/pod-network overlay) auto-detects its
+  own interface *independently* and ignores that setting. Left unset,
+  cross-node pod-to-pod networking (and therefore cross-node DNS via
+  CoreDNS, and therefore any cross-node Service traffic) silently fails
+  while node-to-node kubelet/apiserver traffic keeps working fine --
+  a confusing split where the cluster looks healthy (`kubectl get nodes`
+  all Ready) but cross-node pods can't reach each other. Fix: also pass
+  `--flannel-iface=tailscale0` (or whatever the real cross-node interface
+  is) alongside `--node-ip` on every node whenever bridging NAT'd hosts via
+  a mesh VPN like Tailscale.
 
 ## 6. What I (the assistant) have NOT done
 
