@@ -7,8 +7,10 @@ official `prometheus_client` parser rather than hand-rolled regex.
 from __future__ import annotations
 
 import logging
+import socket
 import time
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
 from prometheus_client.parser import text_string_to_metric_families
@@ -18,6 +20,48 @@ logger = logging.getLogger(__name__)
 
 class ScrapeError(RuntimeError):
     """Raised when a target could not be scraped after all retries."""
+
+
+def resolve_targets(url: str) -> list[str]:
+    """Expand a metrics URL's hostname into one URL per resolved IP.
+
+    A GPU node's DCGM exporter runs as a DaemonSet -- one pod per node --
+    fronted by a single Service name. A normal ClusterIP Service load-
+    balances each new connection to exactly one backend pod, so scraping
+    the URL as given only ever reaches one node per cycle; over many
+    cycles that silently starves every other node of half (or more) of
+    its expected samples, without ever surfacing as a scrape failure. A
+    headless Service (clusterIP: None) fixes this at the DNS layer
+    instead: its name resolves to every backing pod's IP as a separate A
+    record. Resolving here and scraping each address individually is what
+    actually reaches every node.
+
+    Falls back to the original URL, unchanged, when resolution fails
+    (unresolvable host -- e.g. in tests, or a plain non-Kubernetes
+    deployment) or resolves to a single address (a non-headless Service,
+    or any single-node/single-pod target) -- both already work correctly
+    scraped directly, and forcing IP-literal URLs onto them would only
+    risk breaking TLS SNI or virtual-hosting setups for no benefit.
+    """
+    parts = urlsplit(url)
+    host = parts.hostname
+    if host is None:
+        return [url]
+
+    try:
+        infos = socket.getaddrinfo(host, parts.port, type=socket.SOCK_STREAM)
+    except socket.gaierror:
+        return [url]
+
+    ips = sorted({info[4][0] for info in infos})
+    if len(ips) <= 1:
+        return [url]
+
+    targets = []
+    for ip in ips:
+        netloc = f"[{ip}]:{parts.port}" if ":" in ip else f"{ip}:{parts.port}"
+        targets.append(urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment)))
+    return targets
 
 
 @dataclass

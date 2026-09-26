@@ -75,6 +75,14 @@ metadata:
     app.kubernetes.io/name: dcgm-exporter
     {{- include "gpu-telemetry-collector.labels" . | nindent 4 }}
 spec:
+  # Headless: this DaemonSet has one pod per GPU node. A normal ClusterIP
+  # Service load-balances every connection to a single random backend pod,
+  # so the collector (which resolves this name and scrapes each returned
+  # address -- see metrics_client.resolve_targets) would otherwise only
+  # ever reach one node per cycle, silently starving every other node of
+  # most of its expected samples. clusterIP: None makes DNS return every
+  # backing pod's IP as its own A record instead of one virtual IP.
+  clusterIP: None
   selector:
     app.kubernetes.io/name: dcgm-exporter
     app.kubernetes.io/instance: {{ .Release.Name }}

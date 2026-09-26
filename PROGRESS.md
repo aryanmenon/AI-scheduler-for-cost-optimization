@@ -272,6 +272,34 @@ back with results to interpret, or with problems to debug.
   gpu-telemetry ...` produces Deployment `gpu-telemetry-collector`. Verified
   by reading the template, not assumed, before putting it in the README.
 
+- **Real bug found by the heterogeneous-SKU test itself**: on a genuine
+  multi-node cluster, `telemetry-collector` scraped DCGM through a single
+  `http://dcgm-exporter:9400/metrics` URL backed by a normal ClusterIP
+  Service in front of the dcgm-exporter DaemonSet. kube-proxy load-balances
+  each new connection to one random backend pod, so the collector only
+  ever saw *one node's* GPU per cycle — never both — which silently
+  produced `coverage_ratio` around 0.3-0.6 on every bucket for both nodes
+  (never near 1.0), well below waste-detector's `min_coverage_ratio=0.8`
+  gate, so zero findings ever fired despite hours of healthy runtime.
+  Scrape-level health metrics (`scrape_runs.success`, `attributed_count`)
+  looked perfectly fine the whole time — this only showed up by comparing
+  `avg_gpu_count` (stuck at 1.00, should be 2 on a 2-node cluster) against
+  actual rollup coverage. This would have hit any real multi-node pilot
+  customer, not just this test. Fixed in `telemetry-collector`:
+  `metrics_client.resolve_targets()` resolves the DCGM hostname to every
+  backing IP and scrapes each individually, merging results (falls back to
+  the original URL unchanged if resolution fails or returns one address, so
+  single-node deployments and existing tests are unaffected); the Helm
+  chart's dcgm-exporter Service is now headless (`clusterIP: None`) so its
+  DNS name actually returns one A record per node instead of one virtual
+  IP. A partial failure (one node's exporter briefly down) now still
+  stores the other node(s)' data with a note in `scrape_runs.error`,
+  mirroring the existing kube-state-metrics non-fatal-failure pattern.
+  **Still needs to be applied to the live rented cluster** (rebuild+deploy
+  the collector image, recreate the dcgm-exporter Service since
+  `clusterIP` is immutable on an existing Service) before the
+  heterogeneous-SKU test can actually produce findings.
+
 ## 6. What I (the assistant) have NOT done
 
 - Not rented, accessed, or run anything on the user's actual vast.ai

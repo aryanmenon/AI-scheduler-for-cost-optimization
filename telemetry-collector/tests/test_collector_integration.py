@@ -237,6 +237,84 @@ def test_run_forever_writes_heartbeat_every_cycle_even_after_exception(
     storage.close()
 
 
+def test_run_once_merges_samples_from_multiple_dcgm_targets(tmp_path, monkeypatch, ksm_text):
+    # Regression: a DCGM exporter DaemonSet fronted by a headless Service
+    # resolves to multiple targets (one per GPU node -- see
+    # metrics_client.resolve_targets). Scraping only the first one silently
+    # starves every other node's rollup coverage. Every resolved target
+    # must actually get scraped and merged into one cycle's data.
+    import telemetry_collector.collector as collector_module
+
+    monkeypatch.setattr(
+        collector_module,
+        "resolve_targets",
+        lambda url: ["http://10.0.0.1:9400/metrics", "http://10.0.0.2:9400/metrics"],
+    )
+
+    node_a_text = 'DCGM_FI_DEV_GPU_UTIL{gpu="0",Hostname="node-a",namespace="ns",pod="w-a-abc12"} 10\n'
+    node_b_text = 'DCGM_FI_DEV_GPU_UTIL{gpu="0",Hostname="node-b",namespace="ns",pod="w-b-abc12"} 20\n'
+
+    def fake_get(url, timeout):
+        if url == "http://10.0.0.1:9400/metrics":
+            return _FakeResponse(node_a_text)
+        if url == "http://10.0.0.2:9400/metrics":
+            return _FakeResponse(node_b_text)
+        if "kube-state" in url:
+            return _FakeResponse(ksm_text)
+        raise AssertionError(f"unexpected url {url}")
+
+    monkeypatch.setattr("telemetry_collector.metrics_client.requests.get", fake_get)
+    config = _config(tmp_path)
+    storage = Storage(config.sqlite_path)
+
+    run_once(config, storage)
+
+    assert storage.count_gpu_metrics() == 2
+    nodes = {row["node"] for row in storage.latest_metrics()}
+    assert nodes == {"node-a", "node-b"}
+    row = storage._conn.execute("SELECT success, error FROM scrape_runs").fetchone()
+    assert row[0] == 1
+    assert row[1] is None
+    storage.close()
+
+
+def test_run_once_keeps_other_nodes_data_when_one_dcgm_target_is_down(tmp_path, monkeypatch, ksm_text):
+    # One node's DCGM exporter pod restarting mid-scrape must not blank out
+    # every other node's data for that cycle -- the same non-fatal partial-
+    # failure handling this module already applies to kube-state-metrics.
+    import telemetry_collector.collector as collector_module
+
+    monkeypatch.setattr(
+        collector_module,
+        "resolve_targets",
+        lambda url: ["http://10.0.0.1:9400/metrics", "http://10.0.0.2:9400/metrics"],
+    )
+    monkeypatch.setattr("telemetry_collector.metrics_client.time.sleep", lambda s: None)
+
+    node_a_text = 'DCGM_FI_DEV_GPU_UTIL{gpu="0",Hostname="node-a",namespace="ns",pod="w-a-abc12"} 10\n'
+
+    def fake_get(url, timeout):
+        if url == "http://10.0.0.1:9400/metrics":
+            return _FakeResponse(node_a_text)
+        if url == "http://10.0.0.2:9400/metrics":
+            raise requests.ConnectionError("node-b unreachable")
+        if "kube-state" in url:
+            return _FakeResponse(ksm_text)
+        raise AssertionError(f"unexpected url {url}")
+
+    monkeypatch.setattr("telemetry_collector.metrics_client.requests.get", fake_get)
+    config = _config(tmp_path)
+    storage = Storage(config.sqlite_path)
+
+    run_once(config, storage)
+
+    assert storage.count_gpu_metrics() == 1
+    row = storage._conn.execute("SELECT success, error FROM scrape_runs").fetchone()
+    assert row[0] == 1  # partial success: node-a's data was still stored
+    assert "1/2 DCGM targets unreachable" in row[1]
+    storage.close()
+
+
 def test_run_forever_alerts_after_consecutive_failures_then_on_recovery(tmp_path, monkeypatch):
     # Regression: a structured cycle_complete log line only reaches an
     # operator who's already looking for it. Once failures cross the

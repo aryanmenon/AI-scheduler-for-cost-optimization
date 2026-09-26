@@ -15,10 +15,31 @@ import urllib.request
 
 from telemetry_collector.config import Config
 from telemetry_collector.correlator import correlate
-from telemetry_collector.metrics_client import ScrapeError, scrape
+from telemetry_collector.metrics_client import ScrapeError, resolve_targets, scrape
 from telemetry_collector.storage import Storage
 
 logger = logging.getLogger(__name__)
+
+
+def _scrape_dcgm_targets(config: Config) -> tuple[list, list[str], int]:
+    """Scrape every resolved DCGM exporter target, merging their samples.
+
+    One node's exporter being briefly unreachable must not blank out the
+    others -- the same non-fatal-partial-failure principle run_once
+    already applies to kube-state-metrics, just applied per node here
+    instead of per source.
+    """
+    targets = resolve_targets(config.dcgm_exporter_url)
+    samples = []
+    errors: list[str] = []
+    for target in targets:
+        try:
+            samples.extend(
+                scrape(target, timeout=config.http_timeout_seconds, max_retries=config.max_scrape_retries)
+            )
+        except ScrapeError as exc:
+            errors.append(str(exc))
+    return samples, errors, len(targets)
 
 
 def _log_cycle(duration_ms: float, rows_in: int, rows_out: int, errors: int, **extra) -> None:
@@ -42,21 +63,21 @@ def _log_cycle(duration_ms: float, rows_in: int, rows_out: int, errors: int, **e
 def run_once(config: Config, storage: Storage) -> int:
     """Run a single scrape cycle. Returns the scrape_run id."""
     start = time.monotonic()
-    error: str | None = None
+    errors: list[str] = []
 
-    try:
-        dcgm_samples = scrape(
-            config.dcgm_exporter_url,
-            timeout=config.http_timeout_seconds,
-            max_retries=config.max_scrape_retries,
-        )
-    except ScrapeError as exc:
-        logger.error("DCGM scrape failed: %s", exc)
+    dcgm_samples, dcgm_errors, target_count = _scrape_dcgm_targets(config)
+    if not dcgm_samples:
+        error_msg = "; ".join(dcgm_errors) if dcgm_errors else "no DCGM targets resolved"
+        logger.error("DCGM scrape failed: %s", error_msg)
         duration_ms = (time.monotonic() - start) * 1000
-        run_id = storage.record_scrape([], duration_ms, success=False, error=str(exc))
+        run_id = storage.record_scrape([], duration_ms, success=False, error=error_msg)
         _prune(config, storage)
         _log_cycle(duration_ms, rows_in=0, rows_out=0, errors=1)
         return run_id
+    if dcgm_errors:
+        errors.append(
+            f"{len(dcgm_errors)}/{target_count} DCGM targets unreachable: " + "; ".join(dcgm_errors)
+        )
 
     try:
         scrape(
@@ -67,12 +88,13 @@ def run_once(config: Config, storage: Storage) -> int:
     except ScrapeError as exc:
         # Non-fatal: DCGM data is still stored below.
         logger.warning("kube-state-metrics scrape failed (continuing): %s", exc)
-        error = f"kube-state-metrics unavailable: {exc}"
+        errors.append(f"kube-state-metrics unavailable: {exc}")
 
     records = correlate(dcgm_samples)
     duration_ms = (time.monotonic() - start) * 1000
 
     attributed = sum(1 for r in records if r.attributed)
+    error = "; ".join(errors) if errors else None
     run_id = storage.record_scrape(records, duration_ms, success=True, error=error)
     _prune(config, storage)
     _log_cycle(
