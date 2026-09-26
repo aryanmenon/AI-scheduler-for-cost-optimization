@@ -1,0 +1,55 @@
+# Pinned to node A (the first GPU type) via nodeSelector -- unlike the
+# fragmentation test's workload-a.yaml, this test's whole point is two
+# DIFFERENT GPU models each getting correctly identified/priced, so each
+# workload must land on a specific node, not wherever the scheduler
+# happens to put it. Replace NODE_A_NAME below with the real value from
+# `kubectl get nodes` (see README step 3).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tiny-model-a
+  namespace: inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tiny-model-a
+  template:
+    metadata:
+      labels:
+        app: tiny-model-a
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: NODE_A_NAME
+      containers:
+        - name: server
+          image: tiny-model-server:test
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: "1"
+              memory: 4Gi
+              nvidia.com/gpu: "1"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tiny-model-a
+  namespace: inference
+spec:
+  selector:
+    app: tiny-model-a
+  ports:
+    - port: 8000
+      targetPort: 8000

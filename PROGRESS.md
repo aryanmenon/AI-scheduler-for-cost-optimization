@@ -174,17 +174,35 @@ back with results to interpret, or with problems to debug.
    chance); Recurring-pattern was never in scope for this rental (needs
    real calendar-day boundaries).
 2. **Heterogeneous GPU SKU test + Real managed-Kubernetes-cluster test —
-   PLANNED TO RUN TOGETHER**, not started yet. Decided against vast.ai for
-   this one: recognized-SKU availability (T4/A10/L4/V100) was unreliable
-   every time it was checked. Instead: one managed cluster (GKE/EKS/AKS --
-   provider not yet chosen) with two GPU node pools of different
-   recognized types (e.g. T4 + L4), `persistence.enabled: true` for the
-   first real PVC test, running only a few hours (not 24h -- this test
-   isn't re-proving the 24h threshold, just cross-SKU capability/pricing
-   correctness and real StorageClass/RBAC survival). Estimated combined
-   cost ~$5-7 total across both providers' on-demand GPU node pricing.
-   Verify the dcgm-exporter NODE_NAME fix (section 1, 4th bug) actually
-   reports real node hostnames before trusting per-node findings here.
+   SPLIT into two independent tests** (reversed the earlier "run together"
+   plan once a leftover ~$6.99 vast.ai balance made the split cheaper than
+   combining them):
+   - **Heterogeneous SKU** — test kit built and pushed:
+     `testing/heterogeneous-sku-test/` (README + k8s manifests). Runs on
+     vast.ai: 2 separate VM instances, different recognized GPU types,
+     joined into one k3s cluster (server + agent over an exposed port
+     6443 -- vast.ai's own native multi-node "Clusters" feature needs
+     non-NATed same-subnet machines, not reliable for 2 independently
+     rented instances, so plain k3s join is used instead). Workloads
+     pinned one-per-node via `nodeSelector: kubernetes.io/hostname`.
+     Uses `values-smoke-test.yaml` (lowered thresholds, ~4h run) since
+     this test targets cross-SKU capability/pricing correctness, not a
+     re-proof of real-time thresholds already proven by test 1. Availability
+     of 2 different recognized SKUs on vast.ai needs a fresh check each
+     time (`vastai search offers 'vms_enabled=true num_gpus>=1' -o 'dph_total'`)
+     -- not guaranteed. This is also the first live test of the
+     dcgm-exporter NODE_NAME fix (section 1, 4th bug) -- README step 3
+     has the verification command; check it before trusting any per-node
+     finding in this test.
+   - **Real managed-Kubernetes-cluster test** — not started, runbook not
+     yet written. Simplified now that heterogeneous SKU is decoupled: only
+     needs ONE GPU node pool (not two), on GKE (chosen as default --
+     easiest device-plugin auto-setup, no existing cloud account to
+     prefer otherwise). `persistence.enabled: true` for the first real
+     PVC test. Blocked on GCP signup + GPU quota increase request (new
+     accounts start at zero GPU quota on all three major clouds --
+     approval time is unpredictable, minutes to over a day; start this
+     early since it's the long pole, not the last step).
 3. **Genuine design-partner pilot** — only after the above two. Explicitly
    discussed and agreed: the actual 30-40% utilization-gain business
    thesis can only be validated against real organic traffic on a real
