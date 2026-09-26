@@ -44,20 +44,24 @@ been checked). Rent both as **VM instance type** (not the default
 container instance -- same reasoning as the fragmentation test: k3s needs
 real nested virtualization). Add your SSH key before renting either.
 
-**Also expose port 6443 on both instances** (needed for step 2's cluster
-join) -- when configuring/renting, edit the VM template's **Ports**
-section to add `6443` (in addition to whatever SSH already opens). Note
-each instance's SSH connection info and its public-IP:mapped-port for
-6443 (find both via the instance's "IP Port Info" popup in the vast.ai
-console once it's running).
+No need to expose any extra port for this -- vast.ai only lets you add
+exposed ports at template configuration time, before an instance launches,
+not to an already-running one. Step 2 below uses an SSH tunnel instead,
+which works against SSH alone (every VM instance already has it) and
+needs no template changes either way. It's also the better choice
+regardless: it keeps k3s's API server off the public internet entirely,
+rather than exposing it and relying on the join token alone as the
+security boundary.
 
 Don't use vast.ai's own native multi-node "Clusters" feature for this --
 it requires specific machines with non-NATed IPs in a shared subnet,
 which isn't reliably available for two independently-rented instances.
-Plain k3s-server-then-agent-join over the public IP (below) is the more
-broadly reliable path, and standard practice for k3s across separate
-cloud VMs generally -- the join token is the real security boundary here,
-not network isolation.
+
+## 0.5. Both instances' SSH info
+
+Once both are running, note each one's SSH connection details (host +
+port) from the vast.ai console -- you'll need node A's to open the tunnel
+in step 2.
 
 ## 1. Bring up k3s on node A (the server)
 
@@ -75,13 +79,25 @@ sudo cat /var/lib/rancher/k3s/server/node-token
 
 SSH into the second instance. Install the NVIDIA Container Toolkit +
 containerd runtime config the same way (steps 2-3 of the fragmentation
-README's step 0), but install k3s as an **agent** joining node A instead
-of a fresh server:
+README's step 0). Before joining, open an SSH tunnel from this instance
+to node A so k3s's API server is reachable without exposing it publicly:
 
 ```bash
-curl -sfL https://get.k3s.io | K3S_URL=https://<NODE_A_PUBLIC_IP>:<NODE_A_6443_MAPPED_PORT> \
+ssh -N -L 6443:localhost:6443 -p <NODE_A_SSH_PORT> root@<NODE_A_SSH_HOST> &
+```
+
+Then install k3s as an **agent**, joining through the tunnel (`127.0.0.1`
+here means "through the tunnel to node A", not node B itself):
+
+```bash
+curl -sfL https://get.k3s.io | K3S_URL=https://127.0.0.1:6443 \
   K3S_TOKEN=<token from step 1> sh -
 ```
+
+Keep the SSH tunnel (the `ssh -N -L ...` from above) running in the
+background for as long as this test runs -- if it drops, node B loses
+contact with the cluster's API server. Reopen it if your session gets
+interrupted.
 
 The device plugin DaemonSet from step 1 will automatically schedule a
 copy onto this new node once it joins -- no need to redeploy it.

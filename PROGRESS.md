@@ -180,10 +180,14 @@ back with results to interpret, or with problems to debug.
    - **Heterogeneous SKU** — test kit built and pushed:
      `testing/heterogeneous-sku-test/` (README + k8s manifests). Runs on
      vast.ai: 2 separate VM instances, different recognized GPU types,
-     joined into one k3s cluster (server + agent over an exposed port
-     6443 -- vast.ai's own native multi-node "Clusters" feature needs
-     non-NATed same-subnet machines, not reliable for 2 independently
-     rented instances, so plain k3s join is used instead). Workloads
+     joined into one k3s cluster (server + agent over an SSH tunnel to
+     node A's port 6443, not a publicly exposed port -- vast.ai only lets
+     you add exposed ports at template time, before launch, not to a
+     running instance; the tunnel also keeps k3s's API server off the
+     public internet entirely. vast.ai's own native multi-node "Clusters"
+     feature needs non-NATed same-subnet machines, not reliable for 2
+     independently rented instances, so this plain k3s join is used
+     instead). Workloads
      pinned one-per-node via `nodeSelector: kubernetes.io/hostname`.
      Uses `values-smoke-test.yaml` (lowered thresholds, ~4h run) since
      this test targets cross-SKU capability/pricing correctness, not a
