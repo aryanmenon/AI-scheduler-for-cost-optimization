@@ -92,6 +92,25 @@ def test_4060_ti_not_confused_with_plain_4060():
     assert plain.fp16_tflops == 60.5
 
 
+def test_rtx_4000_ada_known_and_priceable_but_not_recommendable():
+    # Professional/workstation Ada card, not a GeForce gaming card -- but
+    # still treated as not-recommendable (see capability.py's comment on
+    # why: single-slot, low-power, "from the desktop" workstation
+    # deployment, not a datacenter rack GPU category).
+    cap = lookup_capability("NVIDIA RTX 4000 Ada Generation")
+    assert cap.known
+    assert not cap.recommendable
+    assert cap.fp16_tflops == 106.9
+    assert cap.mem_capacity_gb == 20.0
+
+
+def test_rtx_4000_ada_not_confused_with_other_4000_series():
+    # Sanity check against accidental collision with any other "4000"-ish
+    # or "ADA"-ish entry in the table.
+    cap = lookup_capability("NVIDIA RTX 4000 Ada Generation")
+    assert cap.canonical_name == "NVIDIA RTX 4000 Ada Generation"
+
+
 def test_datacenter_gpus_remain_recommendable():
     for name in ["NVIDIA T4", "NVIDIA A10", "NVIDIA A100 80GB"]:
         cap = lookup_capability(name)

@@ -50,6 +50,11 @@ _ILLUSTRATIVE_DEFAULT_RATES: dict[str, float] = {
     "NVIDIA GeForce RTX 4060": 20.00,
     "NVIDIA GeForce RTX 4060 Ti": 28.00,
     "NVIDIA GeForce RTX 3060": 18.00,
+    # Professional/workstation Ada card, not a GeForce gaming card -- see
+    # capability.py's comment. No real rental rate observed this session
+    # to anchor against; a rough guess between the GeForce range above and
+    # true datacenter L4 pricing (NVIDIA T4).
+    "NVIDIA RTX 4000 Ada Generation": 40.00,
 }
 
 

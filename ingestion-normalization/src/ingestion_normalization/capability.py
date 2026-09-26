@@ -131,6 +131,27 @@ _CAPABILITY_TABLE: list[tuple[tuple[str, ...], GPUCapability]] = [
         ("3060",),
         GPUCapability("NVIDIA GeForce RTX 3060", 51.0, 360.0, 12.0, recommendable=False),
     ),
+    # RTX 4000 Ada is NVIDIA's professional/workstation Ada-Generation
+    # line, not a GeForce gaming card -- genuinely different category, and
+    # it does show up on some cloud GPU rental listings. Still marked
+    # recommendable=False: NVIDIA markets it as a single-slot, 130W card
+    # "from the desktop" for workstation deployment, not a datacenter rack
+    # GPU in the same category as T4/A10/L4/A100/H100 -- suggesting it as
+    # a real cluster's right-sizing target seems like the same bad advice
+    # the GeForce exclusion protects against. fp16_tflops is derived
+    # (NVIDIA's own datasheet only publishes FP8-with-sparsity peak =
+    # 427.6 TFLOPS; halved for FP16-with-sparsity = 213.8, halved again
+    # for dense = ~106.9), not a directly spec-sheet-published dense
+    # figure like the other entries in this table -- flagged in case it
+    # needs revisiting. Does not distinguish the smaller "RTX 4000 SFF Ada"
+    # variant, which has different (lower) real specs -- its modelName
+    # would also match this same pattern and get this entry's numbers
+    # applied incorrectly; a known approximation, not fixed here since it
+    # wasn't asked for.
+    (
+        ("4000", "ADA"),
+        GPUCapability("NVIDIA RTX 4000 Ada Generation", 106.9, 360.0, 20.0, recommendable=False),
+    ),
 ]
 
 
