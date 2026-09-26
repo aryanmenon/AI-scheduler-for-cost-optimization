@@ -194,6 +194,25 @@ back with results to interpret, or with problems to debug.
      dcgm-exporter NODE_NAME fix (section 1, 4th bug) -- README step 3
      has the verification command; check it before trusting any per-node
      finding in this test.
+     **Only recognized SKUs (T4/A10/L4/V100/L40S/A100/H100) were
+     available at rental time for prior tests -- when T4/A10/L4/V100 were
+     all unavailable again, the plan became RTX 3090 + RTX 3060.** Neither
+     was in the capability table before, which would have meant both
+     landing in "Not priced" (defeating this test's actual point) --
+     fixed properly rather than worked around. `capability.py`'s
+     `GPUCapability` now has a `recommendable: bool` field, separate from
+     `known`: `known` gates pricing/normalization (safe for consumer GPUs
+     too), `recommendable` gates whether `ceiling.py`'s right-sizing
+     search may ever suggest a SKU as a downsize *target* (never true for
+     consumer/gaming cards -- no real cluster racks them as a node pool
+     option). Added RTX 3060/3090/4060 as known+priced,
+     recommendable=False. Verified the bug is real by temporarily
+     removing the `cap.recommendable` filter in `ceiling.py`: an
+     over-provisioned A100 finding recommended "NVIDIA GeForce RTX 3060"
+     instead of "NVIDIA T4" -- confirmed exactly the failure mode an
+     earlier throwaway experiment (not committed) surfaced. Fix + 2 new
+     regression tests + 1 pre-existing test updated for the new flag, all
+     committed and pushed; full suites green (63 + 51 passed).
    - **Real managed-Kubernetes-cluster test** — not started, runbook not
      yet written. Simplified now that heterogeneous SKU is decoupled: only
      needs ONE GPU node pool (not two), on GKE (chosen as default --

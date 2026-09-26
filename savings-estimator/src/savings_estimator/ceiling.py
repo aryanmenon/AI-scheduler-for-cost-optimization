@@ -46,9 +46,17 @@ def right_sized_capability(
     peak_demand_tflops = current_fp16_tflops * (observed_peak_utilization_pct / 100.0)
     required_fp16_tflops = peak_demand_tflops / (sla_target_utilization_pct / 100.0)
 
+    # recommendable excludes SKUs (consumer/gaming cards) that are safe to
+    # price a customer's own telemetry against but nonsensical to suggest
+    # as a right-sizing *target* -- no real cluster racks them as a node
+    # pool option, however well their TFLOPS number happens to fit. See
+    # capability.py's module docstring for why this is a separate flag
+    # from `known`.
     candidates = [
         cap for cap in all_known_capabilities()
-        if cap.fp16_tflops is not None and cap.fp16_tflops >= required_fp16_tflops
+        if cap.fp16_tflops is not None
+        and cap.fp16_tflops >= required_fp16_tflops
+        and cap.recommendable
     ]
 
     if not candidates:

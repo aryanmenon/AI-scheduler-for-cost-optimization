@@ -16,6 +16,20 @@ throughput is used downstream right now.
 Figures are public spec-sheet dense (non-sparse) FP16 Tensor TFLOPS and
 memory bandwidth from NVIDIA datasheets -- directional for cross-SKU
 comparability, not a billing-grade ground truth.
+
+`known` and `recommendable` are deliberately separate flags, not one.
+`known` gates whether *this GPU's own telemetry* can be capacity-scaled
+and priced -- being known is safe and desirable for any real GPU a
+customer might have, consumer cards included. `recommendable` gates a
+different question entirely: would this ever be sane advice to hand a
+customer as an over-provisioned workload's *right-sizing target*
+(ceiling.py searches every known capability for the smallest one that
+fits). No real cluster racks consumer/gaming cards as a node pool option,
+so recommending one is nonsensical regardless of how well its TFLOPS
+number happens to fit -- conflating the two flags (as an earlier version
+of this table did) let a consumer GPU's low price silently win the
+right-sizing search for *any* over-provisioned finding, not just findings
+on that hardware.
 """
 from __future__ import annotations
 
@@ -32,6 +46,10 @@ class GPUCapability:
     mem_bandwidth_gbps: float | None
     mem_capacity_gb: float | None
     source: str = SPEC_SHEET_SOURCE
+    # See module docstring: gates right-sizing *recommendations*
+    # (ceiling.py), never gates pricing/normalization -- those only
+    # depend on `known`.
+    recommendable: bool = True
 
     @property
     def known(self) -> bool:
@@ -45,6 +63,7 @@ def _unknown(model_name: str | None) -> GPUCapability:
         mem_bandwidth_gbps=None,
         mem_capacity_gb=None,
         source=UNKNOWN_SOURCE,
+        recommendable=False,
     )
 
 
@@ -86,6 +105,23 @@ _CAPABILITY_TABLE: list[tuple[tuple[str, ...], GPUCapability]] = [
     (
         ("T4",),
         GPUCapability("NVIDIA T4", 65.0, 320.0, 16.0),
+    ),
+    # Consumer/gaming SKUs -- known (priceable/normalizable) but never
+    # recommendable (see module docstring). Figures are dense (non-sparse)
+    # FP16 Tensor TFLOPS from NVIDIA's own spec sheets, same convention as
+    # the datacenter SKUs above -- NOT the ~2x "with sparsity" numbers
+    # NVIDIA markets these consumer cards with.
+    (
+        ("3090",),
+        GPUCapability("NVIDIA GeForce RTX 3090", 71.0, 936.0, 24.0, recommendable=False),
+    ),
+    (
+        ("4060",),
+        GPUCapability("NVIDIA GeForce RTX 4060", 60.5, 272.0, 8.0, recommendable=False),
+    ),
+    (
+        ("3060",),
+        GPUCapability("NVIDIA GeForce RTX 3060", 51.0, 360.0, 12.0, recommendable=False),
     ),
 ]
 

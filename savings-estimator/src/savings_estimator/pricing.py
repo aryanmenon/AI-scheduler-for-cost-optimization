@@ -38,6 +38,17 @@ _ILLUSTRATIVE_DEFAULT_RATES: dict[str, float] = {
     "NVIDIA A10": 105.00,
     "NVIDIA V100 16GB": 175.00,
     "NVIDIA T4": 45.00,
+    # Consumer/gaming SKUs -- priceable (capability.recommendable=False
+    # keeps them out of right-sizing recommendations elsewhere, see
+    # ceiling.py) but real customer hardware nonetheless, worth pricing
+    # correctly for their own findings. Rougher estimates than the
+    # datacenter rows above: RTX 4060 anchored to a real vast.ai on-demand
+    # rate actually seen this session (~$0.24/GPU/hr); the other two are
+    # directional guesses scaled off that anchor, not independently
+    # verified against live listings.
+    "NVIDIA GeForce RTX 3090": 35.00,
+    "NVIDIA GeForce RTX 4060": 20.00,
+    "NVIDIA GeForce RTX 3060": 18.00,
 }
 
 

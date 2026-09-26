@@ -46,10 +46,30 @@ def test_zero_peak_utilization_has_no_sizing_basis():
 def test_recommendation_never_exceeds_required_headroom_by_picking_smallest_fit():
     rec = right_sized_capability(312.0, 5.0, sla_target_utilization_pct=70.0)
     assert rec.recommended.fp16_tflops >= rec.required_fp16_tflops
-    # And it should be the *smallest* such SKU, not an oversized one.
+    # And it should be the *smallest* such *recommendable* SKU, not an
+    # oversized one -- a smaller but non-recommendable (consumer/gaming)
+    # SKU existing doesn't count as a missed smaller fit, see
+    # capability.py's module docstring on why the two are separate flags.
     from ingestion_normalization.capability import all_known_capabilities
     smaller_fits = [
         c for c in all_known_capabilities()
-        if c.fp16_tflops is not None and rec.required_fp16_tflops <= c.fp16_tflops < rec.recommended.fp16_tflops
+        if c.fp16_tflops is not None
+        and c.recommendable
+        and rec.required_fp16_tflops <= c.fp16_tflops < rec.recommended.fp16_tflops
     ]
     assert smaller_fits == []
+
+
+def test_never_recommends_a_consumer_gpu_even_when_cheapest_fit():
+    # RTX 3060 (51 TFLOPS) is cheaper and numerically closer to a ~44.6
+    # TFLOPS requirement than T4 (65 TFLOPS) -- this same scenario used to
+    # recommend "NVIDIA GeForce RTX 3060" before capability.recommendable
+    # existed. No real cluster racks a GeForce card as a node pool option,
+    # so it must never be recommended regardless of TFLOPS fit.
+    rec = right_sized_capability(
+        current_fp16_tflops=312.0, observed_peak_utilization_pct=10.0, sla_target_utilization_pct=70.0
+    )
+    assert rec.recommended is not None
+    assert rec.recommended.canonical_name == "NVIDIA T4"
+    assert "RTX" not in rec.recommended.canonical_name
+    assert "GeForce" not in rec.recommended.canonical_name

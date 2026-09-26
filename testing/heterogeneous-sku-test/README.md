@@ -19,6 +19,15 @@ in the same cluster. Also does not need a 24h+ run: idle/over-provisioned
 only need their (lowered, smoke-test) thresholds met, not a re-proof of
 the real 24h floor already proven by the other test.
 
+**If the only available recognized SKUs (T4/A10/L4/V100/L40S/A100/H100)
+are unavailable again and you're using consumer GPUs instead** (e.g. RTX
+3090 + RTX 3060): `capability.py` now recognizes these too
+(`GPUCapability.recommendable=False` keeps them out of right-sizing
+recommendations elsewhere, but they're still priced like any other known
+GPU -- see `PROGRESS.md` section 2 for why this needed a real fix, not
+just adding table entries). Step 8's "two distinct priced INR rates"
+success criterion still applies as written.
+
 ## 0. Check availability and rent two different recognized GPU types
 
 Recognized by `capability.py` (only these get priced): `T4`, `A10`, `L4`,

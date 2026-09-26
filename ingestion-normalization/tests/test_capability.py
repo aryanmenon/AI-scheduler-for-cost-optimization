@@ -63,3 +63,20 @@ def test_all_known_capabilities_returns_deduplicated_list():
     assert "NVIDIA A100 80GB" in names
     assert "NVIDIA T4" in names
     assert all(c.known for c in caps)
+
+
+def test_consumer_gpu_known_and_priceable_but_not_recommendable():
+    # Consumer/gaming SKUs must be known (so their own telemetry can be
+    # priced) but never recommendable (so ceiling.py's right-sizing search
+    # never suggests one as a target for someone else's finding -- no
+    # real cluster racks a GeForce card as a node pool option).
+    for name in ["NVIDIA GeForce RTX 3060", "NVIDIA GeForce RTX 3090", "NVIDIA GeForce RTX 4060"]:
+        cap = lookup_capability(name)
+        assert cap.known, f"{name} should be known/priceable"
+        assert not cap.recommendable, f"{name} should not be recommendable"
+
+
+def test_datacenter_gpus_remain_recommendable():
+    for name in ["NVIDIA T4", "NVIDIA A10", "NVIDIA A100 80GB"]:
+        cap = lookup_capability(name)
+        assert cap.recommendable, f"{name} should still be recommendable"
