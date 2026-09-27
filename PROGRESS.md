@@ -145,10 +145,11 @@ the extra real-trace-replay validation. Only item 3 remains, and its GPU
 quota blocker is now CLEARED:
 
 **Real managed-Kubernetes-cluster test (GKE)** — quota unblocked, cluster
-not yet built. `GPUS_ALL_REGIONS` (the global aggregate quota) is now
-`grantedValue: 1` (approved instantly on request), and `NVIDIA_T4_GPUS` in
-`us-central1` was already at `limit: 1` by default -- enough for a single
-T4 GPU node right now, no more waiting.
+built and live, two real bugs found and fixed, dcgm-exporter's fix not
+yet re-verified on the live cluster (next step). `GPUS_ALL_REGIONS` (the
+global aggregate quota) is now `grantedValue: 1` (approved instantly on
+request), and `NVIDIA_T4_GPUS` in `us-central1` was already at `limit: 1`
+by default -- enough for a single T4 GPU node right now, no more waiting.
 
 Getting here required a real, multi-step debugging saga worth recording
 precisely since it'll very likely recur on the next GCP project this
@@ -208,8 +209,79 @@ default Pod Security Standards can block dcgm-exporter's required
 `SYS_ADMIN` capability on newer cluster versions -- the runbook documents
 the exact namespace-label fix rather than assuming it away, since a real
 pilot customer's own namespace policies could hit the identical wall).
-Next step: actually stand up the cluster together, live-interactive, same
-pattern as the heterogeneous-SKU test.
+Cluster stood up live-interactive, same pattern as the heterogeneous-SKU
+test. T4 hit `GCE_STOCKOUT` twice (`us-central1-a`, `us-central1-c`, ~35min
+wait each) and again on a third zone (`asia-south1-b`, cut short on user's
+call that it was "taking too long") -- pivoted to L4/`g2-standard-4`
+instead of continuing to chase T4 availability, which succeeded
+immediately. Test workload pushed to Google Artifact Registry (as planned)
+and deployed onto the GPU node; needed one extra IAM grant not anticipated
+in the runbook -- the GKE node's default Compute Engine service account
+needs `roles/artifactregistry.reader` explicitly (not automatic even for
+a same-project registry), otherwise image pulls 403. Real default
+StorageClass (`standard-rwo`) confirmed present, the actual point of this
+test.
+
+**Two real bugs found live, both are genuine pre-pilot findings, not
+environment quirks:**
+1. **Collector pod PVC-permission bug (confirmed fixed).** With
+   `persistence.enabled=true` against a real dynamically-provisioned
+   volume (GKE's PD CSI driver) for the first time ever in this project's
+   testing, the collector pod's 5 containers -- each pinned to a distinct
+   non-root UID (10001-10005) sharing subPath-remapped views of one PVC --
+   all failed at startup with `sqlite3.OperationalError: unable to open
+   database file`. Root cause: `emptyDir` (used in every prior test, since
+   bare vast.ai rentals have no StorageClass) happens to come out writable
+   by whatever UID mounts it regardless of runAsUser, so this was never
+   caught before -- but a real cloud block-storage volume mounts owned by
+   root with restrictive permissions, and needs a pod-level
+   `securityContext.fsGroup` to be made writable by the 5 distinct UIDs at
+   all. Fixed by adding `fsGroup: 10000` conditionally (only when
+   `persistence.enabled`) in `collector.yaml`. Verified two ways: `helm
+   template` with `persistence.enabled=true`/`false` (fsGroup
+   present/absent as expected), and live -- pod went from 4/5
+   CrashLoopBackOff to 5/5 Running after `helm upgrade`. Commit `f80b910`.
+2. **dcgm-exporter GPU access, two iterations (first iteration wrong,
+   second iteration current/unverified live).** First real evidence that
+   this chart's dcgm-exporter deployment pattern, written and only ever
+   tested against a bare containerd config with
+   `default_runtime_name=nvidia` (vast.ai/k3s -- gives every container
+   automatic driver/device access regardless of resource requests), does
+   not work unmodified on a real managed cluster's standard
+   Kubernetes-device-plugin model (GKE/EKS/AKS all work this way: a
+   container gets driver library/device-file access ONLY if it explicitly
+   requests `nvidia.com/gpu` as a resource).
+   - **First fix (commit `9c582ce`, now known WRONG/incomplete):** added
+     `resources.requests/limits: {nvidia.com/gpu: 1}` to dcgm-exporter.
+     This did fix the immediate crash (`Failed to initialize NVML`), but
+     introduced a worse problem live: `nvidia.com/gpu` claims are
+     exclusive/competitive per node, so on this test's single-GPU node
+     with the `tiny-model` workload pod already holding the one GPU,
+     dcgm-exporter's identical claim had nothing left to allocate and sat
+     `Pending` forever (`FailedScheduling ... Insufficient nvidia.com/gpu`,
+     confirmed live, 5+ minutes, no preemption victim). A monitoring
+     daemon that can only schedule when a node's GPU is idle defeats the
+     product's actual purpose -- it needs to observe GPUs especially when
+     they're busy.
+   - **Second fix (commit `5fc6ce5`, pushed, NOT yet re-verified live --
+     this is the current next step):** replaced the resource-request
+     approach entirely with direct host-level access via hostPath mounts
+     (`/dev`, and GKE COS's driver directory `/home/kubernetes/bin` →
+     `/usr/local`, plus `LD_LIBRARY_PATH=/usr/local/nvidia/lib64`) and
+     `privileged: true` -- the same approach NVIDIA's own GPU-Operator
+     dcgm-exporter deployments use, and it doesn't compete with workloads
+     for schedulable GPU count at all. The exact host paths were taken
+     directly from GKE's own already-working `nvidia-gpu-device-plugin`
+     pod's live config on this same cluster (`kubectl -n kube-system get
+     pod nvidia-gpu-device-plugin-... -o yaml`) rather than guessed from
+     memory. `helm lint`/`helm template` confirm the rendered YAML is
+     well-formed (caught and fixed one real authoring bug of my own along
+     the way: an accidental duplicate `env:` key in the container spec
+     from a sloppy edit, which some YAML parsers silently resolve to only
+     the last block -- would have silently dropped `NODE_NAME` and
+     `DCGM_EXPORTER_KUBERNETES` if it had shipped). **Not yet applied to
+     the live cluster or confirmed reaching `Running` -- next step is
+     `helm upgrade` + `kubectl get pods` there.**
 
 This session has no direct access to the user's real infrastructure (GCP
 or vast.ai) — my role is interpreting real output the user pastes back and
@@ -241,9 +313,13 @@ debugging real problems as they come up, not running anything myself.
 
 **GPU→pod attribution mechanism:**
 - `deploy/helm/gpu-telemetry-collector/templates/dcgm-exporter.yaml` —
-  already correctly wired (`DCGM_EXPORTER_KUBERNETES=true` +
-  `/var/lib/kubelet/pod-resources` hostPath mount). No fix needed, just
-  verified.
+  `DCGM_EXPORTER_KUBERNETES=true` + `/var/lib/kubelet/pod-resources`
+  hostPath mount for attribution (unchanged, correct). GPU/driver access
+  itself is hostPath-based (`/dev`, GKE COS's `/home/kubernetes/bin` →
+  `/usr/local`) + `privileged: true` as of commit `5fc6ce5` -- NOT a
+  `nvidia.com/gpu` resource request, which was tried first (`9c582ce`) and
+  found to make dcgm-exporter compete with real workloads for the node's
+  schedulable GPU count. See section 2 for the full story.
 - `telemetry-collector/src/telemetry_collector/correlator.py` — a GPU
   sample without namespace/pod labels gets `namespace=UNATTRIBUTED` and is
   filtered out before any detector sees it. Requires: DCGM's kubernetes
