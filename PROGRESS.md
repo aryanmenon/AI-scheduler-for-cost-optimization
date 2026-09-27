@@ -110,6 +110,22 @@ Branch this was written on: `claude/cost-optimization-saas-telemetry-w4zbhb`
   DCGM output and `savings-estimator` prices each independently rather than
   conflating them. This closes item 2 of the 3-item pre-pilot technical
   list.
+- **Real managed-Kubernetes-cluster test: COMPLETE and PASSED**
+  (`testing/real-managed-cluster-test/`). Ran on a real GKE Standard
+  cluster (L4 GPU, `g2-standard-4`, `asia-south1-b` -- T4 hit
+  `GCE_STOCKOUT` in 3 zones first). Three real product bugs found and
+  fixed live (dcgm-exporter GPU access competing with workloads for
+  schedulable GPU count, dcgm-exporter pod attribution silently failing
+  on GKE's device-ID format, collector PVC-permission failure) -- full
+  detail in section 2. Real `over_provisioned` finding fired
+  (`gke-gpu-optimizer-test-default-pool-330304fd-jggp`, GPU 0,
+  `tiny-model`, 4.0% peak) at real thresholds; real PVC persistence
+  confirmed surviving a forced collector-pod deletion (23 rollup rows
+  before and after, against a real `standard-rwo` PD CSI volume, not
+  `emptyDir`); real RBAC confirmed clean under GKE's own enforcement
+  (kube-state-metrics: `"Communication with server successful"`, zero
+  permission errors). This closes item 3 of the 3-item pre-pilot
+  technical list -- **all 3 items are now done.**
 - **Real-trace replay: COMPLETE and PASSED** (`testing/real-trace-replay/`).
   Not one of the original 3-item list -- added after the section 6
   methodology review, to get real evidence on "does the detector actually
@@ -140,16 +156,15 @@ Branch this was written on: `claude/cost-optimization-saas-telemetry-w4zbhb`
 
 ## 2. What's in progress right now
 
-Items 1 and 2 of the 3-item pre-pilot list are DONE (see section 1), plus
-the extra real-trace-replay validation. Only item 3 remains, and its GPU
-quota blocker is now CLEARED:
+**All 3 items of the pre-pilot list are now DONE, including item 3
+(real managed-Kubernetes-cluster / GKE test) — see below.** Nothing is
+actively blocked; next real work is either the genuine design-partner
+pilot (section 4 item 3) or GKE cluster teardown to stop billing.
 
-**Real managed-Kubernetes-cluster test (GKE)** — quota unblocked, cluster
-built and live, two real bugs found and fixed, dcgm-exporter's fix not
-yet re-verified on the live cluster (next step). `GPUS_ALL_REGIONS` (the
-global aggregate quota) is now `grantedValue: 1` (approved instantly on
-request), and `NVIDIA_T4_GPUS` in `us-central1` was already at `limit: 1`
-by default -- enough for a single T4 GPU node right now, no more waiting.
+**Real managed-Kubernetes-cluster test (GKE) — DONE, PASSED.**
+`GPUS_ALL_REGIONS` (the global aggregate quota) is now `grantedValue: 1`
+(approved instantly on request), and `NVIDIA_T4_GPUS` in `us-central1` was
+already at `limit: 1` by default.
 
 Getting here required a real, multi-step debugging saga worth recording
 precisely since it'll very likely recur on the next GCP project this
@@ -222,7 +237,7 @@ a same-project registry), otherwise image pulls 403. Real default
 StorageClass (`standard-rwo`) confirmed present, the actual point of this
 test.
 
-**Two real bugs found live, both are genuine pre-pilot findings, not
+**Three real bugs found live, all genuine pre-pilot findings, not
 environment quirks:**
 1. **Collector pod PVC-permission bug (confirmed fixed).** With
    `persistence.enabled=true` against a real dynamically-provisioned
@@ -263,25 +278,79 @@ environment quirks:**
      daemon that can only schedule when a node's GPU is idle defeats the
      product's actual purpose -- it needs to observe GPUs especially when
      they're busy.
-   - **Second fix (commit `5fc6ce5`, pushed, NOT yet re-verified live --
-     this is the current next step):** replaced the resource-request
-     approach entirely with direct host-level access via hostPath mounts
-     (`/dev`, and GKE COS's driver directory `/home/kubernetes/bin` →
-     `/usr/local`, plus `LD_LIBRARY_PATH=/usr/local/nvidia/lib64`) and
-     `privileged: true` -- the same approach NVIDIA's own GPU-Operator
+   - **Second fix (commit `5fc6ce5`, then `09692a4`, CONFIRMED WORKING
+     live):** replaced the resource-request approach entirely with direct
+     host-level access via hostPath mounts (`/dev`, plus
+     `privileged: true`) and `LD_LIBRARY_PATH` pointed at the mounted
+     driver libs -- the same approach NVIDIA's own GPU-Operator
      dcgm-exporter deployments use, and it doesn't compete with workloads
      for schedulable GPU count at all. The exact host paths were taken
      directly from GKE's own already-working `nvidia-gpu-device-plugin`
      pod's live config on this same cluster (`kubectl -n kube-system get
      pod nvidia-gpu-device-plugin-... -o yaml`) rather than guessed from
-     memory. `helm lint`/`helm template` confirm the rendered YAML is
-     well-formed (caught and fixed one real authoring bug of my own along
-     the way: an accidental duplicate `env:` key in the container spec
-     from a sloppy edit, which some YAML parsers silently resolve to only
-     the last block -- would have silently dropped `NODE_NAME` and
-     `DCGM_EXPORTER_KUBERNETES` if it had shipped). **Not yet applied to
-     the live cluster or confirmed reaching `Running` -- next step is
-     `helm upgrade` + `kubectl get pods` there.**
+     memory. Caught and fixed two real authoring bugs of my own along the
+     way, both before ever reaching the live cluster: (a) an accidental
+     duplicate `env:` key in the container spec from a sloppy edit (some
+     YAML parsers silently resolve this to only the last block -- would
+     have silently dropped `NODE_NAME` and `DCGM_EXPORTER_KUBERNETES` if
+     it had shipped); (b) mounting the ENTIRE hostPath
+     `/home/kubernetes/bin` onto the container's `/usr/local` clobbers the
+     whole `/usr/local` tree baked into the dcgm-exporter image itself,
+     hiding `/usr/local/dcgm/dcgm-exporter-entrypoint.sh` and failing live
+     with `RunContainerError: ... no such file or directory` -- GKE's own
+     device-plugin pod gets away with this exact mount only because its
+     base image has nothing of its own under `/usr/local`; dcgm-exporter's
+     does. Fixed (commit `09692a4`) by narrowing the mount to just the
+     driver installer's own subdirectory
+     (`/home/kubernetes/bin/nvidia` → `/usr/local/nvidia`), leaving the
+     image's own `/usr/local/dcgm` untouched. Confirmed live: pod reached
+     `1/1 Running`, logs showed `"DCGM successfully initialized!"` and
+     `"Kubernetes metrics collection enabled!"`.
+3. **dcgm-exporter pod attribution silently failing (confirmed fixed,
+   commit `64a4033`).** Even with the above fix and DCGM successfully
+   initialized, every GPU sample came through the pipeline as
+   `unattributed` (`telemetry-collector`'s own per-cycle log showed
+   `"attributed": 0, "unattributed": 1` every cycle) despite the
+   workload pod actually running on that exact node/GPU. Root-caused by
+   querying dcgm-exporter's own `/metrics` endpoint directly: the
+   `DCGM_FI_DEV_GPU_UTIL` sample had `device="nvidia0"` but no `pod=`/
+   `namespace=` label at all, and no error was logged anywhere. Cause:
+   `DCGM_EXPORTER_KUBERNETES=true` alone assumes device IDs from the
+   kubelet's pod-resources API come in full-UUID form
+   (`GPU-a85a9bb4-...`) by default, but GKE's device plugin reports
+   device-name form instead (`nvidia0`) -- the ID-matching silently fails
+   with no error, and no pod/namespace label is ever attached. Fixed by
+   setting `DCGM_EXPORTER_KUBERNETES_GPU_ID_TYPE=device-name`. Confirmed
+   live: the same raw `/metrics` query afterward showed
+   `container="server", namespace="inference", pod="tiny-model-..."` on
+   the GPU sample.
+
+**Final result: real `over_provisioned` finding fired** on the actual
+GKE node (`gke-gpu-optimizer-test-default-pool-330304fd-jggp`), GPU 0,
+workload `tiny-model`, peak utilization `4.0%` (real, not lowered,
+`overProvisionThresholdPct` comparison via `values-smoke-test.yaml`'s
+1-hour observation window). **PVC persistence confirmed**: rollup row
+count was 23 both immediately before and immediately after force-deleting
+the collector pod -- real cloud block storage (`standard-rwo`) survives
+pod recreation, unlike the `emptyDir` used in both prior tests. **Real
+RBAC confirmed**: kube-state-metrics' own logs showed
+`"Communication with server successful"` against real GKE
+(`v1.35.8-gke.1225000`) with zero permission errors, under the chart's
+get/list/watch-only ClusterRole.
+
+**Unrelated gotcha hit twice mid-test: the Cloud Shell VM itself
+restarted** (independent of anything in this test), each time silently
+killing whatever client-side process was running in that terminal --
+first a `kubectl port-forward`, later the `load_generator.py` process
+driving traffic, truncating its run and leaving a gap in rollup
+`coverage_ratio` right in the hourly bucket the detectors most needed
+intact. Fixed properly rather than just restarted: moved load generation
+into the cluster itself as a real Kubernetes Job
+(`testing/real-managed-cluster-test/k8s/load-generator-job.yaml`, script
+content via a `ConfigMap`, no port-forward needed since it reaches
+`tiny-model.inference.svc.cluster.local:8000` over in-cluster DNS
+directly) -- this has no dependency on any client shell staying connected
+at all, so it can't be silently truncated by a Cloud Shell restart again.
 
 This session has no direct access to the user's real infrastructure (GCP
 or vast.ai) — my role is interpreting real output the user pastes back and
@@ -313,13 +382,16 @@ debugging real problems as they come up, not running anything myself.
 
 **GPU→pod attribution mechanism:**
 - `deploy/helm/gpu-telemetry-collector/templates/dcgm-exporter.yaml` —
-  `DCGM_EXPORTER_KUBERNETES=true` + `/var/lib/kubelet/pod-resources`
-  hostPath mount for attribution (unchanged, correct). GPU/driver access
-  itself is hostPath-based (`/dev`, GKE COS's `/home/kubernetes/bin` →
-  `/usr/local`) + `privileged: true` as of commit `5fc6ce5` -- NOT a
+  `DCGM_EXPORTER_KUBERNETES=true` + `DCGM_EXPORTER_KUBERNETES_GPU_ID_TYPE=
+  device-name` (the latter required on GKE specifically -- see section 2's
+  3rd bug, commit `64a4033`) + `/var/lib/kubelet/pod-resources` hostPath
+  mount for attribution. GPU/driver access itself is hostPath-based
+  (`/dev`, GKE COS's `/home/kubernetes/bin/nvidia` → `/usr/local/nvidia`)
+  + `privileged: true` as of commits `5fc6ce5`/`09692a4` -- NOT a
   `nvidia.com/gpu` resource request, which was tried first (`9c582ce`) and
   found to make dcgm-exporter compete with real workloads for the node's
-  schedulable GPU count. See section 2 for the full story.
+  schedulable GPU count. All three confirmed working live on GKE with a
+  real attributed finding. See section 2 for the full story.
 - `telemetry-collector/src/telemetry_collector/correlator.py` — a GPU
   sample without namespace/pod labels gets `namespace=UNATTRIBUTED` and is
   filtered out before any detector sees it. Requires: DCGM's kubernetes
@@ -414,15 +486,14 @@ debugging real problems as they come up, not running anything myself.
      earlier throwaway experiment (not committed) surfaced. Fix + 2 new
      regression tests + 1 pre-existing test updated for the new flag, all
      committed and pushed; full suites green (63 + 51 passed).
-   - **Real managed-Kubernetes-cluster test** — not started, runbook not
-     yet written. Simplified now that heterogeneous SKU is decoupled: only
-     needs ONE GPU node pool (not two), on GKE (chosen as default --
-     easiest device-plugin auto-setup, no existing cloud account to
-     prefer otherwise). `persistence.enabled: true` for the first real
-     PVC test. Blocked on GCP signup + GPU quota increase request (new
-     accounts start at zero GPU quota on all three major clouds --
-     approval time is unpredictable, minutes to over a day; start this
-     early since it's the long pole, not the last step).
+   - **Real managed-Kubernetes-cluster test — DONE, PASSED, see section 2
+     for the full live-debugging story (3 real bugs found and fixed:
+     dcgm-exporter GPU access, dcgm-exporter pod attribution, collector
+     PVC permissions).** Ran on GKE (L4/`g2-standard-4`, `asia-south1-b` --
+     T4 hit `GCE_STOCKOUT` in 3 different zones first). Real
+     `over_provisioned` finding fired at real thresholds; real PVC
+     persistence survived a forced pod deletion (23 rows before and
+     after); real RBAC confirmed clean under GKE's own enforcement.
 3. **Genuine design-partner pilot** — only after the above two. Explicitly
    discussed and agreed: the actual 30-40% utilization-gain business
    thesis can only be validated against real organic traffic on a real
