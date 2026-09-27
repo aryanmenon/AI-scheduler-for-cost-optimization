@@ -609,11 +609,22 @@ No code changed -- this was requested as read-only analysis.
 - Not opened any PR beyond PR #1 (registry/CI fix merge).
 - Not made any code changes based on the section 6 methodology review --
   explicitly requested as read-only analysis.
-- **Not confirmed: two GitHub PATs were pasted into chat in plaintext**
-  during the heterogeneous-SKU test's live debugging (a fine-grained token
-  and, separately, a classic token used after the fine-grained one hit the
-  GHCR pull gap above) -- flagged to the user twice in that session as
-  compromised and recommended for rotation (GitHub → Settings → Developer
-  settings → Personal access tokens), but never confirmed as actually done.
-  **A future session should re-raise this if it comes up again** -- treat
-  both as still-live exposed credentials until the user confirms otherwise.
+- **Not confirmed: THREE GitHub PATs have now been pasted into chat in
+  plaintext across this project's sessions** -- two during the
+  heterogeneous-SKU test's live debugging (a fine-grained token and,
+  separately, a classic token used after the fine-grained one hit the GHCR
+  pull gap above), and a third classic token pasted during the
+  real-managed-cluster (GKE) test's live debugging, used in a `git clone`
+  URL when Cloud Shell's terminal wouldn't accept interactive input for
+  the credential prompt. Flagged to the user each time as compromised and
+  recommended for rotation (GitHub → Settings → Developer settings →
+  Personal access tokens), but never confirmed as actually done for any of
+  the three. **A future session should re-raise this if it comes up
+  again** -- treat all three as still-live exposed credentials until the
+  user confirms otherwise. This is now a recurring pattern (three
+  incidents across two separate live-debugging sessions) worth being
+  extra vigilant about: whenever a stuck/uncooperative terminal makes an
+  interactive credential prompt (SSH, git, docker login) fail, the safer
+  fallback is `--password-stdin`-style piping or a fresh terminal/tab
+  reconnect, not embedding the raw token in a command that then gets
+  pasted back into this chat for review.
