@@ -35,6 +35,18 @@ spec:
             # reading the kubelet's local pod-resources socket below.
             - name: DCGM_EXPORTER_KUBERNETES
               value: "true"
+            # DCGM_EXPORTER_KUBERNETES alone silently fails to attach any
+            # pod/namespace label on GKE: it matches device IDs from the
+            # kubelet's pod-resources API against its own GPU list assuming
+            # UUID form (e.g. "GPU-a85a...") by default, but GKE's device
+            # plugin reports device-name form instead (e.g. "nvidia0") --
+            # the mismatch means every sample comes back unattributed, with
+            # no error logged anywhere. Found live testing on GKE: DCGM's
+            # own /metrics output showed a bare DCGM_FI_DEV_GPU_UTIL sample
+            # with no pod= or namespace= label despite "Kubernetes metrics
+            # collection enabled!" in the startup log.
+            - name: DCGM_EXPORTER_KUBERNETES_GPU_ID_TYPE
+              value: "device-name"
             # Without this, DCGM self-reports its own container hostname
             # (== this DaemonSet pod's name, e.g. "...-d5gfj") as the
             # "Hostname" metric label -- which correlator.py in
