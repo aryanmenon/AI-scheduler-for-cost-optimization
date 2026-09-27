@@ -1,0 +1,44 @@
+# Runs load_generator.py as a real in-cluster Job instead of from a local
+# shell -- a client machine (a laptop, or a Cloud Shell VM) can drop its
+# connection or restart mid-run for reasons that have nothing to do with
+# this test, silently truncating the load and leaving a gap in rollup
+# coverage_ratio right when the detectors need an unbroken streak. A Job
+# has no such dependency: it keeps running as long as the cluster does,
+# and reaches the workload directly over in-cluster DNS, so it doesn't
+# need a `kubectl port-forward` tunnel either.
+#
+# Usage (script content comes from a ConfigMap so no custom image is
+# needed):
+#   kubectl create configmap load-generator-script -n inference \
+#     --from-file=load_generator.py=testing/fragmentation-and-load-test/load_generator.py \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl apply -f testing/real-managed-cluster-test/k8s/load-generator-job.yaml
+#   kubectl -n inference logs -f job/load-generator
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: load-generator
+  namespace: inference
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: load-generator
+          image: python:3.12-slim
+          command:
+            - sh
+            - -c
+            - |
+              pip install --quiet requests
+              python /scripts/load_generator.py \
+                --target a=http://tiny-model.inference.svc.cluster.local:8000/generate \
+                --duration-hours 2
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+      volumes:
+        - name: script
+          configMap:
+            name: load-generator-script
