@@ -352,6 +352,22 @@ content via a `ConfigMap`, no port-forward needed since it reaches
 directly) -- this has no dependency on any client shell staying connected
 at all, so it can't be silently truncated by a Cloud Shell restart again.
 
+**Teardown: COMPLETE.** Deleted the `inference` namespace, `helm
+uninstall`ed the release, deleted the GKE cluster, and deleted the
+Artifact Registry `test-images` repo. One extra real finding here worth
+recording: `gcloud container clusters list` at teardown time turned up a
+**second, orphaned cluster** (`gpu-optimizer-test` in `us-central1-c`,
+`STATUS: ERROR`) -- a leftover from one of the earlier T4 `GCE_STOCKOUT`
+attempts that silently failed to fully provision and was never cleaned
+up, sitting there consuming quota/possibly billing the whole time
+unnoticed. Deleted it too. **Lesson for next time: always run `gcloud
+container clusters list` (not just check the one cluster you think you
+created) before declaring teardown done** -- a failed `clusters create`
+attempt can still leave a real billable resource behind even though the
+command itself appeared to just fail and move on. Confirmed fully clean
+afterward: `gcloud container clusters list` and `gcloud compute instances
+list` both return zero items project-wide.
+
 This session has no direct access to the user's real infrastructure (GCP
 or vast.ai) — my role is interpreting real output the user pastes back and
 debugging real problems as they come up, not running anything myself.
