@@ -141,24 +141,59 @@ Branch this was written on: `claude/cost-optimization-saas-telemetry-w4zbhb`
 ## 2. What's in progress right now
 
 Items 1 and 2 of the 3-item pre-pilot list are DONE (see section 1), plus
-the extra real-trace-replay validation. Only item 3 remains:
+the extra real-trace-replay validation. Only item 3 remains, and its GPU
+quota blocker is now CLEARED:
 
-**Real managed-Kubernetes-cluster test (GKE)** — blocked on GPU quota. The
-user has a GCP account but no GPU quota approved yet (the known long pole
-— approval is unpredictable, minutes to over a day). Request submitted via
-console.cloud.google.com → IAM & Admin → Quotas, filtered to "NVIDIA T4
-GPUs". Hit a snag: the Quotas page showed no GPU-related entries at all --
-root cause was the Compute Engine API not being enabled yet on the project
-(quotas for a service don't exist to display until that service's API is
-enabled). Told the user to enable it at
-console.cloud.google.com/apis/library/compute.googleapis.com first, then
-recheck Quotas. **Status as of last message: waiting to hear back whether
-that resolved it and whether the quota request has been submitted/approved.**
-Once quota clears, this test follows the same live-interactive pattern as
-the heterogeneous-SKU test (build a runbook, then walk through actual
-execution together, real cluster + real commands, not something this
-session can do unattended). No runbook written yet for this one -- start
-from the plan in section 4 item 2's GKE sub-bullet.
+**Real managed-Kubernetes-cluster test (GKE)** — quota unblocked, cluster
+not yet built. `GPUS_ALL_REGIONS` (the global aggregate quota) is now
+`grantedValue: 1` (approved instantly on request), and `NVIDIA_T4_GPUS` in
+`us-central1` was already at `limit: 1` by default -- enough for a single
+T4 GPU node right now, no more waiting.
+
+Getting here required a real, multi-step debugging saga worth recording
+precisely since it'll very likely recur on the next GCP project this
+product is tested against:
+1. The unified "Quotas & System Limits" console page (IAM & Admin →
+   Quotas) kept returning empty/unusable results no matter how it was
+   filtered (by Name, by Service, sorting + scrolling manually) --
+   eventually root-caused via web search: **the console's quota UI does
+   not support requesting an increase for a quota with zero prior usage**,
+   and every GPU quota on a fresh project shows `usage: 0.0`. This wasn't
+   a navigation mistake; the console path is a dead end for this exact
+   situation.
+2. The account was still on a free trial, which independently restricts
+   GPU provisioning -- upgraded to a full (still-credit-backed) account
+   first, though this alone didn't auto-raise the quota either.
+3. The real path: `gcloud alpha quotas` (the Cloud Quotas API), run from
+   Cloud Shell. Required enabling `cloudquotas.googleapis.com` (prompted
+   automatically), and every call needed `--billing-project=<project>`
+   explicitly -- ADC's implicit quota-project resolution doesn't work
+   correctly in this context and errors otherwise.
+4. `gcloud alpha quotas info list --service=compute.googleapis.com
+   --filter="name:GPUS-ALL-REGIONS"` confirmed `quotaIncreaseEligibility:
+   isEligible: true` for `GPUS-ALL-REGIONS-per-project` -- this is the
+   quota ID that actually matters (the global aggregate; the per-model
+   regional ones like `NVIDIA_T4_GPUS` were already non-zero by default
+   and never needed a request).
+5. `gcloud alpha quotas preferences create --service=compute.googleapis.com
+   --project=<project> --billing-project=<project>
+   --quota-id=GPUS-ALL-REGIONS-per-project --preferred-value=1
+   --justification="..." --email=<contact> --preference-id=<id>` --
+   **no `--dimensions` flag** for this quota specifically, since it's a
+   pure project-level global quota with no regional dimension (passing
+   `--dimensions=region=global` produces `INVALID_ARGUMENT: ... is not
+   regional`). Submitted successfully, and approved within ~2 seconds
+   (`stateDetail: Quota request approved to 1`) -- evidently an
+   auto-approvable request at this size, not a manual-review case.
+6. Check status anytime with `gcloud alpha quotas preferences describe
+   <preference-id> --project=<project> --billing-project=<project>`
+   (note: `describe` does NOT take `--service`/`--quota-id`, unlike
+   `create` -- the preference ID alone is sufficient).
+
+Next step: build the GKE test runbook (none written yet -- start from the
+plan in section 4 item 2's GKE sub-bullet) and actually stand up the
+cluster together, live-interactive, the same pattern as the
+heterogeneous-SKU test.
 
 This session has no direct access to the user's real infrastructure (GCP
 or vast.ai) — my role is interpreting real output the user pastes back and
@@ -459,17 +494,21 @@ debugging real problems as they come up, not running anything myself.
   not, and fails with "cluster unreachable: localhost:8080" without it.
   This needs re-exporting in every fresh shell/reconnected SSH session
   (doesn't persist unless added to `~/.bashrc`).
-- **GCP Console: an empty Quotas page on a fresh project isn't a
-  navigation problem** -- if IAM & Admin → Quotas shows no GPU-related
-  entries at all, it's very likely because the Compute Engine API hasn't
-  been enabled on the project yet (quotas for a service don't exist to
-  display until that service's API is enabled). Enable it first at
-  console.cloud.google.com/apis/library/compute.googleapis.com, then
-  recheck Quotas (filter Service = "Compute Engine API", Metric contains
-  "GPU"). The direct URL `console.cloud.google.com/iam-admin/quotas` is
-  also worth trying directly, or the console's own top search bar typing
-  "Quotas" -- the sidebar location for this page has moved around across
-  GCP console versions.
+- **GCP Console's Quotas UI cannot request an increase for a zero-usage
+  quota** -- on a fresh project every GPU quota shows `usage: 0.0`, and no
+  amount of correct filtering (by Name, by Service, sorting + scrolling)
+  makes the console's edit/increase flow work for it; this isn't a
+  navigation mistake, it's a real console limitation. The actual working
+  path is the `gcloud alpha quotas` CLI (Cloud Quotas API) instead -- see
+  section 2's GKE entry for the exact working command sequence (enable
+  `cloudquotas.googleapis.com`, always pass `--billing-project=<project>`
+  explicitly or every call errors on ADC quota-project resolution, find
+  the real `quotaId` via `quotas info list` before guessing at
+  `preferences create`'s flags, and don't pass `--dimensions` for a
+  quota that turns out to be a pure project-level global one). Also: a
+  free-trial (not-yet-upgraded) GCP account independently restricts GPU
+  provisioning regardless of quota values -- upgrade first if quota
+  requests seem to go nowhere.
 
 ## 6. Methodology risk found via math review (not a code bug -- nothing changed)
 
