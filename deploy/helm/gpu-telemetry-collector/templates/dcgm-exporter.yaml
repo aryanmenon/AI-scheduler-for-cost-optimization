@@ -49,13 +49,11 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-            # Mirrors GKE's own nvidia-gpu-device-plugin pod's mount
-            # layout on this cluster (checked live via
-            # `kubectl -n kube-system get pod nvidia-gpu-device-plugin-... -o yaml`):
-            # host /home/kubernetes/bin (driver binaries+libraries on a COS
-            # node) mounts to /usr/local below, so the actual libraries
-            # land at /usr/local/nvidia/lib64 -- not on the default linker
-            # search path, so DCGM needs to be told where to find them.
+            # host /home/kubernetes/bin/nvidia (the NVIDIA driver
+            # installer's output directory on a GKE COS node) mounts to
+            # /usr/local/nvidia below, so the actual libraries land at
+            # /usr/local/nvidia/lib64 -- not on the default linker search
+            # path, so DCGM needs to be told where to find them.
             - name: LD_LIBRARY_PATH
               value: "/usr/local/nvidia/lib64"
           ports:
@@ -87,7 +85,7 @@ spec:
             - name: dev
               mountPath: /dev
             - name: nvidia-install-dir-host
-              mountPath: /usr/local
+              mountPath: /usr/local/nvidia
       volumes:
         - name: pod-gpu-resources
           hostPath:
@@ -97,7 +95,7 @@ spec:
             path: /dev
         - name: nvidia-install-dir-host
           hostPath:
-            path: /home/kubernetes/bin
+            path: /home/kubernetes/bin/nvidia
 ---
 apiVersion: v1
 kind: Service
