@@ -58,6 +58,20 @@ spec:
             privileged: false
             capabilities:
               add: ["SYS_ADMIN"]
+          resources:
+            # A managed cluster's standard NVIDIA device plugin only
+            # mounts driver libraries/device files into a container that
+            # explicitly requests nvidia.com/gpu (see values.yaml's
+            # dcgmExporter.gpusPerNode comment) -- without this, DCGM
+            # fails immediately with "Failed to initialize NVML" on any
+            # cluster using the standard device-plugin model. Kubernetes
+            # requires requests == limits for this extended resource, so
+            # both are set explicitly rather than relying on the implicit
+            # default.
+            requests:
+              nvidia.com/gpu: {{ .Values.dcgmExporter.gpusPerNode }}
+            limits:
+              nvidia.com/gpu: {{ .Values.dcgmExporter.gpusPerNode }}
           volumeMounts:
             - name: pod-gpu-resources
               mountPath: /var/lib/kubelet/pod-resources

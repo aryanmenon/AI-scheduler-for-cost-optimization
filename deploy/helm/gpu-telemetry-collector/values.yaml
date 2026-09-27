@@ -202,6 +202,18 @@ dcgmExporter:
     - key: nvidia.com/gpu
       operator: Exists
       effect: NoSchedule
+  # How many GPUs each node in nodeSelector's pool actually has. A bare
+  # containerd config with default_runtime_name=nvidia (the vast.ai/k3s
+  # tests' setup) gives every container automatic driver access regardless
+  # of resource requests, so this never mattered there -- but a managed
+  # cluster's standard NVIDIA device plugin (GKE, EKS, AKS all work this
+  # way) only mounts driver libraries/device files into a container that
+  # explicitly requests nvidia.com/gpu, and only mounts as many physical
+  # GPU device files as the requested count. Omitting this entirely (as an
+  # earlier version of this chart did) fails with "Failed to initialize
+  # NVML" on any managed cluster -- found live testing on GKE. Bump this to
+  # match your actual node pool's GPU count per node if it's more than 1.
+  gpusPerNode: 1
 
 kubeStateMetrics:
   enabled: true
