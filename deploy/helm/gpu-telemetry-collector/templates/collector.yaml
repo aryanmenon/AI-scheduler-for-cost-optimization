@@ -112,6 +112,21 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
       serviceAccountName: {{ include "gpu-telemetry-collector.fullname" . }}-collector
+      {{- if .Values.persistence.enabled }}
+      # emptyDir (the default) happens to come out writable by whatever
+      # UID a container runs as on most container runtimes, so this was
+      # never needed for the vast.ai/fragmentation and heterogeneous-SKU
+      # tests. A real dynamically-provisioned volume (GKE's PD CSI driver,
+      # and cloud block storage generally) mounts owned by root with
+      # restrictive permissions instead -- without fsGroup telling
+      # Kubernetes to chown the volume to a group all five containers'
+      # distinct non-root UIDs (10001-10005 below) belong to, every one of
+      # them fails at startup with "unable to open database file". Found
+      # live testing on a real GKE cluster with persistence.enabled=true
+      # for the first time.
+      securityContext:
+        fsGroup: 10000
+      {{- end }}
       containers:
         - name: telemetry-collector
           image: "{{ .Values.collector.image.repository }}:{{ .Values.collector.image.tag }}"
