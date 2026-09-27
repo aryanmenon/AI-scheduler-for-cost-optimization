@@ -190,10 +190,26 @@ product is tested against:
    (note: `describe` does NOT take `--service`/`--quota-id`, unlike
    `create` -- the preference ID alone is sufficient).
 
-Next step: build the GKE test runbook (none written yet -- start from the
-plan in section 4 item 2's GKE sub-bullet) and actually stand up the
-cluster together, live-interactive, the same pattern as the
-heterogeneous-SKU test.
+Runbook built and pushed: `testing/real-managed-cluster-test/README.md`
+(+ `k8s/namespace.yaml`, `k8s/workload.yaml`). Single-GPU (no fragmentation
+re-proof needed), GKE Standard mode with `gpu-driver-version=default` for
+automatic NVIDIA driver install (no manual containerd/toolkit steps unlike
+the vast.ai tests -- the actual point of testing a *managed* cluster), test
+image pushed to Google Artifact Registry instead of GHCR (avoids the whole
+fine-grained-vs-classic-PAT issue for this one test-only image; the
+product's own 5 images still pull from GHCR as usual, same pull-secret
+setup as before). Two things this test specifically targets that neither
+prior test could: `persistence.enabled=true` against a real StorageClass
+(both prior tests used `emptyDir` since bare vast.ai rentals have no
+default StorageClass) -- verified by deleting the collector pod and
+confirming DB row counts survive instead of resetting to 0; and real GKE
+RBAC/Pod Security Admission behavior (flagged a likely real snag: GKE's
+default Pod Security Standards can block dcgm-exporter's required
+`SYS_ADMIN` capability on newer cluster versions -- the runbook documents
+the exact namespace-label fix rather than assuming it away, since a real
+pilot customer's own namespace policies could hit the identical wall).
+Next step: actually stand up the cluster together, live-interactive, same
+pattern as the heterogeneous-SKU test.
 
 This session has no direct access to the user's real infrastructure (GCP
 or vast.ai) — my role is interpreting real output the user pastes back and

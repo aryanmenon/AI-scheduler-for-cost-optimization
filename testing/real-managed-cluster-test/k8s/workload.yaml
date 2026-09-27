@@ -1,0 +1,55 @@
+# Single workload, single GPU -- this test only has 1 GPU of quota
+# (GPUS_ALL_REGIONS approved to 1, see PROGRESS.md section 2). Unlike the
+# fragmentation test (needs 2 GPUs on one node) or the heterogeneous-SKU
+# test (needs 2 different GPU models), this test isn't re-proving
+# detection thresholds or cross-SKU pricing -- both already proven
+# elsewhere. It only needs enough real GPU activity to get one real idle
+# finding, so the actual thing under test (real GKE RBAC/StorageClass/PVC
+# behavior) has real data flowing through it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tiny-model
+  namespace: inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tiny-model
+  template:
+    metadata:
+      labels:
+        app: tiny-model
+    spec:
+      containers:
+        - name: server
+          image: IMAGE_PLACEHOLDER # set in step 4 to the real Artifact Registry path
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: "1"
+              memory: 4Gi
+              nvidia.com/gpu: "1"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tiny-model
+  namespace: inference
+spec:
+  selector:
+    app: tiny-model
+  ports:
+    - port: 8000
+      targetPort: 8000
