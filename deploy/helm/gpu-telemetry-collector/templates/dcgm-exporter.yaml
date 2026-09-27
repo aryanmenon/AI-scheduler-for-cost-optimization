@@ -49,37 +49,55 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            # Mirrors GKE's own nvidia-gpu-device-plugin pod's mount
+            # layout on this cluster (checked live via
+            # `kubectl -n kube-system get pod nvidia-gpu-device-plugin-... -o yaml`):
+            # host /home/kubernetes/bin (driver binaries+libraries on a COS
+            # node) mounts to /usr/local below, so the actual libraries
+            # land at /usr/local/nvidia/lib64 -- not on the default linker
+            # search path, so DCGM needs to be told where to find them.
+            - name: LD_LIBRARY_PATH
+              value: "/usr/local/nvidia/lib64"
           ports:
             - name: metrics
               containerPort: 9400
           securityContext:
-            # DCGM needs to talk to the NVIDIA driver; it does not need
-            # host root or any capability beyond that.
-            privileged: false
+            # Requesting nvidia.com/gpu (an earlier version of this chart's
+            # approach) makes dcgm-exporter compete with real GPU workloads
+            # for the same finite allocatable-per-node count -- on a
+            # single-GPU node with an active workload pod, dcgm-exporter
+            # then sits Pending forever ("Insufficient nvidia.com/gpu"),
+            # found live testing on GKE. A monitoring daemon must have
+            # driver/device access independent of what workloads have
+            # claimed, so instead it gets direct host-level access (the
+            # same approach NVIDIA's own GPU-Operator dcgm-exporter
+            # deployments use) via the hostPath mounts below. That requires
+            # privileged: true -- Kubernetes' device cgroup normally
+            # restricts a container to only the specific /dev nodes granted
+            # through the device-plugin resource-request path being
+            # bypassed here, and hostPath alone does not lift that
+            # restriction.
+            privileged: true
             capabilities:
               add: ["SYS_ADMIN"]
-          resources:
-            # A managed cluster's standard NVIDIA device plugin only
-            # mounts driver libraries/device files into a container that
-            # explicitly requests nvidia.com/gpu (see values.yaml's
-            # dcgmExporter.gpusPerNode comment) -- without this, DCGM
-            # fails immediately with "Failed to initialize NVML" on any
-            # cluster using the standard device-plugin model. Kubernetes
-            # requires requests == limits for this extended resource, so
-            # both are set explicitly rather than relying on the implicit
-            # default.
-            requests:
-              nvidia.com/gpu: {{ .Values.dcgmExporter.gpusPerNode }}
-            limits:
-              nvidia.com/gpu: {{ .Values.dcgmExporter.gpusPerNode }}
           volumeMounts:
             - name: pod-gpu-resources
               mountPath: /var/lib/kubelet/pod-resources
               readOnly: true
+            - name: dev
+              mountPath: /dev
+            - name: nvidia-install-dir-host
+              mountPath: /usr/local
       volumes:
         - name: pod-gpu-resources
           hostPath:
             path: /var/lib/kubelet/pod-resources
+        - name: dev
+          hostPath:
+            path: /dev
+        - name: nvidia-install-dir-host
+          hostPath:
+            path: /home/kubernetes/bin
 ---
 apiVersion: v1
 kind: Service
