@@ -339,9 +339,86 @@ back with results to interpret, or with problems to debug.
   is) alongside `--node-ip` on every node whenever bridging NAT'd hosts via
   a mesh VPN like Tailscale.
 
-## 6. What I (the assistant) have NOT done
+## 6. Methodology risk found via math review (not a code bug -- nothing changed)
+
+User asked, before the managed-cluster test, to sanity-check the detection/
+recommendation math itself: would this reliably find real waste, and is the
+right-sizing math actually correct? Reviewed `idle.py`, `over_provisioning.py`,
+`fragmentation.py`, `patterns.py`, `ceiling.py`, `estimator.py` line by line.
+No code changed -- this was requested as read-only analysis.
+
+- **No code can promise a specific "at least X% waste" number** -- that's a
+  property of the customer's real usage, not the detector's logic. What's
+  checkable is whether thresholds are well-calibrated: they're deliberately
+  conservative (idle needs 4 unbroken hours at <=2% util; over-provisioned
+  needs peak <=30% across 24+ observed hours), which biases toward missing
+  marginal waste rather than false-flagging healthy workloads. `min_coverage_
+  ratio=0.8` is also a real, live risk to this, not just theoretical: it's
+  exactly the mechanism that silently zeroed out every finding during this
+  session's real multi-node scrape bug (section 1/5) -- any future telemetry
+  gap (network blip, exporter restart) narrows what gets reported and never
+  inflates it.
+- **The bigger finding: `ceiling.py`'s right-sizing math treats
+  `DCGM_FI_DEV_GPU_UTIL` as if it were linearly proportional to FLOPS
+  actually consumed** (`normalizer.py`'s `_effective_tflops`: `utilization_pct
+  / 100 * fp16_tflops`), but NVIDIA's own definition of that metric is "%
+  of the last sample period during which *any* kernel was executing" -- a
+  binary time-occupancy signal, not a compute-throughput one. A kernel using
+  1 of an A100's 108 SMs reports the same number as one saturating all 108.
+  This matters most for exactly the workload class this product targets:
+  bursty, small-batch inference (`idle.py`'s own docstring says as much) --
+  frequent small kernel launches keep occupancy high while real FLOPS usage
+  stays low. Worked example: an A100 workload showing 60% peak GPU_UTIL
+  computes `required_fp16_tflops = (312*0.60)/0.70 = 267.4` -- close to the
+  A100 itself, so no meaningful downsize gets recommended, even if the
+  workload's *real* compute footprint would fit comfortably on a T4. The
+  error isn't one-directional (memory-bound and kernel-launch-bound kernels
+  both inflate the proxy; it happens to track real FLOPS reasonably well for
+  dense tensor-core-saturating batch jobs), so no single safety margin fixes
+  it uniformly. Of the three detectors: `idle.py` is low-risk (near-zero
+  occupancy and near-zero FLOPS agree at the extreme); fragmentation's $
+  estimate under-states reclaimable capacity for bursty inference (errs
+  toward under-promising); over-provisioned + `ceiling.py`'s SKU
+  recommendation is the highest-stakes exposure, since it's the only one
+  that names a specific replacement GPU a customer might actually provision.
+  Possible real fix: DCGM's profiling counters (`DCGM_FI_PROF_SM_ACTIVE`,
+  `DCGM_FI_PROF_PIPE_TENSOR_ACTIVE`) get meaningfully closer to real compute
+  intensity than plain `GPU_UTIL` -- currently not scraped at all
+  (`telemetry-collector/correlator.py`'s `_METRIC_FIELD_MAP` only has
+  `GPU_UTIL`/`FB_USED`/`FB_FREE`/`POWER_USAGE`/`SM_CLOCK`). Real trade-off,
+  not a clean win: these profiling counters aren't available on all real
+  clusters (some cloud/vGPU/virtualized setups restrict them, historically
+  gated behind elevated permissions), so a fix would need a dual-mode
+  fallback to plain `GPU_UTIL` rather than a straight swap; `SM_ACTIVE`
+  narrows the gap but still doesn't capture per-cycle ALU/tensor throughput
+  within an active SM, and `PIPE_TENSOR_ACTIVE` is itself workload-shape-
+  dependent (says nothing about attention softmax, activations, data
+  movement). Not done as part of this session -- flagged as the most
+  important open question before trusting `ceiling.py`'s recommendations in
+  front of a real pilot customer; the near-term cheaper mitigation is being
+  explicit (in customer-facing docs, not just code comments) that
+  over-provisioned right-sizing suggestions are directional and worth a
+  staged/canary rollout before fully acting on them.
+- **Two smaller inconsistencies, not bugs**: (1) `savings_estimator.config.
+  min_finding_confidence=0.7` is currently dead weight -- every finding that
+  reaches it already has confidence >= `waste_detector.config.min_coverage_
+  ratio=0.8` (confidence is the average of per-row coverage values already
+  individually >=0.8), so this second gate never actually excludes anything
+  at current defaults; only matters if `min_coverage_ratio` is ever lowered
+  below 0.7 without noticing this dependency. (2) `patterns.py`'s monthly
+  projection hardcodes `_DAYS_PER_MONTH = 30.0` while `over_provisioned`/
+  `fragmented` use the configurable `hours_per_month` (default 730 ≈ 30.4
+  days) -- ~1-2% drift if a customer overrides `hours_per_month`.
+- Everything else traced (rate-delta arithmetic, floor-at-zero on negative
+  savings, the idle-observed-vs-projected `basis` distinction) is
+  arithmetically sound and honestly labeled. The real gap is the metric
+  choice underneath the arithmetic, not the arithmetic itself.
+
+## 7. What I (the assistant) have NOT done
 
 - Not rented, accessed, or run anything on the user's actual vast.ai
   instance — this session has no access to their real infrastructure.
-- Not started the heterogeneous-SKU or real-managed-cluster test work.
+- Not started the real-managed-cluster (GKE) test work.
 - Not opened any PR beyond PR #1 (registry/CI fix merge).
+- Not made any code changes based on the section 6 methodology review --
+  explicitly requested as read-only analysis.
