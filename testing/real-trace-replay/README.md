@@ -1,0 +1,116 @@
+# Real-trace replay: does the detector work on real waste patterns?
+
+Every other test kit in `testing/` proves the pipeline works end-to-end on
+*real infrastructure* (real GPUs, real k8s, real DCGM) -- but every
+utilization pattern fed into them was synthetic, written by this project's
+own load generators, tuned to be detectable. This test instead answers a
+different question: does the detection *logic* correctly identify waste in
+genuinely real-world usage data, not just the patterns we designed
+ourselves to trigger it?
+
+No live cluster needed for this one -- it's pure offline data replay
+against the actual `waste_detector` code, using its real hourly-rollup
+thresholds (not the lowered `values-smoke-test.yaml` ones).
+
+## Data source
+
+[msr-fiddle/philly-traces](https://github.com/msr-fiddle/philly-traces) --
+a real, sanitized subset of Microsoft's internal Philly GPU cluster
+(552 machines, 117,325 real training jobs, August-December 2017), released
+alongside ["Analysis of Large-Scale Multi-Tenant GPU Clusters for DNN
+Training Workloads"](https://arxiv.org/abs/1901.05758) (ATC'19). If you use
+this trace, cite that paper (see the source repo's own request).
+
+Two Alibaba `clusterdata` releases were considered first and ruled out:
+`cluster-trace-gpu-v2023` (the "Beware of Fragmentation" trace) turned out
+to be pure job-scheduling/allocation data with **no utilization
+measurements at all**; `cluster-trace-gpu-v2020`'s `pai_sensor_table` only
+has one aggregate avg/max utilization figure per job's *entire* lifetime,
+not a real per-interval time series. Neither can exercise this detector's
+streak/contiguity/hour-of-day logic. Philly's `cluster_gpu_util` is a
+genuine **per-minute, per-GPU-slot** utilization series (real `nvidia-smi`
+readings), which is what this test actually needs.
+
+## Getting the data
+
+The archive (`trace-data.tar.gz`, ~1GB compressed / 6.6GB extracted) is
+Git-LFS-tracked in the source repo. A plain `git clone` only fetches the
+135-byte LFS pointer, not the real file. Fetch the real content via
+GitHub's LFS media-resolving CDN instead:
+
+```bash
+mkdir -p /tmp/philly-trace && cd /tmp/philly-trace
+curl -sSL -o trace-data.tar.gz \
+  "https://media.githubusercontent.com/media/msr-fiddle/philly-traces/master/trace-data.tar.gz"
+# verify against the LFS pointer's oid before trusting it:
+#   git show HEAD:trace-data.tar.gz   (in a clone of the source repo)
+sha256sum trace-data.tar.gz   # expect 2037ccf63a725a02be718b0e1aeee6142c90b7f62d0d849295120e9f6ba13d2c
+tar -xzf trace-data.tar.gz    # -> trace-data/cluster_gpu_util, cluster_job_log, etc.
+```
+
+## Running it
+
+```bash
+python3 replay.py /tmp/philly-trace/trace-data [output_dir]
+python3 summarize.py [output_dir]/findings.pkl
+```
+
+`replay.py` streams the full 44.75M-row `cluster_gpu_util` (only ~10 min on
+a 4-core/15GB box), attributes each real per-minute reading to the real
+job that really occupied that GPU slot at that time (via
+`cluster_job_log`'s scheduling intervals), buckets into real hourly rollups
+matching `ingestion_normalization.rollup`'s schema, and runs the actual
+`waste_detector.idle/over_provisioning/fragmentation/patterns` functions
+against them -- the identical code path the live product uses, just fed
+real historical data instead of a live DCGM scrape.
+
+Window: a real 31-day slice, 2017-10-03 through 2017-11-02 (entirely one
+DST regime, avoiding the Nov 5 fall-back ambiguous-hour edge case; long
+enough to satisfy every detector's minimum evidence bar, including
+recurring-pattern's 7+ distinct calendar days).
+
+## Results (2026-09-27 run)
+
+Real pilot thresholds (not smoke-test lowered ones), full 31-day window,
+44,750,640 total CSV rows read, 18,877,380 in-window, 85,614,120 real
+attributed GPU-minute readings, 1,538,668 hourly rollup rows built:
+
+| Category | Findings |
+|---|---|
+| Idle | 10,990 |
+| Over-provisioned | 279 |
+| Fragmented | 12,568 |
+| Recurring pattern | 6,848 |
+
+**23.0% of observed GPU-workload-hours were flagged as some form of
+waste** (`summarize.py`'s merged-interval union across all four
+categories, so an hour double-flagged by e.g. both idle and fragmentation
+only counts once). This is the first real evidence-backed answer to "will
+this detector reliably find real waste" -- previously only a synthetic-data
+claim.
+
+Full raw output preserved in `RESULTS.md` in this directory.
+
+## What this does and does not prove
+
+**Does prove**: the detection logic (streak/contiguity math, coverage
+gating, threshold comparisons, hour-of-day pattern matching) correctly
+identifies waste in genuinely real, messy, multi-tenant production
+scheduling data -- not just the clean synthetic pattern this project's own
+load generators were built to trigger.
+
+**Does not prove**:
+- **Workload shape match**: Philly is 2017 *training* workloads, not the
+  bursty small-batch *inference* traffic this product's `idle.py` docstring
+  says it's tuned for. A training job's utilization shape is different
+  (often long steady runs vs. inference's frequent short bursts).
+- **The GPU_UTIL-as-FLOPS-proxy gap** (see `PROGRESS.md` section 6) applies
+  here identically -- Philly's `gpu_util` is the same NVIDIA-defined
+  time-occupancy metric, not a throughput measure. This replay validates
+  the *detection* logic, not the *right-sizing recommendation* math in
+  `ceiling.py` (which this replay doesn't price at all, since Philly-era
+  K80/P100 GPUs aren't in `capability.py`'s table and pricing wasn't the
+  point of this exercise).
+- **Not the 30-40% utilization-gain business thesis** -- that can only be
+  validated against a real customer's real organic traffic, never a
+  self-run test on someone else's historical data, however real.

@@ -110,6 +110,33 @@ Branch this was written on: `claude/cost-optimization-saas-telemetry-w4zbhb`
   DCGM output and `savings-estimator` prices each independently rather than
   conflating them. This closes item 2 of the 3-item pre-pilot technical
   list.
+- **Real-trace replay: COMPLETE and PASSED** (`testing/real-trace-replay/`).
+  Not one of the original 3-item list -- added after the section 6
+  methodology review, to get real evidence on "does the detector actually
+  find real waste" rather than only having synthetic-load-generator
+  evidence. Replayed Microsoft's real 2017 Philly production GPU cluster
+  trace (552 machines, 117k jobs, real per-minute utilization from
+  `nvidia-smi`) through the actual `waste_detector` code at real (not
+  smoke-test-lowered) pilot thresholds, over a real 31-day window: 10,990
+  idle, 279 over-provisioned, 12,568 fragmented, 6,848 recurring-pattern
+  findings, and **23.0% of observed GPU-workload-hours flagged as some form
+  of waste** (merged across categories, no double-counting) -- the first
+  real-evidence answer to "will this reliably find >=15-20% waste,"
+  previously only a synthetic-data claim. Two public Alibaba `clusterdata`
+  releases were tried first and ruled out (`cluster-trace-gpu-v2023` turned
+  out to be pure scheduling data with no utilization measurements at all;
+  `cluster-trace-gpu-v2020` only has one aggregate figure per job's entire
+  lifetime, not a real time series) before landing on Philly's genuinely
+  per-minute `cluster_gpu_util`. See `testing/real-trace-replay/README.md`
+  for the full method and `RESULTS.md` for the complete raw output. Caveats
+  (see that README's last section): 2017 *training* workloads, not the
+  bursty small-batch *inference* traffic this product targets; the section
+  6 GPU_UTIL-as-FLOPS-proxy gap applies here identically; this validates
+  detection logic only, not `ceiling.py`'s pricing/right-sizing math
+  (Philly-era K80/P100 GPUs aren't in `capability.py`, and pricing wasn't
+  attempted here); still not a substitute for the real 30-40%
+  utilization-gain business thesis, which only a real customer's real
+  traffic can prove.
 
 ## 2. What's in progress right now
 
