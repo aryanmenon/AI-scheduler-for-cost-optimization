@@ -106,8 +106,9 @@ def main() -> None:
     parser.add_argument("--model-name", default="sshleifer/tiny-gpt2",
                          help="must match the server's MODEL_NAME -- prompts are tokenized with this")
     parser.add_argument("--max-context-tokens", type=int, required=True,
-                         help="clip real ContextTokens to this -- determine empirically for your "
-                              "model first, see README 'Before the real run'")
+                         help="the model's TOTAL position budget (prompt + every generated token, "
+                              "e.g. 1024 for GPT-2) -- NOT just a prompt-length clip. Determine "
+                              "empirically for your model first, see README 'Before the real run'")
     parser.add_argument("--max-new-tokens-cap", type=int, default=128,
                          help="clip real GeneratedTokens to this, since the tiny stand-in model has "
                               "no learned stopping behavior and do_sample rarely emits EOS early, so "
@@ -149,8 +150,19 @@ def main() -> None:
             sleep_for = due_at - time.monotonic()
             if sleep_for > 0:
                 time.sleep(sleep_for)
-            context_tokens = min(row["context_tokens"], args.max_context_tokens)
+            # --max-context-tokens is the model's TOTAL position budget
+            # (prompt + every generated token), not just the prompt --
+            # found live: GPT-2's position embeddings support exactly
+            # 1024 total positions, so a 1024-token prompt plus even one
+            # more generated token needs position 1024, out of bounds,
+            # crashing with "CUDA error: device-side assert triggered".
+            # An earlier version of this script clipped context and
+            # generation independently, which silently produced
+            # over-budget requests for any row needing both a long
+            # prompt and more than a token or two of generation.
             max_new_tokens = min(row["generated_tokens"], args.max_new_tokens_cap)
+            context_budget = max(args.max_context_tokens - max_new_tokens, 1)
+            context_tokens = min(row["context_tokens"], context_budget)
             pool.submit(
                 fire, session, args.target, tokenizer, prompt_bank,
                 context_tokens, max_new_tokens, stats, stats_lock,
