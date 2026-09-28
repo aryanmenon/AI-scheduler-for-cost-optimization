@@ -330,6 +330,16 @@ spec:
             {{- end }}
             - secretRef:
                 name: {{ include "gpu-telemetry-collector.fullname" . }}-dashboard-auth
+          env:
+            # dashboard's own code default ("./report.html") is fine for
+            # local/dev use outside a container, but readOnlyRootFilesystem
+            # here means only the dashboard-tmp emptyDir below (/tmp) is
+            # actually writable -- without this, `generate-report` (the
+            # chart's own install NOTES document it as a supported command)
+            # fails immediately with "Read-only file system", found live
+            # testing.
+            - name: REPORT_OUTPUT_PATH
+              value: /tmp/report.html
           ports:
             - name: dashboard
               containerPort: {{ .Values.dashboard.port }}
@@ -366,6 +376,17 @@ spec:
               mountPath: /data/savings
               subPath: savings
               readOnly: true
+            # readOnlyRootFilesystem: true above blocks writes everywhere
+            # else in this container -- without this, the `generate-report`
+            # CLI this chart's own install NOTES document as a supported
+            # feature ("generate a standalone HTML file to share") fails
+            # immediately with "Read-only file system" the moment it's
+            # actually run, found live testing: it has no writable path to
+            # write to anywhere in the pod. This is the one place it needs
+            # write access, kept as small/separate as possible rather than
+            # loosening readOnlyRootFilesystem itself.
+            - name: dashboard-tmp
+              mountPath: /tmp
         {{- end }}
       volumes:
         - name: data
@@ -375,3 +396,7 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- if .Values.dashboard.enabled }}
+        - name: dashboard-tmp
+          emptyDir: {}
+        {{- end }}

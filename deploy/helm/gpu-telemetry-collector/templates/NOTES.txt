@@ -105,7 +105,7 @@ To generate a standalone HTML file to share (e.g. by email), run
 `generate-report` inside the dashboard container:
 
   kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "gpu-telemetry-collector.fullname" . }}-collector -c dashboard -- generate-report
-  kubectl -n {{ .Release.Namespace }} cp {{ "{POD}" }}:/app/report.html ./report.html -c dashboard
+  kubectl -n {{ .Release.Namespace }} cp {{ "{POD}" }}:/tmp/report.html ./report.html -c dashboard
 {{- end }}
 
 This completes the Phase 1 MVP pipeline end to end: telemetry collector ->
