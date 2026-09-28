@@ -93,29 +93,49 @@ close to 100% before committing to a multi-hour real run).
 
 ## 1. Reuse the existing single-GPU inference server setup
 
-Same image as the fragmentation test -- no new server code needed:
+**Correction from an earlier draft of this README:** the inference server
+MUST run as a real Kubernetes pod requesting `nvidia.com/gpu`, not as a
+bare `docker run` outside Kubernetes. `correlator.py`/`normalizer.py`
+filter out any GPU sample that doesn't carry a real pod/namespace label
+(`UNATTRIBUTED`) *before* any detector ever sees it -- exactly the
+mechanism debugged live during the GKE test. A bare `docker run` container
+is invisible to DCGM's Kubernetes pod-attribution, so every sample would
+be filtered out and no finding would ever fire -- silently wasting the
+whole rental. This test still needs the fragmentation test's base
+single-node k3s setup (just one node/one GPU, no second node needed --
+that was specific to the heterogeneous-SKU test's cross-SKU requirement):
+
 ```bash
 cd testing/fragmentation-and-load-test
 docker build -t tiny-model-server:test .
-# import/push and deploy exactly as that test's README section 2-4 describes,
-# OR run it directly on a bare rented GPU box without k8s at all for this
-# test -- a single `docker run --gpus all -p 8000:8000 tiny-model-server:test`
-# is enough, since this test's point is real inference-driven utilization,
-# not another k8s-survival proof (already covered by the GKE test).
+# k3s ctr images import, then deploy as a real k8s Deployment+Service
+# requesting nvidia.com/gpu -- reuse k8s/workload-a.yaml as a template
+# (single workload only, no workload-b needed), exactly like that test's
+# README section 1-4 describes for a single-GPU rental.
 ```
-Deploy the product's telemetry chart pointed at that box the same way the
-collector-only smoke test did, with `values-smoke-test.yaml`.
+Deploy the product's telemetry chart pointed at that same k3s cluster with
+`values-smoke-test.yaml`, same as every other live test in this project.
 
 ## 2. Determine `--max-context-tokens` (see above), then run the replay
 
+Run this ON the rented VM itself (via SSH), not through an intermediary
+like Cloud Shell -- the GKE test's load generator got silently truncated
+twice by an unrelated Cloud Shell VM restart, and this run can be up to
+~58 real minutes. Use `tmux`/`screen` on the VM so an SSH drop doesn't
+kill it either:
 ```bash
+tmux new -s replay
+kubectl -n inference port-forward svc/tiny-model 8001:8000 &
+
 pip install requests transformers
 
 python3 replay_request_trace.py /tmp/azure-trace/conv.csv \
-  --target http://localhost:8000/generate \
+  --target http://localhost:8001/generate \
   --max-context-tokens <determined above> \
   --max-new-tokens-cap 128 \
   --speed 1.0
+# Ctrl+B D to detach the tmux session if you need to disconnect;
+# `tmux attach -t replay` to come back to it.
 ```
 `--max-new-tokens-cap` defaults to 128 regardless of the real
 `GeneratedTokens` value's max (up to 1899 in this data) because the stand-in
