@@ -211,7 +211,27 @@ dcgmExporter:
   # live testing on GKE). The hostPath mounts below assume a GKE COS node
   # image, where the NVIDIA driver installer places binaries/libraries at
   # /home/kubernetes/bin -- a different managed distro (EKS/AKS, or a
-  # non-COS GKE node image) will need different host paths here.
+  # non-COS GKE node image) will need different host paths here. On a
+  # cluster using containerd's default_runtime_name=nvidia (vast.ai/k3s --
+  # gives every container automatic driver access regardless of hostPath
+  # mounts or resource requests), these hostPath mounts are harmless no-ops
+  # -- Kubernetes creates the (unused) empty directories rather than
+  # failing, and real GPU access comes from the containerd runtime default
+  # instead.
+  #
+  # Leave empty for the standard NVIDIA k8s-device-plugin model (matches
+  # dcgm-exporter's own default, which assumes device IDs from the
+  # kubelet's pod-resources API are in UUID form). Set to "device-name"
+  # ONLY for clusters confirmed to report device IDs that way instead --
+  # GKE is the one confirmed case so far (found live testing). Setting
+  # this to the wrong value for a given cluster doesn't error -- it
+  # silently makes every GPU sample come back with no pod/namespace
+  # attribution at all, found live on both GKE (needed "device-name") and
+  # vast.ai/k3s (broke when "device-name" was wrongly hardcoded here,
+  # needed empty/default instead). Verify per-cluster: after deploying,
+  # check dcgm-exporter's own /metrics output for a real pod=/namespace=
+  # label on the DCGM_FI_DEV_GPU_UTIL sample.
+  kubernetesGpuIdType: ""
 
 kubeStateMetrics:
   enabled: true

@@ -36,17 +36,31 @@ spec:
             - name: DCGM_EXPORTER_KUBERNETES
               value: "true"
             # DCGM_EXPORTER_KUBERNETES alone silently fails to attach any
-            # pod/namespace label on GKE: it matches device IDs from the
-            # kubelet's pod-resources API against its own GPU list assuming
-            # UUID form (e.g. "GPU-a85a...") by default, but GKE's device
-            # plugin reports device-name form instead (e.g. "nvidia0") --
-            # the mismatch means every sample comes back unattributed, with
-            # no error logged anywhere. Found live testing on GKE: DCGM's
-            # own /metrics output showed a bare DCGM_FI_DEV_GPU_UTIL sample
-            # with no pod= or namespace= label despite "Kubernetes metrics
-            # collection enabled!" in the startup log.
+            # pod/namespace label on GKE specifically: it matches device
+            # IDs from the kubelet's pod-resources API against its own GPU
+            # list assuming UUID form (e.g. "GPU-a85a...") by default, but
+            # GKE's device plugin reports device-name form instead (e.g.
+            # "nvidia0") -- the mismatch means every sample comes back
+            # unattributed, with no error logged anywhere. Found live
+            # testing on GKE. An earlier version of this chart hardcoded
+            # DCGM_EXPORTER_KUBERNETES_GPU_ID_TYPE=device-name
+            # unconditionally to fix that -- which then broke attribution
+            # the same silent way on a standard NVIDIA k8s-device-plugin
+            # cluster (found live on vast.ai/k3s), since that setup reports
+            # the UUID form dcgm-exporter already assumes by default, and
+            # forcing device-name there makes the same ID-matching fail in
+            # the opposite direction. This is genuinely cluster-dependent,
+            # not a single "correct" value -- leave
+            # dcgmExporter.kubernetesGpuIdType empty for the standard
+            # device-plugin model (GKE/EKS/AKS all typically use this, but
+            # verify per-cluster the same way this was found: check DCGM's
+            # own /metrics output for a real pod=/namespace= label after
+            # deploying), set it to "device-name" only for clusters
+            # confirmed to need it like GKE.
+            {{- if .Values.dcgmExporter.kubernetesGpuIdType }}
             - name: DCGM_EXPORTER_KUBERNETES_GPU_ID_TYPE
-              value: "device-name"
+              value: {{ .Values.dcgmExporter.kubernetesGpuIdType | quote }}
+            {{- end }}
             # Without this, DCGM self-reports its own container hostname
             # (== this DaemonSet pod's name, e.g. "...-d5gfj") as the
             # "Hostname" metric label -- which correlator.py in

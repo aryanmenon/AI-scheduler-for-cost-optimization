@@ -46,7 +46,14 @@ look unnecessary:
    default, but GKE's device plugin reports device-name form (`nvidia0`)
    instead, and the ID match silently fails with no error logged
    anywhere. Fixed via `DCGM_EXPORTER_KUBERNETES_GPU_ID_TYPE=device-name`
-   (commit `64a4033`).
+   (commit `64a4033`) -- **since made an explicit `dcgmExporter.
+   kubernetesGpuIdType` values.yaml override (empty by default) instead
+   of a chart-wide hardcoded default**, after it was found live to break
+   attribution the same silent way on a standard NVIDIA k8s-device-plugin
+   cluster (vast.ai/k3s, during the Azure inference-trace replay test),
+   which needs the opposite (UUID/default) ID format. This GKE runbook's
+   `helm install` command below now explicitly sets it back to
+   `device-name` for that reason -- don't drop that flag.
 3. With `persistence.enabled=true` against a *real* dynamically
    provisioned volume (GKE's PD CSI driver) for the first time, the
    collector pod's 5 containers -- each a distinct non-root UID sharing
@@ -211,10 +218,11 @@ helm install gpu-telemetry deploy/helm/gpu-telemetry-collector \
   -f deploy/helm/gpu-telemetry-collector/values.yaml \
   -f deploy/helm/gpu-telemetry-collector/values-smoke-test.yaml \
   --set persistence.enabled=true \
-  --set global.imagePullSecrets[0].name=ghcr-secret
+  --set global.imagePullSecrets[0].name=ghcr-secret \
+  --set dcgmExporter.kubernetesGpuIdType=device-name
 ```
 
-Note the override: `persistence.enabled=true` (the smoke-test values file
+Note the overrides: `persistence.enabled=true` (the smoke-test values file
 sets this `false` by default, matching the no-StorageClass vast.ai
 rentals it was written for -- explicitly overriding it back on here is
 the entire point of running this test on GKE instead).
