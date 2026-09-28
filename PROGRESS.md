@@ -153,6 +153,60 @@ Branch this was written on: `claude/cost-optimization-saas-telemetry-w4zbhb`
   attempted here); still not a substitute for the real 30-40%
   utilization-gain business thesis, which only a real customer's real
   traffic can prove.
+- **Azure inference-trace replay: COMPLETE and PASSED**
+  (`testing/azure-inference-trace-replay/`). Also not one of the original
+  3-item list -- closes the one caveat the Philly replay above still
+  carried (2017 *training* workloads, not this product's bursty
+  small-batch *inference* target). Replayed a real November 2023 Azure
+  production LLM-inference request-arrival trace (19,366 real requests,
+  `microsoft/AzurePublicDataset`, CC-BY) at real (1.0x) speed against a
+  real GPU-backed inference server on a real vast.ai/k3s single-GPU
+  cluster (RTX 4060 Ti) -- real request timing and real per-request
+  token sizes driving genuinely real DCGM utilization, not
+  `load_generator.py`'s own randomization. 100% request success; fired a
+  real `over_provisioned` finding (confidence 1.0, peak utilization
+  11.0%) driven entirely by that real traffic. See
+  `testing/azure-inference-trace-replay/RESULTS.md` for full output.
+  **Three real bugs found and fixed live before this succeeded**, all
+  worth remembering for future live GPU tests: (1) the shared stand-in
+  inference server (`fragmentation-and-load-test/server.py`) had no
+  synchronization around its one shared PyTorch CUDA model instance --
+  FastAPI's per-request thread-pool workers called `.generate()`
+  concurrently from different threads, and a burst of real concurrent
+  requests crashed the process with `CUDA error: device-side assert
+  triggered`, which poisons the CUDA context for every request
+  afterward until the pod restarts, not just the overlapping ones;
+  fixed with a `threading.Lock()` (commit `d64a82e`) -- this was a
+  latent bug in a test artifact every live GPU test in this project
+  reuses, uncaught until real burst timing (further compressed by an
+  initial `--speed 50` sanity check) produced truly simultaneous
+  requests for the first time; (2) the replay script clipped
+  ContextTokens and GeneratedTokens independently against separate
+  limits, so a request needing both a long prompt and more than a
+  token or two of generation could still exceed the model's real total
+  position budget -- GPT-2's position embeddings support exactly 1024
+  total positions covering *both* the prompt and every generated token
+  combined, so a 1024-token prompt plus even one more generated token
+  needs position 1024, out of bounds, the identical CUDA crash; isolated
+  via a sequential no-concurrency diagnostic (800 tokens + 16 new
+  tokens succeeded, exactly 1024 + 16 failed every time, ruling out bug
+  #1 as this specific cause) and fixed by computing each row's context
+  budget as `max_context_tokens - max_new_tokens` (commit `a6ae78e`);
+  (3) the GKE test's dcgm-exporter pod-attribution fix
+  (`DCGM_EXPORTER_KUBERNETES_GPU_ID_TYPE=device-name`, commit `64a4033`)
+  had been hardcoded unconditionally into the shared chart, which broke
+  attribution the identical silent way in the opposite direction on
+  this test's standard NVIDIA k8s-device-plugin cluster (vast.ai/k3s
+  reports device IDs in UUID form, dcgm-exporter's own default
+  assumption, and forcing device-name there made the match fail
+  instead) -- every GPU sample came back with zero pod/namespace label,
+  same symptom as the original GKE bug, opposite root cause. Fixed by
+  making it a `dcgmExporter.kubernetesGpuIdType` values.yaml field
+  (empty/unset by default, matching dcgm-exporter's own UUID-assuming
+  default), only set explicitly for GKE now (commit `349bd68`, also
+  updated `testing/real-managed-cluster-test/README.md`'s `helm install`
+  command to pass it explicitly since it's no longer the chart-wide
+  default -- **if re-running the GKE test, don't drop that flag**).
 
 ## 2. What's in progress right now
 
@@ -160,6 +214,9 @@ Branch this was written on: `claude/cost-optimization-saas-telemetry-w4zbhb`
 (real managed-Kubernetes-cluster / GKE test) — see below.** Nothing is
 actively blocked; next real work is either the genuine design-partner
 pilot (section 4 item 3) or GKE cluster teardown to stop billing.
+
+The Azure inference-trace replay test (section 1) is also now DONE,
+PASSED -- vast.ai instance teardown still pending as of this writing.
 
 **Real managed-Kubernetes-cluster test (GKE) — DONE, PASSED.**
 `GPUS_ALL_REGIONS` (the global aggregate quota) is now `grantedValue: 1`
