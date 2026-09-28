@@ -1,5 +1,9 @@
 # Real inference-traffic replay (Azure LLM Inference Trace 2023)
 
+**Status: DONE, PASSED.** See `RESULTS.md` for the full run output, the
+fired finding, and three real bugs found and fixed live before it
+succeeded.
+
 A different kind of real-world validation than `testing/real-trace-replay`
 (the Philly replay). That test replayed already-recorded real *utilization*
 numbers entirely offline -- no GPU needed, but it also carries the caveat
