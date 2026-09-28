@@ -13,6 +13,7 @@ work.
 from __future__ import annotations
 
 import os
+import threading
 import time
 
 import torch
@@ -29,6 +30,20 @@ _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 _model = AutoModelForCausalLM.from_pretrained(MODEL_NAME).to(DEVICE)
 _model.eval()
 
+# FastAPI runs each sync route handler in its own thread-pool worker, so
+# concurrent requests call generate() on this one shared model instance
+# from different threads at once. That's not safe here -- found live
+# during the Azure inference-trace replay test: a burst of real
+# concurrent requests crashed the whole process with "CUDA error:
+# device-side assert triggered", which poisons the CUDA context for
+# every request afterward until the pod restarts, not just the ones
+# that overlapped. A real multi-replica production server handles this
+# by having each replica serve one request at a time (or with a proper
+# batching scheduler) rather than sharing one model across concurrent
+# threads unsynchronized -- this lock gets the same effect for this
+# single-process stand-in.
+_generate_lock = threading.Lock()
+
 
 class GenerateRequest(BaseModel):
     prompt: str = "The quick brown fox"
@@ -43,14 +58,15 @@ def healthz():
 @app.post("/generate")
 def generate(req: GenerateRequest):
     start = time.monotonic()
-    inputs = _tokenizer(req.prompt, return_tensors="pt").to(DEVICE)
-    with torch.no_grad():
-        output = _model.generate(
-            **inputs,
-            max_new_tokens=req.max_new_tokens,
-            do_sample=True,
-            pad_token_id=_tokenizer.eos_token_id,
-        )
-    text = _tokenizer.decode(output[0], skip_special_tokens=True)
+    with _generate_lock:
+        inputs = _tokenizer(req.prompt, return_tensors="pt").to(DEVICE)
+        with torch.no_grad():
+            output = _model.generate(
+                **inputs,
+                max_new_tokens=req.max_new_tokens,
+                do_sample=True,
+                pad_token_id=_tokenizer.eos_token_id,
+            )
+        text = _tokenizer.decode(output[0], skip_special_tokens=True)
     duration_ms = (time.monotonic() - start) * 1000
     return {"text": text, "duration_ms": round(duration_ms, 1), "device": DEVICE}
