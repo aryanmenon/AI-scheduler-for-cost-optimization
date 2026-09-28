@@ -208,6 +208,42 @@ Branch this was written on: `claude/cost-optimization-saas-telemetry-w4zbhb`
   command to pass it explicitly since it's no longer the chart-wide
   default -- **if re-running the GKE test, don't drop that flag**).
 
+  A **4th real bug** was found just after the test itself already
+  passed, while trying to pull the live dashboard report for the
+  record: `generate-report` (the chart's own install NOTES document it
+  as a supported feature, "generate a standalone HTML file to share")
+  fails immediately with `OSError: [Errno 30] Read-only file system`
+  the moment it's actually run -- `readOnlyRootFilesystem: true` on the
+  dashboard container, combined with zero volumes mounted for it at
+  all (confirmed live: neither the documented default path nor `/tmp`
+  had anywhere writable), means the command could never have worked in
+  any real deployment of this chart, ever. Fixed (commit `eab36ee`)
+  with a small `dashboard-tmp` emptyDir mounted at `/tmp` specifically
+  for this one container (kept separate from the existing read-only
+  savings-estimator data mount, rather than loosening
+  `readOnlyRootFilesystem` itself) plus
+  `REPORT_OUTPUT_PATH=/tmp/report.html`; updated the install NOTES'
+  documented `kubectl cp` path to match. Confirmed working live:
+  `generate-report` succeeded and the file copied out cleanly.
+
+  **Real operational gotcha, not itself a bug**, hit applying that
+  4th fix: it required a `helm upgrade`, which restarts the collector
+  pod -- and since this test deliberately used
+  `persistence.enabled=false` (emptyDir, matching every prior
+  non-GKE test; this test wasn't exercising PVC persistence, the GKE
+  test already covers that), the restart reset the live findings/
+  savings-estimates database to empty. The `over_provisioned` finding
+  from the real run was still fully captured in `RESULTS.md`/this file
+  from before the restart, so nothing about the test's actual result
+  was lost -- but the live dashboard could no longer show it, and
+  there was no live capture of what `savings-estimator`'s specific ₹
+  pricing/right-sizing recommendation for that finding would have been
+  (that data was never queried before the restart wiped it). **Lesson
+  for next time**: query and record `savings_estimates`, not just
+  `waste_findings`, for the record immediately once a finding fires --
+  don't assume there's time to come back to it later on a
+  non-persistent deployment.
+
 ## 2. What's in progress right now
 
 **All 3 items of the pre-pilot list are now DONE, including item 3
@@ -216,7 +252,7 @@ actively blocked; next real work is either the genuine design-partner
 pilot (section 4 item 3) or GKE cluster teardown to stop billing.
 
 The Azure inference-trace replay test (section 1) is also now DONE,
-PASSED -- vast.ai instance teardown still pending as of this writing.
+PASSED, four real bugs found and fixed, **vast.ai instance torn down**.
 
 **Real managed-Kubernetes-cluster test (GKE) — DONE, PASSED.**
 `GPUS_ALL_REGIONS` (the global aggregate quota) is now `grantedValue: 1`

@@ -45,7 +45,7 @@ test in this project where the detector's input utilization was caused by
 real inference traffic specifically, closing the one caveat every prior
 real-world validation carried.
 
-## Three real bugs found and fixed live, before this run succeeded
+## Four real bugs found and fixed live
 
 None of these were anticipated in the original test-kit design -- all
 found by running the actual replay against a real server and hitting real
@@ -99,6 +99,24 @@ failures, in order:
    was updated to pass it explicitly, since it's no longer the chart-wide
    default.
 
-All three are now fixed and confirmed working together: the final full
+4. **`generate-report` has no writable path anywhere in the dashboard
+   pod** (`deploy/helm/gpu-telemetry-collector`, commit `eab36ee`).
+   Found just after the test itself had already passed, while pulling
+   the live report for the record: `readOnlyRootFilesystem: true` on
+   the dashboard container, combined with zero volumes mounted for it
+   at all, means the chart's own install NOTES document a feature
+   ("generate a standalone HTML file to share") that could never have
+   worked in any real deployment -- confirmed live, both the documented
+   default path and `/tmp` were read-only. Fixed with a small
+   `dashboard-tmp` emptyDir mounted at `/tmp` plus
+   `REPORT_OUTPUT_PATH=/tmp/report.html`.
+
+The first three are confirmed working together: the final full
 19,366-request real run completed with zero crashes and zero unattributed
-samples.
+samples. Bug #4 required a `helm upgrade` to deploy, which restarted the
+collector pod and reset the live findings database (this test used
+`persistence.enabled=false`, matching every non-GKE test) -- the fired
+finding above was already fully captured before that restart, so nothing
+about the test's result was lost, but the live dashboard's specific ₹
+recommendation for it was never queried before the reset and so isn't
+part of this record.
