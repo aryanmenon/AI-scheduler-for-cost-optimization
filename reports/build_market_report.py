@@ -106,6 +106,9 @@ s.append(make_table(
                           "to <b>~₹270 Cr (~$31M)</b> [A]. With the same 45 customers (30 India + 15 abroad), "
                           "year-3 ARR rises from ₹1.35 Cr to <b>~₹2.6 Cr</b> and net profit from ~₹62 L to "
                           "<b>~₹1.13 Cr</b> [A]. Overseas customers pay ~3-5x more for similar support effort."],
+        ["Earlier study", "The Sept 2026 SMB market study's ₹216 Cr SAM / ₹7.2 Cr SOM sizes the <b>full planned "
+                          "product with a team</b>; with its price assumption corrected it is ₹130 Cr / ₹4.35 Cr. "
+                          "The gap to this report is the feature roadmap (section 7)."],
         ["Main competitor", "CAST AI ($1B valuation, Jan 2026) and ScaleOps ($800M+, Mar 2026) automate; "
                             "Datadog launched GPU Monitoring (Apr 2026) and overlaps most directly on detection. "
                             "You win only where read-only + self-hosted + INR + non-hyperscaler clusters matter."],
@@ -170,7 +173,7 @@ s.append(make_table(
     [2.9 * inch, 0.6 * inch, W - 3.5 * inch], bold_last=True,
 ))
 s.append(Spacer(1, 6))
-s.append(make_table(
+s.append(KeepTogether([make_table(
     ["Tier (current pricing)", "GPUs", "Annual price", "Assumed share of orgs [A]"],
     [
         ["Starter", "1-5", "₹1.2 L", "45%"],
@@ -180,7 +183,7 @@ s.append(make_table(
         ["<b>Blended ACV at list</b>", "", "<b>₹4.35 L</b>", ""],
     ],
     [2.2 * inch, 0.9 * inch, 1.3 * inch, W - 4.4 * inch], bold_last=True,
-))
+)]))
 s.append(Spacer(1, 6))
 s.append(P("<b>Method A (by organization):</b> 1,800 orgs x ₹4.35 L = <b>~₹78 Cr/yr (~$8.9M)</b>. "
            "<b>Method B (by GPU):</b> 80,000 GPUs [S, third-party] x ~₹2,000 per GPU-month (the Growth tier's "
@@ -521,9 +524,77 @@ s.append(P("<b>Recommendation: sequence it, don't choose.</b> (1) Now to year 1:
            "neocloud and on-prem GPU users rather than EKS/GKE teams already on CAST AI. This keeps the ~₹50 L/yr "
            "of international fixed costs until revenue can pay for them.", "Callout"))
 
+# ================================================================= Reconciliation
+s.append(PageBreak())
+s.append(P("7. Reconciling with the earlier market study", "H2"))
+s.append(P("An earlier study, <i>India GPU Optimization SaaS: SMB Market Research</i> (September 2026), sized "
+           "the same opportunity much larger. Both are planning estimates built on assumptions; the difference is "
+           "mostly <b>what product is being sized</b> and <b>who is selling it</b>, not a disagreement about the "
+           "market.", "Body"))
+s.append(make_table(
+    ["", "Earlier study (base case)", "Earlier study, price corrected [A]", "This report (India, as built)"],
+    [
+        ["Product sized", "Full plan: Kubernetes + GPU VMs, billing, approve-then-act fixes, verified savings, "
+                          "multi-cluster", "Same full plan", "Kubernetes only; detect and recommend; read-only"],
+        ["Seller", "A team", "A team", "One founder"],
+        ["Orgs (TAM / SAM)", "12,000 / 3,000", "12,000 / 3,000", "1,800 / 885"],
+        ["Avg contract / yr", "₹7.2 L (₹60k/month)", "₹4.35 L", "₹4.35 L list, ₹3 L realized"],
+        ["TAM", "₹720 Cr (range 250-1,750)", "₹522 Cr", "₹78-190 Cr"],
+        ["SAM", "₹216 Cr (range 60-600)", "₹130 Cr", "₹38 Cr"],
+        ["SOM, year 3", "100 customers, ₹7.2 Cr (range 1.2-30)", "100 customers, ₹4.35 Cr",
+         "27-45 customers, ₹0.8-1.35 Cr"],
+    ],
+    [1.15 * inch, 1.95 * inch, 1.6 * inch, W - 4.7 * inch],
+))
+s.append(Spacer(1, 6))
+s.append(P("7.1 Why the numbers differ", "H3"))
+s.append(bullets([
+    "<b>Product scope.</b> The earlier study includes teams running GPUs on plain VMs without Kubernetes, which "
+    "the current product can't serve. That alone roughly halves the reachable market [A].",
+    "<b>Organisation count.</b> 12,000 vs ~1,800. Neither is sourced; the earlier study says so itself. 12,000 "
+    "likely includes occasional single-GPU renters who won't pay for optimisation; 1,800 counts dedicated fleets "
+    "built up from Nasscom's ~890 GenAI startups plus enterprises and labs. The real number is probably between.",
+    "<b>Average price.</b> ₹60k/month implies most customers on the 26-100 GPU Scale tier, which contradicts the "
+    "study's own 1-50 GPU SMB target and its ₹9,999 / ₹29,999 / ₹74,999 tiers. At the tier mix used here the "
+    "blended price is ₹4.35 L/yr; that correction alone cuts the earlier TAM and SAM by ~28%.",
+    "<b>Seller capacity.</b> 100 customers in 3 years is ~4x what one founder can support (~25). The earlier "
+    "study's upside (300 accounts, ₹30 Cr) needs a sales and support team. At the low end the two agree: its "
+    "conservative ₹1.2 Cr SOM sits between this report's base (₹1.05 Cr) and stretch (₹1.35 Cr).",
+]))
+s.append(KeepTogether([P("7.2 The gap is the roadmap", "H3"),
+    P("Each missing feature widens the market the product can serve or raises what each customer pays. "
+      "Effects are rough assumptions [A] to size priorities, not forecasts.", "Body"),
+    make_table(
+    ["Feature (in earlier study, not built)", "What it unlocks", "Effect on market / price [A]", "When"],
+    [
+        ["Reuse an existing dcgm-exporter (Helm value)", "Neocloud and GPU-Operator clusters that already run "
+         "one", "Removes an install blocker; no new segment", "Now (hours)"],
+        ["GPU VM support (no Kubernetes)", "Teams renting bare GPU VMs, common on Indian GPU clouds",
+         "SAM roughly 2x (₹38 Cr to ~₹75 Cr)", "If pilots show demand"],
+        ["Cloud / GPU-cloud billing integration", "Real invoice costs instead of rate tables; before/after "
+                                                  "savings proof", "Enables a verified-savings fee (10-15% of "
+         "savings); lowers churn", "After first pilots"],
+        ["Savings verification (baseline vs after)", "Proof the fixes worked", "Turns the 10% assumption into "
+         "a measured number; supports 2% pricing", "With billing"],
+        ["Approve-then-act fixes (Slack/Jira, rollback, audit)", "Engineers approve a change, product applies "
+         "it", "~1.5x price; less one-time-audit churn", "Year 1-2"],
+        ["Serving metrics (queue depth, TTFT, cost per token)", "Inference teams that care about latency",
+         "Stronger fit for inference buyers; safer right-sizing", "Year 1-2"],
+        ["Multi-cluster, SSO, audit export", "Scale and Enterprise tiers", "Unlocks ₹75k+/month deals", "Year 2"],
+    ],
+    [1.75 * inch, 1.75 * inch, 1.75 * inch, W - 5.25 * inch],
+)]))
+s.append(Spacer(1, 6))
+s.append(P("<b>How to use the two documents.</b> Use this report to plan the business you are running now "
+           "(costs, break-even, when to hire). Use the earlier study's framing to describe the long-term "
+           "vision to investors or partners, with the corrected ₹4.35 L average price and its organisation "
+           "counts labelled as assumptions. The earlier study's positioning, free-scan offer, GPU-cloud "
+           "partnerships and validation plan (20 interviews, 5 read-only pilots, 2 paid pilots with verified "
+           "15-25% savings) remain the right next steps.", "Callout"))
+
 # ================================================================= Assumptions + sources
 s.append(PageBreak())
-s.append(P("7. Assumptions ledger", "H2"))
+s.append(P("8. Assumptions ledger", "H2"))
 s.append(make_table(
     ["#", "Assumption", "Value", "Why / how to validate"],
     [
@@ -555,7 +626,7 @@ s.append(make_table(
     [0.4 * inch, 2.2 * inch, 1.1 * inch, W - 3.7 * inch],
 ))
 
-s.append(P("8. Sources", "H2"))
+s.append(P("9. Sources", "H2"))
 src = [
     "Gartner, India public cloud forecast (Jun 2026): gartner.com/en/newsroom/press-releases/2026-06-01-gartner-"
     "forecasts-end-user-public-cloud-spending-in-india-to-surpass-17-billion-us-dollars-in-2026",
@@ -596,6 +667,7 @@ src = [
     "researchandmarkets.com/reports/6225920/neocloud-global-market-report",
     "AI startup counts, US and Europe (StartUs Insights, StartupBlink): startus-insights.com/innovators-guide/"
     "how-many-ai-companies-are-there/ ; startupblink.com/blog/top-ai-startups/",
+    "Earlier study: India GPU Optimization SaaS: SMB Market Research (September 2026), provided by the founder.",
     "Own test results: testing/real-trace-replay/RESULTS.md (Philly, 23.0% flagged); "
     "testing/azure-inference-trace-replay/RESULTS.md; PROGRESS.md.",
 ]
