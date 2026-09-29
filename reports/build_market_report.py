@@ -73,12 +73,12 @@ W = A4[0] - 1.4 * inch  # usable width
 doc = SimpleDocTemplate(
     "gpu_waste_detection_market_research.pdf", pagesize=A4,
     topMargin=0.7 * inch, bottomMargin=0.75 * inch, leftMargin=0.7 * inch, rightMargin=0.7 * inch,
-    title="GPU Waste Detection: Market Research, Competition & Unit Economics",
+    title="GPU Waste Detection: Market Research, Competition, Unit Economics & International Expansion",
 )
 s = []
 
 # ================================================================= Title / exec summary
-s.append(P("GPU Waste Detection for Kubernetes: Market Research, Competition &amp; Unit Economics", "H1"))
+s.append(P("GPU Waste Detection for Kubernetes: Market Research, Competition, Unit Economics &amp; International Expansion", "H1"))
 s.append(P("Scope: the product <b>as it is actually built today</b> (September 2026), not the broader vision. "
            "That product is a read-only, self-hosted Helm install that reads NVIDIA DCGM telemetry plus "
            "Kubernetes pod identity, classifies GPU waste into four categories (idle, over-provisioned, "
@@ -100,14 +100,19 @@ s.append(make_table(
                 "growing fast with India's GPU build-out."],
         ["SAM", "<b>India, Kubernetes-based GPU fleets reachable with read-only, self-hosted, INR-priced "
                 "software:</b> ~885 organizations, ~₹38 Cr/yr (~$4.4M) [A]."],
-        ["SOM (3 yrs)", "<b>27-45 paying customers, ~₹0.8-1.35 Cr ARR (~$92-153k)</b> [A]. Viable as a "
-                        "bootstrapped business; not venture-scale on this product alone."],
+        ["SOM (3 yrs)", "<b>India only: 27-45 paying customers, ~₹0.8-1.35 Cr ARR (~$92-153k)</b> [A]. "
+                        "Viable as a bootstrapped business; not venture-scale on this product alone."],
+        ["International", "Adding SE Asia, Middle East, US and EU raises TAM to <b>~₹860 Cr (~$98M)</b> and SAM "
+                          "to <b>~₹270 Cr (~$31M)</b> [A]. With the same 45 customers (30 India + 15 abroad), "
+                          "year-3 ARR rises from ₹1.35 Cr to <b>~₹2.6 Cr</b> and net profit from ~₹62 L to "
+                          "<b>~₹1.13 Cr</b> [A]. Overseas customers pay ~3-5x more for similar support effort."],
         ["Main competitor", "CAST AI ($1B valuation, Jan 2026) and ScaleOps ($800M+, Mar 2026) automate; "
                             "Datadog launched GPU Monitoring (Apr 2026) and overlaps most directly on detection. "
                             "You win only where read-only + self-hosted + INR + non-hyperscaler clusters matter."],
         ["Unit economics", "Gross margin 78-89% (no hosting cost; you're self-hosted). LTV:CAC 3.4x (Starter) "
-                           "to 18x (Enterprise); CAC payback 4-6 months, founder-led [A]. Break-even ~13 "
-                           "customers at a ₹4L/month burn [A]."],
+                           "to 18x (Enterprise); CAC payback 4-6 months, founder-led [A]. As a solo founder, "
+                           "break-even is ~2 customers with no salary, ~5 with a ₹1 L/month draw [A]; your time "
+                           "(~25 customers supportable alone) is the real limit, not money."],
         ["Biggest risk", "<b>One-time-audit churn:</b> a customer finds the waste, fixes it, cancels. If churn "
                          "doubles, Starter LTV:CAC drops to 1.7x (unprofitable). Also: GPU-count pricing "
                          "underprices H100 fleets and overprices cheap-GPU fleets."],
@@ -210,10 +215,10 @@ s.append(make_table(
 s.append(Spacer(1, 6))
 s.append(P("Realized ACV is below the ₹4.35 L list blend because early customers skew small and pilots get "
            "discounted [A]. 3-5% of SAM in three years is normal for a founder-led product with no sales team.", "Body"))
-s.append(P("<b>Honest read:</b> the product as built supports a profitable small business (break-even is ~13 "
-           "customers, section 4), not a venture-scale one. Getting to venture scale needs one or more of: "
-           "(1) selling outside India (SE Asia, Middle East, and self-managed/neocloud fleets globally, a "
-           "~$20M+ SAM if 5% of the global TAM is reachable [A]); (2) white-labelling through Indian GPU "
+s.append(P("<b>Honest read:</b> the product as built supports a profitable small business (break-even for a solo founder is "
+           "2-5 customers, section 4), not a venture-scale one. Getting to venture scale needs one or more of: "
+           "(1) selling outside India (SE Asia, Middle East, US, EU: a ~$26M international SAM, "
+           "see section 5); (2) white-labelling through Indian GPU "
            "clouds to reach their customers; (3) moving from detection to action (the queue-depth/TTFT and "
            "bin-packing items from the MVP roadmap), which is what justifies CAST AI's and ScaleOps's "
            "valuations.", "Callout"))
@@ -373,11 +378,31 @@ s.append(P("<b>Pricing problem:</b> pricing by GPU count ignores that an H100 co
            "discounts [A]. That keeps ROI around 10x for everyone and grows revenue with the customer's "
            "fleet.", "Callout"))
 
-s.append(P("4.4 Company break-even", "H3"))
-s.append(P("Assumed monthly burn of <b>₹4 L</b> [A] (two founders at ₹1.5 L each, ~₹30k GPU test rentals, "
-           "~₹40k legal/accounting/tools). At the assumed tier mix (45/35/15/5), the average customer "
-           "contributes ~₹31,300/month gross profit, so <b>break-even is ~13 paying customers</b> (or ~16 "
-           "Growth-only, or ~52 Starter-only). That is well inside the 3-year SOM of 27-45 customers.", "Body"))
+s.append(P("4.4 Company break-even (solo founder)", "H3"))
+s.append(P("You are a solo founder doing engineering and sales, and the product has no hosting cost, so "
+           "the company's fixed costs are small [A]:", "Body"))
+s.append(make_table(
+    ["Monthly fixed cost", "No salary", "With ₹1 L/month personal draw"],
+    [
+        ["GPU test rentals (occasional)", "₹10-20k", "₹10-20k"],
+        ["CA / GST compliance", "₹5-10k", "₹5-10k"],
+        ["Tools, domain, email", "₹3-5k", "₹3-5k"],
+        ["Travel to customer meetings", "₹10-20k", "₹10-20k"],
+        ["Founder draw", "₹0", "₹1,00,000"],
+        ["<b>Total (rounded)</b>", "<b>~₹50k</b>", "<b>~₹1.5 L</b>"],
+        ["<b>Break-even customers</b> (avg ~₹31,300/month gross profit at the 45/35/15/5 tier mix)",
+         "<b>~2</b>", "<b>~5</b>"],
+    ],
+    [3.1 * inch, 1.3 * inch, W - 4.4 * inch],
+))
+s.append(Spacer(1, 6))
+s.append(P("<b>Your time is the constraint, not money.</b> At ~2.5 support hours per customer per month and "
+           "~40% of a 160-hour month on support, one person can look after <b>~25 customers</b>. Winning one "
+           "customer takes ~30 hours (about 4 free scans plus onboarding), so ~30 sales hours a month gives "
+           "~1 new customer a month, roughly the 3-year SOM. Two levers stretch this: make the free scan "
+           "self-serve (cuts a scan from ~6 hours to ~1), and favour Growth tier and above. "
+           "<b>First hire</b> (a support engineer, ~₹1.25 L/month): when support passes ~40% of your time or "
+           "~20-25 customers (~₹60-75 L ARR).", "Body"))
 
 s.append(P("4.5 What would change these numbers most", "H3"))
 s.append(bullets([
@@ -392,9 +417,113 @@ s.append(bullets([
     "higher price and lower churn, but brings you into direct competition with CAST AI and ScaleOps.",
 ]))
 
+# ================================================================= International
+s.append(P("5. International expansion", "H2"))
+s.append(P("Overseas buyers tend to run larger GPU fleets and pay in USD, so each customer is worth ~2-6x an "
+           "Indian one for broadly similar support effort. That matters most for a solo founder, whose limit is "
+           "customer count, not money. Four candidate regions:", "Body"))
+s.append(make_table(
+    ["Region", "Market signals [S]", "Competition", "Fit for this product"],
+    [
+        ["<b>SE Asia</b> (Singapore, Malaysia, Indonesia, Philippines)",
+         "680+ AI startups, $2.3B AI funding in 12 months (e-Conomy SEA 2025); Malaysia leads SE Asia data-centre "
+         "construction (1,039 MW); Aolani + NVIDIA plan 22,000 GPUs in Malaysia/Philippines",
+         "Lighter; global tools present but little local focus",
+         "<b>Good.</b> Close time zones, similar price sensitivity, new GPU clouds as channel partners"],
+        ["<b>Middle East</b> (UAE, Saudi Arabia)",
+         "MENA AI startups raised $858M in 2025 (60% UAE); 673 AI companies in Abu Dhabi; HUMAIN ordered 18,000 "
+         "GB300 GPUs; G42's Stargate UAE first stage ~400,000 NVIDIA chips",
+         "Sovereign buyers work through large integrators; few SaaS tools allowed in",
+         "<b>Good for the trust model.</b> Read-only + self-hosted suits sovereign data rules, but needs a "
+         "local partner; the mega-fleets are enterprise deals out of solo reach"],
+        ["<b>United States</b>",
+         "~6,956 AI startups (largest share globally); neocloud revenue >$25B in 2025, projected ~$42B in 2026",
+         "<b>Heaviest:</b> CAST AI, ScaleOps, Datadog, Kubecost all sell here",
+         "<b>Largest pool, hardest sale.</b> Target neocloud/on-prem GPU users, not EKS/GKE teams; SOC 2 required"],
+        ["<b>EU + UK</b>",
+         "~1,192 GenAI companies in Europe; UK 800+ AI startups, France 468, Germany 394",
+         "CAST AI (EU-founded), Datadog, Kubecost",
+         "<b>Moderate.</b> Data-residency rules favour self-hosted; GDPR paperwork; SOC 2 / ISO 27001 expected"],
+    ],
+    [1.05 * inch, 2.3 * inch, 1.35 * inch, W - 4.7 * inch],
+))
+
+s.append(KeepTogether([P("5.1 TAM, SAM, SOM by region (bottom-up, at this product's prices)", "H3"), P("Pricing assumed at ~1% of monitored GPU spend in USD. Org counts and average contract values are "
+           "our assumptions [A], anchored on the startup and funding counts above [S]. SAM keeps orgs on "
+           "Kubernetes (CNCF: 66% of GenAI hosts [S]) and, in the US and EU, only the share that values a "
+           "read-only, self-hosted tool or runs on neocloud/on-prem clusters.", "Body"), make_table(
+    ["Region", "Orgs with GPU fleets [A]", "Avg contract / yr [A]", "TAM", "SAM filter [A]", "SAM", "3-yr SOM [A]"],
+    [
+        ["India", "~1,800", "₹3-4.35 L", "₹78 Cr ($8.9M)", "50% on K8s", "₹38 Cr ($4.4M)", "30 cust, ₹0.90 Cr"],
+        ["SE Asia", "~370", "$8k (₹7 L)", "₹26 Cr ($3.0M)", "55% on K8s", "₹14 Cr ($1.6M)", "6 cust, ₹0.42 Cr"],
+        ["Middle East", "~250", "$20k (₹17.6 L)", "₹44 Cr ($5.0M)", "55% on K8s", "₹24 Cr ($2.8M)", "3 cust, ₹0.53 Cr"],
+        ["United States", "~4,200", "$15k (₹13.2 L)", "₹554 Cr ($63M)", "66% K8s x 40% fit", "₹146 Cr ($16.6M)", "4 cust, ₹0.53 Cr"],
+        ["EU + UK", "~1,500", "$12k (₹10.6 L)", "₹158 Cr ($18M)", "60% K8s x 50% fit", "₹48 Cr ($5.4M)", "2 cust, ₹0.21 Cr"],
+        ["<b>Intl. only</b>", "~6,300", "", "<b>₹783 Cr ($89M)</b>", "", "<b>₹233 Cr ($26.4M)</b>",
+         "<b>15 cust, ₹1.69 Cr</b>"],
+        ["<b>India + intl.</b>", "~8,100", "", "<b>~₹860 Cr ($98M)</b>", "", "<b>~₹270 Cr ($31M)</b>",
+         "<b>45 cust, ~₹2.6 Cr</b>"],
+    ],
+    [0.95 * inch, 0.85 * inch, 0.95 * inch, 0.95 * inch, 0.95 * inch, 0.95 * inch, W - 5.6 * inch],
+    bold_last=True,
+)]))
+s.append(Spacer(1, 6))
+s.append(P("<b>Consistency check:</b> the bottom-up total (~$98M) is about 22% of the ~$446M global top-down TAM "
+           "in section 2.1. The top-down figure also counts very large hyperscaler customers, automation "
+           "platforms' revenue and spend this product can't serve, so a bottom-up number well below it is "
+           "expected. <b>Why SOM is small abroad:</b> 15 overseas customers is 0.4-3% of each region's SAM, "
+           "limited by one founder's selling time, not by demand.", "Small"))
+
+s.append(PageBreak())
+s.append(P("6. Comparison: India only vs. India + international (year 3)", "H2"))
+s.append(P("Same total of 45 customers in both cases, since one founder plus one or two support engineers "
+           "can't handle many more. Figures in ₹ lakh per year; all costs are assumptions [A].", "Body"))
+s.append(make_table(
+    ["", "India only (45 India)", "India + international (30 India + 15 abroad)"],
+    [
+        ["<b>Revenue (ARR)</b>", "<b>135</b>", "<b>259</b>"],
+        ["Payment processing (+ FX abroad)", "2.7 (2%)", "6.5 (2.5%)"],
+        ["CI, registry, tooling", "1.0", "1.5"],
+        ["Support engineers", "15 (one)", "30 (two; one covering US/EU hours)"],
+        ["<b>Gross profit</b>", "<b>116 (86%)</b>", "<b>221 (85%)</b>"],
+        ["SOC 2 / security certification", "4", "20 (required by overseas buyers)"],
+        ["US company + US accountant", "0", "3"],
+        ["Travel", "2.4", "12 (2-3 overseas trips)"],
+        ["Conferences (attend, not exhibit)", "0", "5"],
+        ["CA, legal, tools, GPU testing", "3.6", "6"],
+        ["<b>Profit before your salary</b>", "<b>106 (79%)</b>", "<b>175 (68%)</b>"],
+        ["Your salary (₹2 L/month)", "24", "24"],
+        ["Corporate tax (~25%)", "21", "38"],
+        ["<b>Net profit</b>", "<b>62 (46%)</b>", "<b>113 (44%)</b>"],
+    ],
+    [2.3 * inch, 1.9 * inch, W - 4.2 * inch],
+))
+s.append(Spacer(1, 6))
+s.append(make_table(
+    ["", "India only", "India + international"],
+    [
+        ["TAM / SAM", "₹78 Cr / ₹38 Cr", "~₹860 Cr / ~₹270 Cr"],
+        ["Avg revenue per customer", "₹3 L", "₹5.8 L"],
+        ["Competition", "Light; INR pricing and local presence are real advantages",
+         "Heavy in the US; your edge narrows to read-only / self-hosted / neocloud"],
+        ["Fixed costs to enter", "Minimal", "SOC 2, US entity, travel, conferences, 2nd support engineer: ~₹50 L/yr extra"],
+        ["Sales cycle and trust", "Shorter; in-person possible", "Longer; security reviews; solo-founder risk questions"],
+        ["Can you stay solo?", "Until ~25 customers", "Needs a support hire earlier because of time zones"],
+        ["Risk if it goes badly", "Low: costs stay small", "Higher: ~₹50 L/yr of fixed costs before overseas revenue"],
+    ],
+    [1.6 * inch, 2.3 * inch, W - 3.9 * inch],
+))
+s.append(Spacer(1, 6))
+s.append(P("<b>Recommendation: sequence it, don't choose.</b> (1) Now to year 1: India only. Get pilot-proven "
+           "savings and 2-3 written case studies; you need them anywhere. (2) Years 1-2: SE Asia and the "
+           "Middle East, sold remotely and through GPU-cloud partners; close time zones and a trust model that "
+           "suits sovereign buyers. (3) Years 2-3: US and EU, once SOC 2 and case studies exist, targeting "
+           "neocloud and on-prem GPU users rather than EKS/GKE teams already on CAST AI. This keeps the ~₹50 L/yr "
+           "of international fixed costs until revenue can pay for them.", "Callout"))
+
 # ================================================================= Assumptions + sources
 s.append(PageBreak())
-s.append(P("5. Assumptions ledger", "H2"))
+s.append(P("7. Assumptions ledger", "H2"))
 s.append(make_table(
     ["#", "Assumption", "Value", "Why / how to validate"],
     [
@@ -413,13 +542,20 @@ s.append(make_table(
         ["A10", "CAC per tier", "₹40k to ₹6 L", "Founder-led, ~4 free scans per win"],
         ["A11", "Monthly churn", "1.5-5%", "Biggest uncertainty; see 4.5"],
         ["A12", "Recoverable waste", "10% of GPU spend", "From Philly 23% flagged x 30-50% acted on; prove in pilot"],
-        ["A13", "Monthly burn", "₹4 L", "Two founders, lean"],
-        ["A14", "3-year SAM capture", "3-5%", "Typical for founder-led B2B infrastructure software"],
+        ["A13", "Monthly fixed costs (solo founder)", "₹50k-1.5 L", "With or without a ₹1 L personal draw"],
+        ["A14", "3-year SAM capture (India)", "3-5%", "Typical for founder-led B2B infrastructure software"],
+        ["A15", "Overseas orgs with GPU fleets", "SEA 370, ME 250, US 4,200, EU 1,500",
+         "Anchored on startup counts in section 5; validate with regional partners"],
+        ["A16", "Overseas average contract", "$8k-20k/yr", "~1% of monitored GPU spend; larger fleets abroad"],
+        ["A17", "Overseas SAM filters", "55-66% on K8s; 40-50% fit in US/EU", "Share that values read-only, "
+                                                                               "self-hosted or runs neocloud/on-prem"],
+        ["A18", "International entry costs", "~₹50 L/yr", "SOC 2, US entity, travel, conferences, 2nd support hire"],
+        ["A19", "Solo support capacity", "~25 customers", "2.5 h/customer/month, 40% of time on support"],
     ],
     [0.4 * inch, 2.2 * inch, 1.1 * inch, W - 3.7 * inch],
 ))
 
-s.append(P("6. Sources", "H2"))
+s.append(P("8. Sources", "H2"))
 src = [
     "Gartner, India public cloud forecast (Jun 2026): gartner.com/en/newsroom/press-releases/2026-06-01-gartner-"
     "forecasts-end-user-public-cloud-spending-in-india-to-surpass-17-billion-us-dollars-in-2026",
@@ -446,6 +582,20 @@ src = [
     "DoiT acquires PerfectScale (Feb 2025): businesswire.com/news/home/20250203440309/en/",
     "NVIDIA open-sources KAI Scheduler: developer.nvidia.com/blog/nvidia-open-sources-runai-scheduler-to-foster-"
     "community-collaboration/",
+    "Bain, Google, Temasek, e-Conomy SEA 2025 (680+ AI startups, $2.3B AI funding): bain.com/insights/e-conomy-sea-2025/",
+    "SE Asia data-centre pipeline (Malaysia 1,039 MW under construction): technode.global/2026/05/12/asia-pacific-"
+    "ai-driven-data-center-boom-reshapes-southeast-asia-landscape/ ; Aolani + NVIDIA 22,000 GPUs: "
+    "technode.global/2026/09/22/aolani-nvidia-22000-gpu-ai-infrastructure-southeast-asia/",
+    "MENA AI funding $858M in 2025 (MAGNiTT): enterpriseam.com/ksa/2026/02/15/mena-ai-funding-hits-usd-858-mn-in-2025-"
+    "led-by-the-uae-and-saudi-arabia/ ; Abu Dhabi 673 AI companies: startupgenome.com/insights/abu-dhabis-rise-"
+    "as-a-global-ai-and-startup-capital",
+    "HUMAIN and G42 GPU deployments: restofworld.org/2026/gulf-ai-investment-nvidia-monopoly-blackwell/ ; "
+    "presenc.ai/research/sovereign-ai-infrastructure-tracker-2026",
+    "Neocloud revenue >$25B in 2025 (DCD) and ~$42B 2026 projection (Research and Markets): "
+    "datacenterdynamics.com/en/news/neocloud-revenue-exceeds-25bn-in-2025/ ; "
+    "researchandmarkets.com/reports/6225920/neocloud-global-market-report",
+    "AI startup counts, US and Europe (StartUs Insights, StartupBlink): startus-insights.com/innovators-guide/"
+    "how-many-ai-companies-are-there/ ; startupblink.com/blog/top-ai-startups/",
     "Own test results: testing/real-trace-replay/RESULTS.md (Philly, 23.0% flagged); "
     "testing/azure-inference-trace-replay/RESULTS.md; PROGRESS.md.",
 ]
