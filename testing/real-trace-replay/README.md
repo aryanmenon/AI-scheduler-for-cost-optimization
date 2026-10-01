@@ -53,14 +53,20 @@ tar -xzf trace-data.tar.gz    # -> trace-data/cluster_gpu_util, cluster_job_log,
 ```bash
 python3 replay.py /tmp/philly-trace/trace-data [output_dir]
 python3 summarize.py [output_dir]/findings.pkl
+
+# After changing a detector: re-run on the rollups replay.py saved, no
+# re-download or re-read of the 6.6GB trace needed (seconds, not ~10 min).
+python3 rerun_detectors.py [output_dir]
+python3 summarize.py [output_dir]/findings.pkl
 ```
 
 `replay.py` streams the full 44.75M-row `cluster_gpu_util` (only ~10 min on
 a 4-core/15GB box), attributes each real per-minute reading to the real
 job that really occupied that GPU slot at that time (via
 `cluster_job_log`'s scheduling intervals), buckets into real hourly rollups
-matching `ingestion_normalization.rollup`'s schema, and runs the actual
-`waste_detector.idle/over_provisioning/fragmentation/patterns` functions
+matching `ingestion_normalization.rollup`'s schema (saved as
+`rollups.pkl`), and runs the actual waste_detector functions (idle,
+over-provisioning, fragmentation, recurring patterns, multi-GPU oversized)
 against them -- the identical code path the live product uses, just fed
 real historical data instead of a live DCGM scrape.
 
@@ -69,7 +75,7 @@ DST regime, avoiding the Nov 5 fall-back ambiguous-hour edge case; long
 enough to satisfy every detector's minimum evidence bar, including
 recurring-pattern's 7+ distinct calendar days).
 
-## Results (2026-09-27 run)
+## Results (current detectors, 2026-10-01)
 
 Real pilot thresholds (not smoke-test lowered ones), full 31-day window,
 44,750,640 total CSV rows read, 18,877,380 in-window, 85,614,120 real
@@ -79,27 +85,35 @@ attributed GPU-minute readings, 1,538,668 hourly rollup rows built:
 |---|---|
 | Idle | 10,990 |
 | Over-provisioned | 279 |
-| Fragmented | 4,636 (12,568 before the 2026-10-01 multi-GPU fix) |
+| Fragmented | 5,718 |
 | Recurring pattern | 6,848 |
+| Multi-GPU oversized (visibility only) | 24,570 |
 
-**17.1% of observed GPU-workload-hours were flagged as some form of
-waste** (`summarize.py`'s merged-interval union across all four
-categories, so an hour double-flagged by e.g. both idle and fragmentation
-only counts once). **14.7%** counting only idle, over-provisioned and
-recurring-pattern findings -- the floor, since fragmentation findings are
-unverified consolidation candidates (memory fit, combined compute and GPU
-sharing aren't checked).
+**16.7% of observed GPU-workload-hours were flagged as actionable waste**
+(`summarize.py`'s merged-interval union across idle, over-provisioned,
+fragmented and recurring-pattern, so an hour double-flagged only counts
+once). **14.7%** counting only idle, over-provisioned and recurring-pattern
+findings -- the floor, since fragmentation findings are unverified
+consolidation candidates (memory fit, combined compute and GPU sharing
+aren't checked).
 
-The original 2026-09-27 run reported 23.0%. That figure was inflated:
-the fragmentation detector didn't exclude multi-GPU jobs sitting next to
-another workload, and Philly is full of multi-GPU training jobs, so each
-of their GPUs got a "consolidate" finding that could never be acted on.
-Fixed 2026-10-01; same data, same window, re-run with the corrected
-detector. Both runs' raw output are in `RESULTS.md`. This is the first real evidence-backed answer to "will
-this detector reliably find real waste" -- previously only a synthetic-data
-claim.
+**Separately, not part of the 16.7%:** multi-GPU jobs that may be able to
+run on fewer GPUs account for **12.7%** of GPU-hours as releasable capacity
+(**7.0%** not already flagged above). That's an upper bound sized on hourly
+averages with no memory check -- see `waste_detector/multi_gpu.py`.
 
-Full raw output preserved in `RESULTS.md` in this directory.
+### How the headline figure changed
+
+| Run | Flagged | What changed |
+|---|---|---|
+| 2026-09-27 | 23.0% | Original run |
+| 2026-10-01 (a) | 17.1% | Fragmentation stopped flagging multi-GPU jobs (consolidating them onto a shared GPU is impossible). Of the 6.3 points that dropped out, 60% were multi-GPU jobs' GPU-hours and 40% were single-GPU workloads that had only qualified because a multi-GPU job sat next to them |
+| 2026-10-01 (b) | 16.7% | Fragmentation findings split per GPU *and* workload: a GPU that switched jobs mid-streak had been charging the first job for every hour (6,419 GPU-hours misattributed) |
+
+Idle, over-provisioned and recurring-pattern counts are identical across
+all three runs. Raw output for each is in `RESULTS.md`. This is the first
+real evidence-backed answer to "will this detector reliably find real
+waste" -- previously only a synthetic-data claim.
 
 ## What this does and does not prove
 

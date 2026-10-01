@@ -61,7 +61,36 @@ for key, ivs in intervals.items():
             merged.append((s, e))
     total_flagged_hours += sum((e - s) / BUCKET for s, e in merged)
 
+# multi_gpu_oversized is visibility-only (an upper bound sized on hourly
+# averages) and is reported separately, never folded into the flagged-waste
+# percentage above. Each finding covers one GPU of a multi-GPU job and its
+# metric_value is the fraction of the job's GPUs that could be released, so
+# releasable GPU-hours = sum over that GPU's hours of the fraction. Hours
+# already flagged by an actionable category are skipped so the two figures
+# can be added without double-counting.
+flagged_units = set()
+for key, ivs in intervals.items():
+    for s, e in ivs:
+        t = s
+        while t < e:
+            flagged_units.add((key, t))
+            t += BUCKET
+multi_total = 0.0
+multi_new = 0.0
+for finding in data.get("multi_gpu_oversized", []):
+    key = (finding.node, finding.gpu_index, finding.namespace, finding.workload)
+    t = finding.window_start
+    while t < finding.window_end:
+        multi_total += finding.metric_value
+        if (key, t) not in flagged_units:
+            multi_new += finding.metric_value
+        t += BUCKET
+
 print(f"total observed GPU-workload-hours (rollup rows): {total_rollup_rows}")
 print(f"distinct (node,gpu,ns,workload) keys with >=1 finding: {len(intervals)}")
 print(f"total flagged hours (merged, no double-counting overlap): {total_flagged_hours:.0f}")
 print(f"fraction of observed capacity-hours flagged as some form of waste: {100*total_flagged_hours/total_rollup_rows:.1f}%")
+if "multi_gpu_oversized" in data:
+    print(f"multi-GPU oversized findings (visibility only, NOT in the figure above): {len(data['multi_gpu_oversized'])}")
+    print(f"  releasable GPU-hours (upper bound): {multi_total:.0f} ({100*multi_total/total_rollup_rows:.1f}%), "
+          f"of which not already flagged above: {multi_new:.0f} ({100*multi_new/total_rollup_rows:.1f}%)")

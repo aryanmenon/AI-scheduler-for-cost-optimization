@@ -86,3 +86,63 @@ fraction of observed capacity-hours flagged as some form of waste: 14.7%
 
 Idle, over-provisioned and recurring-pattern counts are identical to the
 first run, as expected: the fix only touched the fragmentation detector.
+
+## Re-run 2026-10-01 (b): mislabel fix + multi-GPU visibility signal
+
+Same rollups (saved by `replay.py`, re-run with `rerun_detectors.py`), same
+thresholds. Changes: fragmentation findings keyed per GPU *and* workload
+(a GPU that switched jobs mid-streak had been charging the first job for
+every hour), and the new visibility-only `multi_gpu_oversized` category.
+
+```
+idle findings: 10990
+over_provisioned findings: 279
+fragmented findings: 5718      (more findings, fewer hours: split per workload)
+recurring_pattern findings: 6848
+multi_gpu_oversized findings: 24570
+
+total observed GPU-workload-hours (rollup rows): 1538668
+distinct (node,gpu,ns,workload) keys with >=1 finding: 13220
+total flagged hours (merged, no double-counting overlap): 256290
+fraction of observed capacity-hours flagged as some form of waste: 16.7%
+multi-GPU oversized findings (visibility only, NOT in the figure above): 24570
+  releasable GPU-hours (upper bound): 194735 (12.7%), of which not already flagged above: 106952 (7.0%)
+```
+
+Example multi-GPU finding detail:
+
+```
+multi-GPU job held 8.0 GPUs on average for 119h with combined hourly-average busy
+time of 373% of one GPU -- could likely release at least 1 GPU(s) and keep each
+remaining GPU under 70% on hourly average. Upper bound for review, not a verified
+recommendation: sized on hourly averages, so bursts may exceed that ceiling on fewer
+GPUs; GPU memory fit not checked; GPU utilization is busy time, not compute used; for
+training, fewer GPUs changes batch size and run time, and a data-loading or
+communication bottleneck may be the cheaper fix
+```
+
+## Analysis 2026-10-01: where the 23.0% -> 17.1% drop came from
+
+Old (pre-fix) and new fragmentation detectors run side by side on the same
+rollups, flagged hours compared as sets of (GPU, workload, hour):
+
+```
+dropped hours 96707 (6.3 pts): from multi-GPU workloads 58271 (60%),
+  from single-GPU workloads that lost their partner 38436 (40%)
+usable GPU-hours 1386261: multi-GPU 1131562 (82%), single-GPU 254699
+median hourly avg GPU_UTIL: single 54.3%  multi 53.6%
+multi-GPU GPU-hours with avg 2-50% not flagged by anything: 341304 (22.2% of all GPU-hours)
+```
+
+Sizing the multi-GPU signal was prototyped two ways before building it
+(GPUs needed = ceil(summed hourly utilization / 70%), 4h+ streak):
+
+```
+peak-based (hourly max per GPU):     +0.4 pts of GPU-hours -> 17.5% total
+average-based (hourly avg per GPU):  +6.6 pts of GPU-hours -> 23.7% total
+```
+
+Peak-based found almost nothing because a job's busiest minute in an hour
+is usually high; average-based was chosen and is shown separately as a
+visibility-only upper bound rather than added to the headline.
+
