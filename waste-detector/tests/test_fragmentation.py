@@ -177,3 +177,17 @@ def test_detail_marks_finding_as_unverified_candidate():
     for f in findings:
         assert "consolidation candidate" in f.detail
         assert "not checked" in f.detail
+
+
+def test_gpu_that_switches_workloads_mid_streak_charges_each_its_own_hours():
+    # Regression: findings were keyed by GPU only and labeled with the
+    # first row's workload, so a GPU that ran job-A for 2h then job-B for
+    # 2h produced one 4h finding blaming job-A for all of it.
+    rows = []
+    for i in range(4):
+        bs = i * 3600.0
+        rows.append(_row(bs, "0", "job-A" if i < 2 else "job-B", avg_utilization_pct=20.0))
+        rows.append(_row(bs, "1", "job-C", avg_utilization_pct=20.0))
+    findings = detect_fragmentation(rows, _config())
+    gpu0 = {f.workload: (f.window_start, f.window_end) for f in findings if f.gpu_index == "0"}
+    assert gpu0 == {"job-A": (0.0, 2 * 3600.0), "job-B": (2 * 3600.0, 4 * 3600.0)}

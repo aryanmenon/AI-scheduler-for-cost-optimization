@@ -227,3 +227,25 @@ def test_estimate_preserves_finding_identity():
     assert estimate.finding_id == 42
     assert estimate.workload == "my-svc"
     assert estimate.namespace == "prod"
+
+
+def test_multi_gpu_oversized_priced_as_visibility_upper_bound():
+    from waste_detector.findings import MULTI_GPU_OVERSIZED
+    from savings_estimator.estimate import BASIS_VISIBILITY_UPPER_BOUND
+
+    finding = _finding(MULTI_GPU_OVERSIZED, metric_value=0.625)
+    estimate = estimate_for_finding(finding, [_rollup(avg_utilization_pct=20.0)], _config(), {})
+    assert estimate.priceable
+    assert estimate.basis == BASIS_VISIBILITY_UPPER_BOUND
+    # 300.00/hr * 0.625 releasable * 0.5 capture * 730h
+    assert estimate.amount_inr == pytest.approx(300.00 * 0.625 * 0.5 * 730.0)
+    assert estimate.recommended_action.startswith("review whether")
+    assert "not included in the headline total" in estimate.methodology
+
+
+@pytest.mark.parametrize("bad", [0.0, 1.0, -0.2, 1.5, float("nan")])
+def test_multi_gpu_oversized_rejects_invalid_fraction(bad):
+    from waste_detector.findings import MULTI_GPU_OVERSIZED
+
+    estimate = estimate_for_finding(_finding(MULTI_GPU_OVERSIZED, metric_value=bad), [_rollup()], _config(), {})
+    assert not estimate.priceable

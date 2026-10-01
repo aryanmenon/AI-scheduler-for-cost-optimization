@@ -20,6 +20,7 @@ _CATEGORY_LABELS = {
     "over_provisioned": "Over-Provisioned",
     "fragmented": "Fragmented Capacity",
     "recurring_pattern": "Recurring Low-Usage Pattern",
+    "multi_gpu_oversized": "Multi-GPU Jobs: Fewer GPUs? (upper bound, not in headline)",
 }
 
 # Fixed hue per category -- never reassigned based on sort order or which
@@ -32,6 +33,7 @@ _CATEGORY_COLORS = {
     "over_provisioned": "#d95926",
     "fragmented": "#199e70",
     "recurring_pattern": "#c98500",
+    "multi_gpu_oversized": "#8a5cd1",
 }
 _CATEGORY_COLOR_FALLBACK = "#676761"
 
@@ -105,6 +107,19 @@ def _findings_table_rows(rows: list[EstimateRow]) -> str:
 # in that list (a category this report doesn't recognize) is appended
 # after, in whatever order aggregate() produced it.
 _CATEGORY_ORDER = list(_CATEGORY_LABELS.keys())
+
+
+def _visibility_card(summary: ReportSummary) -> str:
+    if not summary.visibility_upper_bound_total_inr:
+        return ""
+    return f"""
+    <div class="stat-card visibility">
+      <div class="label">Multi-GPU Jobs: Possible Fewer GPUs (Upper Bound)</div>
+      <div class="value">{_e(_fmt_inr(summary.visibility_upper_bound_total_inr))}</div>
+      <div class="note">Not included in Projected Monthly Savings. Jobs holding several GPUs whose
+        combined hourly-average busy time would fit on fewer; bursts above the hourly average and
+        GPU memory fit were not checked. A prompt to review GPU counts, not a recommendation.</div>
+    </div>"""
 
 
 def _overlap_note(summary: ReportSummary) -> str:
@@ -277,7 +292,7 @@ def render_report(summary: ReportSummary) -> str:
       <div class="value">{_e(_fmt_inr(summary.observed_window_total_inr))}</div>
       <div class="note">Actual cost of idle GPU time during the exact windows observed --
         a lower bound, not extrapolated to a full month.</div>
-    </div>
+    </div>{_visibility_card(summary)}
   </div>
 
   <section class="card">

@@ -114,13 +114,15 @@ def _findings_for_streak(
     if len(streak_hours) < config.fragmentation_min_streak_hours:
         return []
 
-    rows_by_gpu: dict[tuple, list[RollupRow]] = defaultdict(list)
+    # Keyed by GPU *and* workload: a GPU can switch jobs partway through a
+    # node's streak, and each job must only be charged for its own hours.
+    rows_by_gpu_workload: dict[tuple, list[RollupRow]] = defaultdict(list)
     workloads_per_hour = []
     for bs in streak_hours:
         hour_rows = qualifying[(node, bs)]
         workloads_per_hour.append(len({(r.namespace, r.workload) for r in hour_rows}))
         for row in hour_rows:
-            rows_by_gpu[_gpu_identity(row)].append(row)
+            rows_by_gpu_workload[(_gpu_identity(row), row.namespace, row.workload)].append(row)
 
     avg_underutilized_gpus = sum(
         len({_gpu_identity(r) for r in qualifying[(node, bs)]}) for bs in streak_hours
@@ -128,11 +130,10 @@ def _findings_for_streak(
     avg_workloads = sum(workloads_per_hour) / len(workloads_per_hour)
 
     findings = []
-    for (gpu_node, gpu_index, gpu_instance_id), gpu_rows in rows_by_gpu.items():
+    for ((gpu_node, gpu_index, gpu_instance_id), namespace, workload), gpu_rows in rows_by_gpu_workload.items():
         # A GPU may drop in and out of the underutilized set within the
-        # streak; report the finding over the hours it actually appeared in.
-        namespace = gpu_rows[0].namespace
-        workload = gpu_rows[0].workload
+        # streak; report the finding over the hours this workload actually
+        # appeared in on it.
         window_start = min(r.bucket_start for r in gpu_rows)
         window_end = max(r.bucket_start for r in gpu_rows) + _BUCKET_SECONDS
         confidence = sum(r.coverage_ratio for r in gpu_rows) / len(gpu_rows)

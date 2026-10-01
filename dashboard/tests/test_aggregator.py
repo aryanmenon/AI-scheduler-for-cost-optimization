@@ -111,3 +111,27 @@ def test_observed_window_amounts_still_summed_for_same_gpu():
     ]
     summary = aggregate(rows, top_n=10)
     assert summary.observed_window_total_inr == 25.0
+
+
+def test_visibility_upper_bound_kept_out_of_headline_and_shown_separately():
+    rows = [
+        _row(id=1, category="over_provisioned", basis=BASIS_PROJECTED_MONTHLY, amount_inr=100.0, gpu_index="0"),
+        _row(id=2, category="multi_gpu_oversized", basis="visibility_upper_bound", amount_inr=500.0, gpu_index="1"),
+        _row(id=3, category="multi_gpu_oversized", basis="visibility_upper_bound", amount_inr=300.0, gpu_index="1"),
+        _row(id=4, category="multi_gpu_oversized", basis="visibility_upper_bound", amount_inr=200.0, gpu_index="2"),
+    ]
+    summary = aggregate(rows, top_n=10)
+    assert summary.projected_monthly_total_inr == 100.0
+    assert summary.observed_window_total_inr == 0.0
+    # Counted once per GPU at its largest estimate, like the headline.
+    assert summary.visibility_upper_bound_total_inr == 700.0
+
+
+def test_visibility_rows_listed_after_actionable_findings():
+    rows = [
+        _row(id=1, category="multi_gpu_oversized", basis="visibility_upper_bound", amount_inr=900.0),
+        _row(id=2, category="over_provisioned", basis=BASIS_PROJECTED_MONTHLY, amount_inr=50.0),
+        _row(id=3, category="idle", amount_inr=10.0),
+    ]
+    summary = aggregate(rows, top_n=10)
+    assert [r.id for r in summary.top_findings] == [2, 3, 1]

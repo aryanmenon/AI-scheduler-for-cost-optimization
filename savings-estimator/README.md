@@ -16,6 +16,7 @@ spent" money with "projected future" money would overclaim:
 | `over_provisioned` | `projected_monthly` | Requires 24h+ of observed peak-never-exceeds-threshold evidence before it fires at all -- built to represent a persistent state, so projecting its rate forward is the standard basis for a right-sizing ROI calculation. |
 | `fragmented` | `projected_monthly` | Same reasoning: a 4h+ sustained streak is the detector's minimum before flagging, so it's evidence of an ongoing pattern. |
 | `recurring_pattern` | `projected_monthly` | Explicitly measures a rate across many observed calendar days already -- extrapolation is what the category is *for*. |
+| `multi_gpu_oversized` | `visibility_upper_bound` | Projected monthly like the above, but sized on hourly averages with no memory check, so it's an upper bound to prompt a review, not a figure to stand behind. Its own basis keeps it out of the headline total; discounted by `MULTI_GPU_CAPTURE_FRACTION` (default 0.5). |
 
 ## Achievable ceiling, not 100%
 

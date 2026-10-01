@@ -59,6 +59,13 @@ class Config:
     # on every cycle past it -- one transient blip shouldn't page anyone.
     alert_consecutive_failure_threshold: int = 3
 
+    # Multi-GPU jobs that may need fewer GPUs (see multi_gpu.py). The
+    # ceiling each remaining GPU's hourly-average busy time may reach after
+    # the job is given fewer GPUs, and how long that must hold before it's
+    # reported.
+    multi_gpu_target_utilization_pct: float = 70.0
+    multi_gpu_min_streak_hours: int = 4
+
     @classmethod
     def from_env(cls) -> "Config":
         findings_sqlite_path = os.environ.get(
@@ -103,6 +110,10 @@ class Config:
                 os.path.join(os.path.dirname(findings_sqlite_path) or ".", ".heartbeat"),
             ),
             alert_webhook_url=os.environ.get("ALERT_WEBHOOK_URL") or None,
+            multi_gpu_target_utilization_pct=float(
+                os.environ.get("MULTI_GPU_TARGET_UTILIZATION_PCT", "70.0")
+            ),
+            multi_gpu_min_streak_hours=int(os.environ.get("MULTI_GPU_MIN_STREAK_HOURS", "4")),
             alert_consecutive_failure_threshold=int(
                 os.environ.get("ALERT_CONSECUTIVE_FAILURE_THRESHOLD", "3")
             ),

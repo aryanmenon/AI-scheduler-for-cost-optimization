@@ -18,6 +18,9 @@ from dashboard.report_reader import EstimateRow
 
 BASIS_OBSERVED_WINDOW = "observed_window"
 BASIS_PROJECTED_MONTHLY = "projected_monthly"
+# Visibility-only upper bounds (multi-GPU jobs that may need fewer GPUs):
+# shown as their own figure, never added to the headline projection.
+BASIS_VISIBILITY_UPPER_BOUND = "visibility_upper_bound"
 
 
 @dataclass
@@ -45,9 +48,13 @@ class ReportSummary:
     # separate streaks). The headline counts each such GPU once; the
     # by-category totals don't, so they can add up to more than it.
     projected_gpus_with_overlapping_estimates: int = 0
+    # Kept separate from projected_monthly_total_inr on purpose: an upper
+    # bound sized from hourly averages with no memory check, not a savings
+    # figure to stand behind. Counted once per GPU like the headline.
+    visibility_upper_bound_total_inr: float = 0.0
 
 
-def _projected_total_counting_each_gpu_once(priceable: list[EstimateRow]) -> tuple[float, int]:
+def _total_counting_each_gpu_once(priceable: list[EstimateRow], basis: str) -> tuple[float, int]:
     """Projected-monthly recommendations for the same physical GPU are
     alternatives, not additive: you can right-size a GPU or consolidate it
     away, not both, and two findings for the same GPU project the same
@@ -61,7 +68,7 @@ def _projected_total_counting_each_gpu_once(priceable: list[EstimateRow]) -> tup
     best_by_gpu: dict[tuple, float] = {}
     estimates_per_gpu: dict[tuple, int] = defaultdict(int)
     for r in priceable:
-        if r.basis != BASIS_PROJECTED_MONTHLY or r.amount_inr is None:
+        if r.basis != basis or r.amount_inr is None:
             continue
         key = (r.node, r.gpu_index, r.gpu_instance_id)
         estimates_per_gpu[key] += 1
@@ -76,7 +83,8 @@ def aggregate(rows: list[EstimateRow], top_n: int, generated_at: float | None = 
     priceable = [r for r in rows if r.priceable]
     unpriceable = [r for r in rows if not r.priceable]
 
-    projected_total, overlapping_gpus = _projected_total_counting_each_gpu_once(priceable)
+    projected_total, overlapping_gpus = _total_counting_each_gpu_once(priceable, BASIS_PROJECTED_MONTHLY)
+    visibility_total, _ = _total_counting_each_gpu_once(priceable, BASIS_VISIBILITY_UPPER_BOUND)
     observed_total = sum(
         r.amount_inr for r in priceable if r.basis == BASIS_OBSERVED_WINDOW and r.amount_inr is not None
     )
@@ -97,8 +105,14 @@ def aggregate(rows: list[EstimateRow], top_n: int, generated_at: float | None = 
     ]
     by_category.sort(key=lambda c: c.total_inr, reverse=True)
 
+    # Actionable findings first, largest first; visibility-only upper bounds
+    # after them, so the biggest-looking number isn't the least verified one.
     top_findings = sorted(
-        priceable, key=lambda r: r.amount_inr if r.amount_inr is not None else 0.0, reverse=True
+        priceable,
+        key=lambda r: (
+            r.basis == BASIS_VISIBILITY_UPPER_BOUND,
+            -(r.amount_inr if r.amount_inr is not None else 0.0),
+        ),
     )[:top_n]
 
     return ReportSummary(
@@ -112,4 +126,5 @@ def aggregate(rows: list[EstimateRow], top_n: int, generated_at: float | None = 
         top_findings=top_findings,
         unpriceable_samples=unpriceable[:5],
         projected_gpus_with_overlapping_estimates=overlapping_gpus,
+        visibility_upper_bound_total_inr=visibility_total,
     )

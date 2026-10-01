@@ -16,6 +16,11 @@ and conflating them would overclaim:
   observed rate forward to a monthly figure is the standard, defensible
   basis for a right-sizing ROI calculation -- as long as it's labeled as
   a projection, which every estimate here does via `basis`.
+- MULTI_GPU_OVERSIZED is projected the same way but on its own basis,
+  BASIS_VISIBILITY_UPPER_BOUND: it's sized from hourly averages with no
+  memory check, so it shows the scale of an opportunity rather than a
+  savings figure to stand behind, and the dashboard keeps it out of the
+  headline total.
 """
 from __future__ import annotations
 
@@ -23,11 +28,22 @@ from ingestion_normalization.capability import lookup_capability
 
 from savings_estimator.ceiling import right_sized_capability
 from savings_estimator.config import Config
-from savings_estimator.estimate import BASIS_OBSERVED_WINDOW, BASIS_PROJECTED_MONTHLY, SavingsEstimate
+from savings_estimator.estimate import (
+    BASIS_OBSERVED_WINDOW,
+    BASIS_PROJECTED_MONTHLY,
+    BASIS_VISIBILITY_UPPER_BOUND,
+    SavingsEstimate,
+)
 from savings_estimator.findings_reader import FindingRow
 from savings_estimator.pricing import lookup_price
 from savings_estimator.rollup_reader import RollupRow
-from waste_detector.findings import FRAGMENTED, IDLE, OVER_PROVISIONED, RECURRING_PATTERN
+from waste_detector.findings import (
+    FRAGMENTED,
+    IDLE,
+    MULTI_GPU_OVERSIZED,
+    OVER_PROVISIONED,
+    RECURRING_PATTERN,
+)
 
 _SECONDS_PER_HOUR = 3600
 _DAYS_PER_MONTH = 30.0
@@ -97,6 +113,8 @@ def estimate_for_finding(
         return _estimate_fragmented(finding, rollup_rows, price, config)
     if finding.category == RECURRING_PATTERN:
         return _estimate_recurring_pattern(finding, price, config)
+    if finding.category == MULTI_GPU_OVERSIZED:
+        return _estimate_multi_gpu_oversized(finding, price, config)
 
     return _unpriceable(finding, f"unknown finding category {finding.category!r}")
 
@@ -241,5 +259,32 @@ def _estimate_recurring_pattern(finding: FindingRow, price, config: Config) -> S
             f"{finding.metric_value:.0%} of observed days quiet at this hour -> "
             f"~{monthly_wasted_hours:.1f}h/month at ₹{price.hourly_inr:.2f}/hr, "
             f"projected if the pattern continues"
+        ),
+    )
+
+
+def _estimate_multi_gpu_oversized(finding: FindingRow, price, config: Config) -> SavingsEstimate:
+    # metric_value for this category IS the fraction of the job's GPUs that
+    # could be released (see waste_detector.multi_gpu). Every GPU of the job
+    # gets its own finding, so pricing each at that fraction of its own
+    # cost sums to the releasable GPUs' cost across the job.
+    if not (0.0 < finding.metric_value < 1.0):
+        return _unpriceable(finding, f"metric_value {finding.metric_value!r} is not a valid fraction in (0, 1)")
+
+    monthly = price.hourly_inr * finding.metric_value * config.multi_gpu_capture_fraction * config.hours_per_month
+    return SavingsEstimate(
+        **_base_kwargs(finding),
+        basis=BASIS_VISIBILITY_UPPER_BOUND,
+        amount_inr=monthly,
+        recommended_action=(
+            "review whether this multi-GPU job can run on fewer GPUs (check memory fit, batch size and "
+            "run time; for training, a data-loading or communication bottleneck may be the cheaper fix)"
+        ),
+        methodology=(
+            f"{finding.metric_value:.0%} of the job's GPUs releasable on hourly-average busy time, "
+            f"discounted to {config.multi_gpu_capture_fraction:.0%} since shrinking a job's GPU count "
+            f"takes engineering work; ₹{price.hourly_inr:.2f}/hr ({price.source}) projected over "
+            f"{config.hours_per_month:.0f}h/month. Upper bound for visibility, not included in the "
+            f"headline total: bursts above the hourly average and GPU memory fit were not checked"
         ),
     )

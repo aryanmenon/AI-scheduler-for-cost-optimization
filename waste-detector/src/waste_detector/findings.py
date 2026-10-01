@@ -15,6 +15,7 @@ IDLE = "idle"
 OVER_PROVISIONED = "over_provisioned"
 FRAGMENTED = "fragmented"
 RECURRING_PATTERN = "recurring_pattern"
+MULTI_GPU_OVERSIZED = "multi_gpu_oversized"
 
 
 @dataclass

@@ -13,6 +13,12 @@ BASIS_OBSERVED_WINDOW = "observed_window"
 # continues. Always labeled as a projection, never presented as certain.
 BASIS_PROJECTED_MONTHLY = "projected_monthly"
 
+# A projected monthly figure for a signal that is visibility only: sized
+# from evidence too weak to stand behind as a recommendation (see
+# waste_detector.multi_gpu). Reported as an upper bound and kept out of the
+# dashboard's headline savings total.
+BASIS_VISIBILITY_UPPER_BOUND = "visibility_upper_bound"
+
 
 @dataclass
 class SavingsEstimate:

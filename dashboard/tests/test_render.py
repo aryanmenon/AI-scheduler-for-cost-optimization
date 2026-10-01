@@ -171,3 +171,16 @@ def test_overlap_note_shown_only_when_a_gpu_has_multiple_projected_estimates():
     html_out = render_report(overlapping)
     assert "counted once" in html_out
     assert "1 GPU appears in more than one recommendation" in html_out
+
+
+def test_visibility_card_shown_only_when_there_are_visibility_estimates():
+    plain = aggregate([_row()], top_n=10)
+    assert "Possible Fewer GPUs" not in render_report(plain)
+
+    with_multi = aggregate([
+        _row(id=1, category="multi_gpu_oversized", basis="visibility_upper_bound", amount_inr=5000.0),
+    ], top_n=10)
+    out = render_report(with_multi)
+    assert "Possible Fewer GPUs" in out
+    assert "Not included in Projected Monthly Savings" in out
+    assert "not in headline" in out

@@ -34,7 +34,14 @@ they're always identical for the same underlying data.
   window). Combining a monthly rate with a one-off observed figure would
   produce a number that overstates both -- see
   `../savings-estimator/README.md`'s basis table for the full reasoning
-  this report inherits.
+  this report inherits. The projected headline counts each GPU once, at
+  its largest estimate: right-sizing and consolidating the same GPU are
+  alternatives, not additive savings.
+- **A third, separate figure for multi-GPU jobs that may need fewer
+  GPUs** (`visibility_upper_bound` basis), shown only when present and
+  never added to the headline: it's sized on hourly averages with no
+  memory check. Those rows are also listed after actionable findings in
+  the top-findings table.
 - **A "not priced" section**, not a silent omission, for findings whose
   GPU model or rate is unknown -- the point is to be auditable, not to
   make the biggest number possible.

@@ -48,8 +48,9 @@ detail and status of each:
    reference table so SKUs are comparable, and rolls samples up into
    5-min/hourly/daily buckets with explicit gap/coverage tracking.
 3. **Baseline & waste detector** — idle/fragmentation/over-provisioning
-   detection. *Built in this repo* (`waste-detector/`): four detectors
-   (idle, over-provisioned, fragmented, recurring-pattern), each excluding
+   detection. *Built in this repo* (`waste-detector/`): five detectors
+   (idle, over-provisioned, fragmented, recurring-pattern, plus a
+   visibility-only multi-GPU "could use fewer GPUs" signal), each excluding
    low-coverage rollups and requiring sustained evidence before flagging
    anything, to keep false positives — which cost more customer trust than
    a missed detection — low.
@@ -110,6 +111,8 @@ waste-detector/                Python detector: rollups → waste findings
     fragmentation.py            multi-workload, multi-GPU node underuse
     patterns.py                 recurring hour-of-day low-usage windows
                                  (tolerates occasional exception days)
+    multi_gpu.py                multi-GPU jobs that may need fewer GPUs
+                                 (visibility-only upper bound)
     findings.py                  shared WasteFinding schema + SQLite storage
     detector.py, pipeline.py,
     main.py                      orchestration + the detect/store loop

@@ -1,7 +1,7 @@
 # waste-detector
 
 Phase 1, Component 3 of the GPU cost-optimization SaaS: reads
-ingestion-normalization's hourly rollups and flags four categories of
+ingestion-normalization's hourly rollups and flags five categories of
 wasted GPU spend for the (not yet built) savings estimator to price.
 
 ## Waste categories
@@ -10,8 +10,9 @@ wasted GPU spend for the (not yet built) savings estimator to price.
 |---|---|---|
 | `idle` | A sustained, unbroken run of near-zero avg **and** max utilization over several consecutive hours | Flagging bursty-but-healthy inference traffic, where a single low-average snapshot is normal |
 | `over_provisioned` | Peak utilization never exceeds a threshold over a full observation window | Flagging a workload before enough hours are observed to trust the verdict |
-| `fragmented` | Multiple GPUs on the same node, owned by *different* workloads, all underutilized at the same time for a sustained streak | Flagging a single workload's legitimate multi-GPU distributed job |
+| `fragmented` | Multiple GPUs on the same node, owned by *different* single-GPU workloads, all underutilized at the same time for a sustained streak. A consolidation *candidate*: GPU memory fit, combined compute and cluster GPU sharing (time-slicing/MPS/MIG) are not checked | Telling a multi-GPU job to consolidate onto a shared GPU (impossible: NCCL refuses two ranks per GPU) -- any workload on 2+ GPUs in an hour is excluded |
 | `recurring_pattern` | A specific hour-of-day that's reliably low-utilization across many observed days, tolerating occasional exceptions | The idle detector's strict contiguity requirement, which would fragment "quiet most nights" into many too-short streaks |
+| `multi_gpu_oversized` | A workload on 2+ GPUs whose summed hourly-average busy time would fit on fewer GPUs under a 70% ceiling, for a 4h+ streak. **Visibility only, an upper bound** -- sized on averages (bursts may exceed the ceiling), memory fit unchecked; priced on its own basis and kept out of the dashboard headline | Silently losing multi-GPU underuse once fragmentation stopped covering it (22% of Philly GPU-hours) |
 
 ## Local development
 

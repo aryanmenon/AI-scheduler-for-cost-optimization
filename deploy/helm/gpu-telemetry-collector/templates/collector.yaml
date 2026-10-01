@@ -38,6 +38,8 @@ data:
   PATTERN_MIN_DAYS_OBSERVED: {{ .Values.wasteDetector.patternMinDaysObserved | quote }}
   PATTERN_IDLE_THRESHOLD_PCT: {{ .Values.wasteDetector.patternIdleThresholdPct | quote }}
   PATTERN_MIN_CONSISTENT_FRACTION: {{ .Values.wasteDetector.patternMinConsistentFraction | quote }}
+  MULTI_GPU_TARGET_UTILIZATION_PCT: {{ .Values.wasteDetector.multiGpuTargetUtilizationPct | quote }}
+  MULTI_GPU_MIN_STREAK_HOURS: {{ .Values.wasteDetector.multiGpuMinStreakHours | quote }}
   FINDINGS_RETENTION_HOURS: {{ .Values.wasteDetector.findingsRetentionHours | quote }}
   # Consumed by the savings-estimator sidecar below.
   SAVINGS_SQLITE_PATH: "/data/savings/savings.db"
@@ -46,6 +48,7 @@ data:
   SLA_TARGET_UTILIZATION_PCT: {{ .Values.savingsEstimator.slaTargetUtilizationPct | quote }}
   HOURS_PER_MONTH: {{ .Values.savingsEstimator.hoursPerMonth | quote }}
   FRAGMENTATION_CAPTURE_FRACTION: {{ .Values.savingsEstimator.fragmentationCaptureFraction | quote }}
+  MULTI_GPU_CAPTURE_FRACTION: {{ .Values.savingsEstimator.multiGpuCaptureFraction | quote }}
   {{- if .Values.savingsEstimator.gpuHourlyRatesJson }}
   # Always prefer setting this to the customer's actual contracted rates
   # over the illustrative public list-price defaults baked into pricing.py.
