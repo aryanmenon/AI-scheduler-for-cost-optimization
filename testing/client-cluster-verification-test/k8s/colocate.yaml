@@ -1,0 +1,99 @@
+# Verification for the fragmentation finding: run BOTH inference services,
+# with their phase-1 settings unchanged, on ONE physical GPU at once.
+#
+# Neither pod requests nvidia.com/gpu; instead both set
+# NVIDIA_VISIBLE_DEVICES to the same GPU. That works here because this
+# cluster's containerd default runtime is nvidia (see README setup), and it
+# is effectively what GPU time-slicing does -- one GPU, shared, with no
+# memory isolation -- while guaranteeing both land on the same GPU (the
+# device plugin's time-slicing mode can't). Delete vllm-main and vllm-side
+# first so GPU __GPU_INDEX__ is free.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coloc-main
+  namespace: client-sim
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: coloc-main}
+  template:
+    metadata:
+      labels: {app: coloc-main}
+    spec:
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.8.5.post1
+          args: ["--model", "Qwen/Qwen2.5-1.5B-Instruct", "--served-model-name", "main",
+                 "--dtype", "half", "--max-model-len", "4096",
+                 "--gpu-memory-utilization", "0.35", "--port", "8000"]
+          env:
+            - {name: VLLM_USE_V1, value: "0"}
+            - {name: NVIDIA_VISIBLE_DEVICES, value: "__GPU_INDEX__"}
+          ports: [{containerPort: 8000}]
+          readinessProbe:
+            httpGet: {path: /v1/models, port: 8000}
+            periodSeconds: 10
+            failureThreshold: 180
+          volumeMounts:
+            - {name: hf-cache, mountPath: /root/.cache/huggingface}
+            - {name: shm, mountPath: /dev/shm}
+      volumes:
+        - name: hf-cache
+          hostPath: {path: /var/lib/hf-cache, type: DirectoryOrCreate}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: 2Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coloc-main
+  namespace: client-sim
+spec:
+  selector: {app: coloc-main}
+  ports: [{port: 8000, targetPort: 8000}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coloc-side
+  namespace: client-sim
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: coloc-side}
+  template:
+    metadata:
+      labels: {app: coloc-side}
+    spec:
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.8.5.post1
+          args: ["--model", "Qwen/Qwen2.5-0.5B-Instruct", "--served-model-name", "side",
+                 "--dtype", "half", "--max-model-len", "4096",
+                 "--gpu-memory-utilization", "0.30", "--port", "8000"]
+          env:
+            - {name: VLLM_USE_V1, value: "0"}
+            - {name: NVIDIA_VISIBLE_DEVICES, value: "__GPU_INDEX__"}
+          ports: [{containerPort: 8000}]
+          readinessProbe:
+            httpGet: {path: /v1/models, port: 8000}
+            periodSeconds: 10
+            failureThreshold: 180
+          volumeMounts:
+            - {name: hf-cache, mountPath: /root/.cache/huggingface}
+            - {name: shm, mountPath: /dev/shm}
+      volumes:
+        - name: hf-cache
+          hostPath: {path: /var/lib/hf-cache, type: DirectoryOrCreate}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: 2Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coloc-side
+  namespace: client-sim
+spec:
+  selector: {app: coloc-side}
+  ports: [{port: 8000, targetPort: 8000}]

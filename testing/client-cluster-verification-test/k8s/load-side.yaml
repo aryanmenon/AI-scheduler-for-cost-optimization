@@ -1,0 +1,23 @@
+# Light load for vllm-side: 15% of the real Azure code-completion trace,
+# looped. Edit __HOURS__ with sed when applying -- see the README.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: load-side
+  namespace: client-sim
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: load
+          image: python:3.11-slim
+          command: ["python3", "-u", "/scripts/trace_load.py",
+                    "--target", "http://vllm-side:8000", "--model", "side",
+                    "--trace", "code", "--speed", "1.0", "--keep-fraction", "0.15",
+                    "--duration-hours", "__HOURS__", "--label", "phase1-side-a100"]
+          volumeMounts: [{name: scripts, mountPath: /scripts}]
+      volumes:
+        - name: scripts
+          configMap: {name: client-sim-scripts}

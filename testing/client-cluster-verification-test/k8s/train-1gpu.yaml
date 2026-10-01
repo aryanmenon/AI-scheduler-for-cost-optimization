@@ -1,0 +1,34 @@
+# Verification for the "could use fewer GPUs" finding: the same job on ONE
+# GPU for a fixed number of epochs, so throughput and cost per sample can be
+# compared with the 2-GPU run. Apply twice with sed:
+#   __WORKERS__=2 -> same per-GPU data loading as before (half the total)
+#   __WORKERS__=4 -> same total data loading as the 2-GPU run
+# Use the same __IO_MS__ as phase 1.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: train-1gpu-w__WORKERS__
+  namespace: client-sim
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: train
+          image: pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime
+          command: ["torchrun", "--nproc_per_node=1", "/scripts/ddp_train.py",
+                    "--label", "verify-train-1gpu-w__WORKERS__",
+                    "--train-hours", "2", "--max-epochs", "5", "--hold-hours", "0",
+                    "--num-workers", "__WORKERS__", "--io-ms-per-sample", "__IO_MS__",
+                    "--batch-size", "64", "--epoch-samples", "20000"]
+          resources:
+            limits: {nvidia.com/gpu: 1}
+          volumeMounts:
+            - {name: scripts, mountPath: /scripts}
+            - {name: shm, mountPath: /dev/shm}
+      volumes:
+        - name: scripts
+          configMap: {name: client-sim-scripts}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: 4Gi}

@@ -742,6 +742,22 @@ debugging real problems as they come up, not running anything myself.
 
 Ordered roughly by what was recommended first:
 
+- **Client-cluster verification test: KIT BUILT, NOT RUN** (2026-10-01,
+  `testing/client-cluster-verification-test/`). Verifies the ₹ estimates and
+  recommendations by applying them and measuring (not just detection): one
+  4x A100 VM running vLLM (Qwen2.5-1.5B under the real Azure conv trace,
+  Qwen2.5-0.5B under 15% of the code trace) and a data-loading-bound DDP
+  job on 2 GPUs that trains, holds idle, then exits; then (a) both vLLM
+  services co-located on one GPU, (b) the job on 1 GPU with 2 and 4 loader
+  workers, (c) phase 2: the identical trace on 1x whatever GPU the product
+  recommends. `verify.py` prints predicted vs measured with PASS/MARGINAL/
+  FAIL. Founder chose **Quick (smoke thresholds, ~6 h + ~1.5 h, ~$25-50)
+  then Full (real thresholds, ~29 h + ~1.5 h, ~$90-180)**. All scripts
+  dry-run here: load generator vs a fake vLLM server, DDP script on CPU
+  with 2 processes, verify.py on real product output from a synthetic
+  scenario. Pinned images: vllm/vllm-openai:v0.8.5.post1,
+  pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime (both confirmed on Docker
+  Hub); driver must be >= 550.
 - **Use an existing dcgm-exporter (Helm value)** -- small (~hours). The
   collector's DCGM_EXPORTER_URL is hard-coded to the chart's own service
   (`templates/collector.yaml:8`); `dcgmExporter.enabled: false` exists but
@@ -969,6 +985,16 @@ Ordered roughly by what was recommended first:
   27MB). Use `curl -C - --retry 5` in a loop and check the sha256 in the
   replay README before extracting. 1GB download / 6.6GB extracted; delete
   it after building rollups.
+- **Never pass the rates JSON to Helm with `--set`/`--set-string`.** Helm
+  parses `{...}` as list syntax: `'{"NVIDIA A100 80GB": 100.0}'` renders
+  as `["NVIDIA A100 80GB": 100.0]`, invalid JSON, so the product silently
+  ignores the real prices. Use a values file
+  (`testing/client-cluster-verification-test/rates.py` writes one).
+- **The published GHCR images lag this branch.** They're private and only
+  rebuilt from the default branch, so a live test of work on
+  `claude/agent-skills-setup-fno99z` must build images on the VM
+  (`testing/client-cluster-verification-test/build_images.sh` +
+  `values-local-images.yaml`), or it silently runs old detectors.
 - **After a detector change, re-run Philly from saved rollups**
   (`testing/real-trace-replay/rerun_detectors.py`) and update every place
   that quotes the Philly %: replay README + RESULTS.md, this file, and

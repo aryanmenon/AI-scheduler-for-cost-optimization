@@ -1,0 +1,25 @@
+# QUICK mode: smoke-test detection thresholds (1h streaks/observation) so
+# every finding can fire within a ~3h observation window. Use with the
+# chart's own values.yaml:
+#   helm install gpuopt deploy/helm/gpu-telemetry-collector \
+#     -f deploy/helm/gpu-telemetry-collector/values.yaml \
+#     -f testing/client-cluster-verification-test/values-client-quick.yaml \
+#     -f rates-values.yaml   # written by rates.py; never pass rates JSON via --set-string
+#
+# Persistence ON (k3s ships a local-path StorageClass): a pod restart must
+# not wipe the findings mid-test -- the lesson from the Azure replay test.
+persistence:
+  enabled: true
+collector:
+  scrapeIntervalSeconds: 10
+ingestion:
+  pollIntervalSeconds: 15
+wasteDetector:
+  pollIntervalSeconds: 20
+  minIdleStreakHours: 1
+  overProvisionMinObservationHours: 1
+  fragmentationMinStreakHours: 1
+  multiGpuMinStreakHours: 1
+  patternMinDaysObserved: 2
+savingsEstimator:
+  pollIntervalSeconds: 20
