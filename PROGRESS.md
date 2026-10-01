@@ -146,6 +146,18 @@ fixes and the multi-GPU signal below; `...-w4zbhb` does not have those.
   added to the 16.7%. The "no recommendation yet" tier adds 13.4% of
   GPU-hours below the 70% target (2.5% of capacity), also separate.
   **Use 16.7% (floor 14.7%) when quoting Philly.**
+  **Total waste, all tiers in one unit** (GPU capacity unused below the
+  70% target; `summarize.py` with `rollups.pkl`): total waste **27.0% of
+  capacity**, of which **23.0% detected (85%)** -- actionable 11.1%,
+  multi-GPU review 9.4%, no recommendation 2.5% -- and 4.0% (15%) in
+  low-coverage hours the detectors skip on purpose; 0.0% undetected in
+  checked hours. Raw unused capacity incl. slack above 70%: 51.3%.
+  The 23.0% of *capacity* here is unrelated to the old 23.0% of
+  *GPU-hours* -- don't mix them up with prospects. Suggested claim: "on
+  Microsoft's real Philly cluster, 23% of GPU capacity went unused below
+  an efficient-use target; the product classified all of it -- about
+  half with an actionable recommendation, a third flagged for review,
+  the rest measured without a recommendation yet."
   History: originally reported as 23.0% with 12,568 fragmented findings;
   17.1% after fragmentation stopped flagging multi-GPU jobs; 16.7% after
   the per-workload mislabel fix (all 2026-10-01, see the fragmentation

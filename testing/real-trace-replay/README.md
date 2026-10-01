@@ -114,6 +114,29 @@ multi-GPU finding touches every GPU of a job even though only a fraction
 is releasable). The rest is hours at or above 70% (not waste by this
 definition) or low-coverage hours the detectors deliberately skip.
 
+### Total waste detected, all tiers in one unit
+
+The tiers above use different units (GPU-hours flagged, releasable
+capacity, capacity below target), so they can't be added directly.
+`summarize.py` (when `rollups.pkl` is next to `findings.pkl`) measures
+every tier as **GPU capacity left unused below the 70% efficient-use
+target**, assigning each GPU-hour to the most trusted tier covering it:
+
+| | Share of capacity | Share of waste |
+|---|---|---|
+| Actionable (idle, over-provisioned, recurring, fragmentation) | 11.1% | 41% |
+| Multi-GPU jobs, could use fewer GPUs (review) | 9.4% | 35% |
+| Detected, no recommendation yet | 2.5% | 9% |
+| **Total detected** | **23.0%** | **85%** |
+| Not checked (hours under 80% data coverage) | 4.0% | 15% |
+| Below target in checked hours but undetected | 0.0% | 0% |
+| **Total waste** | **27.0%** | 100% |
+
+Raw unused capacity including the slack above 70% is 51.3% (summaries of
+the Philly paper report ~48% of GPU cycles wasted). Don't confuse the
+23.0% of capacity detected here with the original 23.0% of GPU-hours
+flagged -- different units, coincidentally equal.
+
 ### How the headline figure changed
 
 | Run | Flagged | What changed |

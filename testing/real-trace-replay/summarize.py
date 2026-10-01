@@ -3,11 +3,21 @@ by at least one waste category from replay.py's output, merging
 overlapping finding windows per (node, gpu, namespace, workload) so an
 hour double-flagged by e.g. both idle and fragmentation only counts once.
 
+If replay.py's rollups.pkl sits next to findings.pkl, it also prints a
+unified breakdown: every tier measured in one unit (GPU capacity left
+unused below the 70% efficient-use target), so the tiers can be added up
+into a single "total waste detected" figure without double-counting.
+
 Usage: python3 summarize.py /path/to/findings.pkl
 """
+import os
 import pickle
 import re
 import sys
+
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, os.path.join(_REPO_ROOT, "waste-detector", "src"))
+sys.path.insert(0, os.path.join(_REPO_ROOT, "ingestion-normalization", "src"))
 
 if len(sys.argv) < 2:
     print("usage: python3 summarize.py /path/to/findings.pkl", file=sys.stderr)
@@ -122,4 +132,65 @@ if "underutilized" in data:
     # every GPU of the job even though only a fraction is releasable.
     print(f"coverage: GPU-hours touched by at least one finding in any tier: "
           f"{any_waste:.0f} ({100*any_waste/total_rollup_rows:.1f}%) -- not an amount of waste")
+
+# Unified breakdown: one unit for every tier. Each usable GPU-hour's
+# shortfall below the target, (target - avg utilization) / 100 of a GPU,
+# is assigned to the most trusted tier whose findings cover that hour, so
+# nothing is counted twice and the tiers add up. Hours below the minimum
+# coverage ratio are reported as "not checked" -- every detector skips
+# them on purpose -- rather than silently dropped.
+rollups_path = os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), "rollups.pkl")
+if os.path.exists(rollups_path) and "underutilized" in data:
+    from waste_detector.unrecommended import covered_units, _unit  # noqa: E402
+
+    TARGET_PCT = 70.0        # waste_detector Config.underutilized_target_pct default
+    MIN_COVERAGE = 0.8       # replay.py's Config.min_coverage_ratio
+
+    with open(rollups_path, "rb") as f:
+        rollup_rows = pickle.load(f)
+
+    tiers = [
+        ("actionable (idle, over-provisioned, recurring, fragmentation)",
+         covered_units(data["idle"] + data["over_provisioned"] + data["fragmented"] + data["recurring_pattern"])),
+        ("multi-GPU jobs, could use fewer GPUs (review)", covered_units(data["multi_gpu_oversized"])),
+        ("detected, no recommendation yet", covered_units(data["underutilized"] + data["unattributed_gpu_time"])),
+    ]
+    by_tier = [0.0] * len(tiers)
+    undetected = 0.0
+    not_checked = 0.0
+    raw_unused = 0.0
+    for r in rollup_rows:
+        if r.avg_utilization_pct is None:
+            continue
+        raw_unused += (100.0 - r.avg_utilization_pct) / 100.0
+        shortfall = max(0.0, (TARGET_PCT - r.avg_utilization_pct) / 100.0)
+        if shortfall == 0.0:
+            continue
+        if r.coverage_ratio < MIN_COVERAGE:
+            not_checked += shortfall
+            continue
+        unit = _unit(r.node, r.gpu_index, r.gpu_instance_id, r.namespace, r.workload, r.bucket_start)
+        for i, (_, covered) in enumerate(tiers):
+            if unit in covered:
+                by_tier[i] += shortfall
+                break
+        else:
+            undetected += shortfall
+
+    total_waste = sum(by_tier) + undetected + not_checked
+    detected = sum(by_tier)
+
+    def pct(x, of=total_rollup_rows):
+        return 100.0 * x / of if of else 0.0
+
+    print()
+    print(f"UNIFIED BREAKDOWN (GPU capacity unused below the {TARGET_PCT:.0f}% target):")
+    print(f"  total waste: {total_waste:.0f} GPU-hours = {pct(total_waste):.1f}% of capacity "
+          f"(raw unused capacity incl. above-target slack: {pct(raw_unused):.1f}%)")
+    for (name, _), amount in zip(tiers, by_tier):
+        print(f"  {name}: {pct(amount):.1f}% of capacity ({pct(amount, total_waste):.0f}% of waste)")
+    print(f"  TOTAL DETECTED: {pct(detected):.1f}% of capacity ({pct(detected, total_waste):.0f}% of waste)")
+    print(f"  not checked (coverage < {MIN_COVERAGE:.0%}): {pct(not_checked):.1f}% of capacity "
+          f"({pct(not_checked, total_waste):.0f}% of waste)")
+    print(f"  below target in checked hours but undetected: {pct(undetected):.1f}% of capacity")
 

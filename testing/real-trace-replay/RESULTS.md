@@ -182,3 +182,18 @@ Unattributed GPU time is 0 here only because replay.py builds rollups
 solely from readings it can attribute to a job; on a live cluster this
 category catches GPU time with no Kubernetes pod.
 
+## Unified breakdown (2026-10-01): all tiers in one unit
+
+`summarize.py` with `rollups.pkl` alongside `findings.pkl`:
+
+```
+UNIFIED BREAKDOWN (GPU capacity unused below the 70% target):
+  total waste: 415432 GPU-hours = 27.0% of capacity (raw unused capacity incl. above-target slack: 51.3%)
+  actionable (idle, over-provisioned, recurring, fragmentation): 11.1% of capacity (41% of waste)
+  multi-GPU jobs, could use fewer GPUs (review): 9.4% of capacity (35% of waste)
+  detected, no recommendation yet: 2.5% of capacity (9% of waste)
+  TOTAL DETECTED: 23.0% of capacity (85% of waste)
+  not checked (coverage < 80%): 4.0% of capacity (15% of waste)
+  below target in checked hours but undetected: 0.0% of capacity
+```
+
