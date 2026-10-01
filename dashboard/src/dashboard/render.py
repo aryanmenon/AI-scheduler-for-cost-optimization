@@ -107,6 +107,17 @@ def _findings_table_rows(rows: list[EstimateRow]) -> str:
 _CATEGORY_ORDER = list(_CATEGORY_LABELS.keys())
 
 
+def _overlap_note(summary: ReportSummary) -> str:
+    n = summary.projected_gpus_with_overlapping_estimates
+    if not n:
+        return ""
+    gpus = "GPU appears" if n == 1 else "GPUs appear"
+    return (
+        f" Each GPU is counted once, at its largest estimate: {n} {gpus} in more than one "
+        f"recommendation, so the category totals below add up to more than this figure."
+    )
+
+
 def _ordered_categories(by_category: list[CategorySummary]) -> list[CategorySummary]:
     by_name = {c.category: c for c in by_category}
     ordered = [by_name.pop(cat) for cat in _CATEGORY_ORDER if cat in by_name]
@@ -259,7 +270,7 @@ def render_report(summary: ReportSummary) -> str:
       <div class="label">Projected Monthly Savings</div>
       <div class="value">{_e(_fmt_inr(summary.projected_monthly_total_inr))}</div>
       <div class="note">If right-sizing / consolidation / scale-down recommendations below are
-        acted on and current usage patterns continue. Not a guarantee.</div>
+        acted on and current usage patterns continue. Not a guarantee.{_overlap_note(summary)}</div>
     </div>
     <div class="stat-card observed">
       <div class="label">Already-Wasted Spend Observed</div>

@@ -40,6 +40,34 @@ class ReportSummary:
     by_category: list[CategorySummary]
     top_findings: list[EstimateRow]
     unpriceable_samples: list[EstimateRow]
+    # GPUs whose projected savings appear in more than one estimate (e.g.
+    # flagged both over-provisioned and fragmented, or fragmented in two
+    # separate streaks). The headline counts each such GPU once; the
+    # by-category totals don't, so they can add up to more than it.
+    projected_gpus_with_overlapping_estimates: int = 0
+
+
+def _projected_total_counting_each_gpu_once(priceable: list[EstimateRow]) -> tuple[float, int]:
+    """Projected-monthly recommendations for the same physical GPU are
+    alternatives, not additive: you can right-size a GPU or consolidate it
+    away, not both, and two findings for the same GPU project the same
+    month of its cost twice. Summing them overstated the headline. Take
+    each GPU's largest projected estimate instead -- what the single best
+    action on it could save.
+
+    Observed-window (idle) amounts are left summed: they're cost already
+    incurred during distinct observed windows, which genuinely add up.
+    """
+    best_by_gpu: dict[tuple, float] = {}
+    estimates_per_gpu: dict[tuple, int] = defaultdict(int)
+    for r in priceable:
+        if r.basis != BASIS_PROJECTED_MONTHLY or r.amount_inr is None:
+            continue
+        key = (r.node, r.gpu_index, r.gpu_instance_id)
+        estimates_per_gpu[key] += 1
+        best_by_gpu[key] = max(best_by_gpu.get(key, 0.0), r.amount_inr)
+    overlapping = sum(1 for n in estimates_per_gpu.values() if n > 1)
+    return sum(best_by_gpu.values()), overlapping
 
 
 def aggregate(rows: list[EstimateRow], top_n: int, generated_at: float | None = None) -> ReportSummary:
@@ -48,9 +76,7 @@ def aggregate(rows: list[EstimateRow], top_n: int, generated_at: float | None = 
     priceable = [r for r in rows if r.priceable]
     unpriceable = [r for r in rows if not r.priceable]
 
-    projected_total = sum(
-        r.amount_inr for r in priceable if r.basis == BASIS_PROJECTED_MONTHLY and r.amount_inr is not None
-    )
+    projected_total, overlapping_gpus = _projected_total_counting_each_gpu_once(priceable)
     observed_total = sum(
         r.amount_inr for r in priceable if r.basis == BASIS_OBSERVED_WINDOW and r.amount_inr is not None
     )
@@ -85,4 +111,5 @@ def aggregate(rows: list[EstimateRow], top_n: int, generated_at: float | None = 
         by_category=by_category,
         top_findings=top_findings,
         unpriceable_samples=unpriceable[:5],
+        projected_gpus_with_overlapping_estimates=overlapping_gpus,
     )

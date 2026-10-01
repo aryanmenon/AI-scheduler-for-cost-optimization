@@ -6,10 +6,26 @@ This is the hardest of the three waste categories -- true bin-packing
 scheduling constraints?) is out of scope for an MVP. What's built here is
 the detectable signal the roadmap actually asks for: multiple GPUs on the
 same node, owned by *different* workloads, all underutilized at the same
-time, for long enough that it's a pattern rather than a coincidence. A
-single workload spread across several GPUs for a distributed job is
-excluded on purpose -- that's an intentional multi-GPU allocation, not
-fragmentation, even if each GPU looks underused individually.
+time, for long enough that it's a pattern rather than a coincidence.
+
+A finding here is a consolidation *candidate*, not a proven consolidation.
+Nothing in this module checks whether the workloads' GPU memory or combined
+compute would fit on fewer GPUs, or whether the cluster has GPU sharing
+(time-slicing, MPS, or MIG) enabled at all -- Kubernetes otherwise gives
+each pod a whole GPU, so co-locating two pods on one GPU is impossible
+without it. The finding's detail text says so, so nobody acts on it as if
+it had been checked.
+
+Any workload holding more than one GPU in a given hour is excluded from
+that hour entirely, whether or not the other workloads around it
+qualify. Distributed training and tensor-parallel inference run one
+process per GPU (NCCL refuses two ranks on the same GPU), so "consolidate
+onto a shared GPU" is never actionable advice for them; their low
+per-GPU utilization usually has a different cause and fix. Rollups only
+carry workload identity, not pod, so this also excludes a Deployment
+whose replicas each hold one GPU -- deliberately conservative, since a
+wrong "consolidate" recommendation costs more trust than a missed one.
+idle.py and over_provisioning.py still evaluate those GPUs individually.
 """
 from __future__ import annotations
 
@@ -28,6 +44,22 @@ def _gpu_identity(row: RollupRow) -> tuple:
     return (row.node, row.gpu_index, row.gpu_instance_id)
 
 
+def _multi_gpu_workloads_by_hour(rows: list[RollupRow]) -> dict[float, set[tuple]]:
+    """bucket_start -> workloads seen on more than one distinct GPU in that
+    hour, counted across every node so a job spanning nodes is caught too,
+    and across all of its GPUs (not only underutilized ones) so a job with
+    one busy GPU and three idle ones still counts as multi-GPU."""
+    gpus_by_workload: dict[tuple, set[tuple]] = defaultdict(set)
+    for r in rows:
+        gpus_by_workload[(r.bucket_start, r.namespace, r.workload)].add(_gpu_identity(r))
+
+    multi_gpu: dict[float, set[tuple]] = defaultdict(set)
+    for (bucket_start, namespace, workload), gpus in gpus_by_workload.items():
+        if len(gpus) > 1:
+            multi_gpu[bucket_start].add((namespace, workload))
+    return multi_gpu
+
+
 def _find_qualifying_hours(
     rows: list[RollupRow], config: Config
 ) -> dict[tuple, list[RollupRow]]:
@@ -35,10 +67,13 @@ def _find_qualifying_hours(
     every hour where enough distinct GPUs from distinct workloads on that
     node were simultaneously underutilized."""
     usable = usable_rows(rows, config, require_utilization=True)
+    multi_gpu = _multi_gpu_workloads_by_hour(usable)
     by_hour = group_by(usable, lambda r: (r.node, r.bucket_start))
 
     qualifying = {}
     for key, hour_rows in by_hour.items():
+        excluded = multi_gpu.get(key[1], set())
+        hour_rows = [r for r in hour_rows if (r.namespace, r.workload) not in excluded]
         # Inclusive of the threshold itself, consistent with every other
         # detector (idle.py, over_provisioning.py, patterns.py) -- a GPU
         # sitting exactly at the threshold counts as qualifying everywhere
@@ -118,7 +153,9 @@ def _findings_for_streak(
                     f"node {gpu_node} had an average of {avg_underutilized_gpus:.1f} GPUs "
                     f"(< {config.fragmentation_threshold_pct:.0f}% utilized) from "
                     f"{avg_workloads:.1f} distinct workloads simultaneously idle-ish "
-                    f"for {len(streak_hours)}h -- consider consolidating"
+                    f"for {len(streak_hours)}h -- consolidation candidate, needs engineer review: "
+                    f"GPU memory fit, combined compute, and whether GPU sharing (time-slicing, "
+                    f"MPS, or MIG) is enabled on this cluster were not checked"
                 ),
             )
         )

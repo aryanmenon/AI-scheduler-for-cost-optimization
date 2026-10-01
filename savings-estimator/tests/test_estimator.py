@@ -151,6 +151,17 @@ def test_fragmented_priced_with_capture_discount():
     assert estimate.amount_inr == 300.00 * 0.40 * 730.0
 
 
+def test_fragmented_framed_as_unverified_candidate_not_a_directive():
+    # The detector can't prove consolidation is possible (memory fit,
+    # combined compute, cluster GPU-sharing support are all unchecked), so
+    # the customer-facing action must read as "review", not "consolidate".
+    finding = _finding(FRAGMENTED, metric_value=2.0)
+    estimate = estimate_for_finding(finding, [_rollup(avg_utilization_pct=20.0)], _config(), {})
+    assert estimate.recommended_action.startswith("review whether")
+    assert "time-slicing, MPS, or MIG" in estimate.recommended_action
+    assert "upper-bound" in estimate.methodology
+
+
 def test_fragmented_weights_avg_utilization_by_coverage_ratio():
     # Regression: a low-coverage bucket (mostly missing data, reading near
     # zero) must not count the same as a full-coverage one in the average

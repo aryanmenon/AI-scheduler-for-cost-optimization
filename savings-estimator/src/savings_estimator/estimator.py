@@ -204,11 +204,17 @@ def _estimate_fragmented(finding: FindingRow, rollup_rows: list[RollupRow], pric
         **_base_kwargs(finding),
         basis=BASIS_PROJECTED_MONTHLY,
         amount_inr=monthly_savings,
-        recommended_action="consolidate with the other underutilized workloads on this node",
+        recommended_action=(
+            "review whether this workload can share a GPU with the other underutilized workloads "
+            "on this node (needs GPU sharing via time-slicing, MPS, or MIG; memory fit not checked)"
+        ),
         methodology=(
             f"avg utilization {avg_util:.1f}% -> {wasted_fraction * 100:.0f}% of capacity reclaimable "
             f"(discounted to {config.fragmentation_capture_fraction:.0%} of theoretical, since real "
-            f"consolidation needs migration work), projected over {config.hours_per_month:.0f}h/month"
+            f"consolidation needs migration work), projected over {config.hours_per_month:.0f}h/month; "
+            f"an upper-bound estimate for a consolidation candidate -- GPU memory fit, combined "
+            f"compute, and cluster GPU-sharing support were not verified, so the real figure may be "
+            f"lower, including zero"
         ),
     )
 

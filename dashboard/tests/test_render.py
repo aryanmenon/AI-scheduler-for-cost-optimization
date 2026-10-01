@@ -158,3 +158,16 @@ def test_category_breakdown_unrecognized_category_gets_fallback_color_and_traili
     idle_pos = html_out.index('title="Idle GPUs')
     unknown_pos = html_out.index("Future Detector Category")
     assert idle_pos < unknown_pos
+
+
+def test_overlap_note_shown_only_when_a_gpu_has_multiple_projected_estimates():
+    single = aggregate([_row(category="over_provisioned", basis="projected_monthly", amount_inr=100.0)], top_n=10)
+    assert "counted once" not in render_report(single)
+
+    overlapping = aggregate([
+        _row(id=1, category="over_provisioned", basis="projected_monthly", amount_inr=100.0),
+        _row(id=2, category="fragmented", basis="projected_monthly", amount_inr=60.0),
+    ], top_n=10)
+    html_out = render_report(overlapping)
+    assert "counted once" in html_out
+    assert "1 GPU appears in more than one recommendation" in html_out
