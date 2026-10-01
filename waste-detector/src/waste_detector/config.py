@@ -66,6 +66,13 @@ class Config:
     multi_gpu_target_utilization_pct: float = 70.0
     multi_gpu_min_streak_hours: int = 4
 
+    # Waste detected without a reliable recommendation (see
+    # unrecommended.py): every GPU-hour averaging below this efficient-use
+    # target that no actionable finding covers. Matches savings-estimator's
+    # default SLA ceiling, so "below target" means the same thing in both.
+    underutilized_target_pct: float = 70.0
+    underutilized_min_run_hours: int = 1
+
     @classmethod
     def from_env(cls) -> "Config":
         findings_sqlite_path = os.environ.get(
@@ -114,6 +121,8 @@ class Config:
                 os.environ.get("MULTI_GPU_TARGET_UTILIZATION_PCT", "70.0")
             ),
             multi_gpu_min_streak_hours=int(os.environ.get("MULTI_GPU_MIN_STREAK_HOURS", "4")),
+            underutilized_target_pct=float(os.environ.get("UNDERUTILIZED_TARGET_PCT", "70.0")),
+            underutilized_min_run_hours=int(os.environ.get("UNDERUTILIZED_MIN_RUN_HOURS", "1")),
             alert_consecutive_failure_threshold=int(
                 os.environ.get("ALERT_CONSECUTIVE_FAILURE_THRESHOLD", "3")
             ),

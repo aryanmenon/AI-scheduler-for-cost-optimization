@@ -92,6 +92,13 @@ wasteDetector:
   # an upper bound shown outside the dashboard's headline total.
   multiGpuTargetUtilizationPct: 70.0
   multiGpuMinStreakHours: 4
+  # "Detected waste, no recommendation yet": every GPU-hour averaging below
+  # this target that no actionable finding covers, including GPU time with
+  # no Kubernetes pod. Keep equal to savingsEstimator.slaTargetUtilizationPct
+  # so "below target" means the same thing everywhere. Shown below the
+  # actionable findings, never in the headline totals.
+  underutilizedTargetPct: 70.0
+  underutilizedMinRunHours: 1
   # A resolved waste condition's finding just stops being refreshed
   # rather than being deleted -- without this, every category ever
   # detected accumulates forever. 0 disables pruning.

@@ -12,7 +12,12 @@ from __future__ import annotations
 import html
 from datetime import datetime, timezone
 
-from dashboard.aggregator import BASIS_OBSERVED_WINDOW, CategorySummary, ReportSummary
+from dashboard.aggregator import (
+    BASIS_DETECTED_NO_RECOMMENDATION,
+    BASIS_OBSERVED_WINDOW,
+    CategorySummary,
+    ReportSummary,
+)
 from dashboard.report_reader import EstimateRow
 
 _CATEGORY_LABELS = {
@@ -21,6 +26,8 @@ _CATEGORY_LABELS = {
     "fragmented": "Fragmented Capacity",
     "recurring_pattern": "Recurring Low-Usage Pattern",
     "multi_gpu_oversized": "Multi-GPU Jobs: Fewer GPUs? (upper bound, not in headline)",
+    "underutilized": "Underutilized: No Recommendation Yet",
+    "unattributed_gpu_time": "GPU Time With No Pod: No Recommendation Yet",
 }
 
 # Fixed hue per category -- never reassigned based on sort order or which
@@ -34,8 +41,19 @@ _CATEGORY_COLORS = {
     "fragmented": "#199e70",
     "recurring_pattern": "#c98500",
     "multi_gpu_oversized": "#8a5cd1",
+    "underutilized": "#8f8f86",
+    "unattributed_gpu_time": "#a8a29e",
 }
 _CATEGORY_COLOR_FALLBACK = "#676761"
+
+
+# Bases priced as cost already incurred in an observed window, not a
+# monthly projection -- they must never be labeled "/mo".
+_OBSERVED_BASES = {BASIS_OBSERVED_WINDOW, BASIS_DETECTED_NO_RECOMMENDATION}
+
+
+def _is_monthly(basis: str | None) -> bool:
+    return basis not in _OBSERVED_BASES
 
 
 def _e(value) -> str:
@@ -93,7 +111,7 @@ def _findings_table_rows(rows: list[EstimateRow]) -> str:
             f"<td>{_e(r.namespace)}</td>"
             f"<td>{_e(_gpu_identity(r))}</td>"
             f"<td>{_e(_fmt_window(r))}</td>"
-            f'<td class="num">{_e(_fmt_inr(r.amount_inr))}{" /mo" if r.basis != BASIS_OBSERVED_WINDOW else ""}</td>'
+            f'<td class="num">{_e(_fmt_inr(r.amount_inr))}{" /mo" if _is_monthly(r.basis) else ""}</td>'
             f"<td>{r.confidence * 100:.0f}%</td>"
             f"<td>{_e(r.recommended_action)}<div class=\"methodology\">{_e(r.methodology)}</div></td>"
             "</tr>"
@@ -109,17 +127,37 @@ def _findings_table_rows(rows: list[EstimateRow]) -> str:
 _CATEGORY_ORDER = list(_CATEGORY_LABELS.keys())
 
 
-def _visibility_card(summary: ReportSummary) -> str:
-    if not summary.visibility_upper_bound_total_inr:
-        return ""
-    return f"""
+def _below_actionable_section(summary: ReportSummary) -> str:
+    """Waste the report measures but can't stand behind a recommendation
+    for. Shown so nothing detected is silently dropped, and kept visually
+    and numerically apart from the headline figures above."""
+    cards = []
+    if summary.detected_no_recommendation_total_inr:
+        cards.append(f"""
+    <div class="stat-card no-recommendation">
+      <div class="label">Detected Waste: No Recommendation Yet</div>
+      <div class="value">{_e(_fmt_inr(summary.detected_no_recommendation_total_inr))}</div>
+      <div class="note">Cost of GPU capacity left unused below the efficient-use target during the
+        observed hours, where no recommendation above applies -- including GPU time with no
+        Kubernetes pod. Already spent, not projected. Not included in either figure above.</div>
+    </div>""")
+    if summary.visibility_upper_bound_total_inr:
+        cards.append(f"""
     <div class="stat-card visibility">
       <div class="label">Multi-GPU Jobs: Possible Fewer GPUs (Upper Bound)</div>
-      <div class="value">{_e(_fmt_inr(summary.visibility_upper_bound_total_inr))}</div>
+      <div class="value">{_e(_fmt_inr(summary.visibility_upper_bound_total_inr))}/mo</div>
       <div class="note">Not included in Projected Monthly Savings. Jobs holding several GPUs whose
         combined hourly-average busy time would fit on fewer; bursts above the hourly average and
         GPU memory fit were not checked. A prompt to review GPU counts, not a recommendation.</div>
-    </div>"""
+    </div>""")
+    if not cards:
+        return ""
+    return f"""
+  <section class="card">
+    <h2>Below actionable recommendations</h2>
+    <div class="stat-row">{"".join(cards)}
+    </div>
+  </section>"""
 
 
 def _overlap_note(summary: ReportSummary) -> str:
@@ -157,7 +195,7 @@ def _category_breakdown(summary: ReportSummary) -> str:
         f'<div class="legend-dot" style="background:{_category_color(c.category)}"></div>'
         f"<span>{_e(_category_label(c.category))} ({c.count})</span>"
         f'<span class="amount">{_e(_fmt_inr_compact(c.total_inr))}'
-        f'{" /mo" if c.basis != BASIS_OBSERVED_WINDOW else " obs."}</span>'
+        f'{" /mo" if _is_monthly(c.basis) else " obs."}</span>'
         "</div>"
         for c in categories
     )
@@ -292,8 +330,9 @@ def render_report(summary: ReportSummary) -> str:
       <div class="value">{_e(_fmt_inr(summary.observed_window_total_inr))}</div>
       <div class="note">Actual cost of idle GPU time during the exact windows observed --
         a lower bound, not extrapolated to a full month.</div>
-    </div>{_visibility_card(summary)}
+    </div>
   </div>
+{_below_actionable_section(summary)}
 
   <section class="card">
     <h2>By category</h2>

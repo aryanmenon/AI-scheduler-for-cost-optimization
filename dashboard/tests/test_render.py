@@ -184,3 +184,30 @@ def test_visibility_card_shown_only_when_there_are_visibility_estimates():
     assert "Possible Fewer GPUs" in out
     assert "Not included in Projected Monthly Savings" in out
     assert "not in headline" in out
+
+
+def test_below_actionable_section_shows_no_recommendation_tier_apart_from_headline():
+    plain = aggregate([_row()], top_n=10)
+    assert "Below actionable recommendations" not in render_report(plain)
+
+    summary = aggregate([
+        _row(id=1, category="underutilized", basis="detected_no_recommendation", amount_inr=4321.0),
+    ], top_n=10)
+    out = render_report(summary)
+    assert "Below actionable recommendations" in out
+    assert "Detected Waste: No Recommendation Yet" in out
+    assert "Not included in either figure above" in out
+    # The headline figures stay zero: the tier never leaks into them.
+    assert summary.projected_monthly_total_inr == 0.0
+    assert summary.observed_window_total_inr == 0.0
+
+
+def test_no_recommendation_amounts_labeled_observed_not_monthly():
+    # Regression: every non-idle basis was labeled "/mo", so the observed
+    # (already-spent) no-recommendation amounts read as monthly projections.
+    summary = aggregate([
+        _row(id=1, category="underutilized", basis="detected_no_recommendation", amount_inr=4321.0),
+    ], top_n=10)
+    out = render_report(summary)
+    assert "₹4.3k obs." in out
+    assert "₹4,321.00 /mo" not in out

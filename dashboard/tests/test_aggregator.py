@@ -135,3 +135,20 @@ def test_visibility_rows_listed_after_actionable_findings():
     ]
     summary = aggregate(rows, top_n=10)
     assert [r.id for r in summary.top_findings] == [2, 3, 1]
+
+
+def test_no_recommendation_tier_summed_separately_and_sorted_last():
+    rows = [
+        _row(id=1, category="underutilized", basis="detected_no_recommendation", amount_inr=800.0),
+        _row(id=2, category="unattributed_gpu_time", basis="detected_no_recommendation", amount_inr=200.0,
+             workload=None, namespace="unattributed"),
+        _row(id=3, category="multi_gpu_oversized", basis="visibility_upper_bound", amount_inr=900.0),
+        _row(id=4, category="over_provisioned", basis=BASIS_PROJECTED_MONTHLY, amount_inr=50.0),
+        _row(id=5, category="idle", amount_inr=10.0),
+    ]
+    summary = aggregate(rows, top_n=10)
+    assert summary.detected_no_recommendation_total_inr == 1000.0
+    assert summary.projected_monthly_total_inr == 50.0
+    assert summary.observed_window_total_inr == 10.0
+    assert summary.visibility_upper_bound_total_inr == 900.0
+    assert [r.id for r in summary.top_findings] == [4, 5, 3, 1, 2]

@@ -21,6 +21,14 @@ BASIS_PROJECTED_MONTHLY = "projected_monthly"
 # Visibility-only upper bounds (multi-GPU jobs that may need fewer GPUs):
 # shown as their own figure, never added to the headline projection.
 BASIS_VISIBILITY_UPPER_BOUND = "visibility_upper_bound"
+# Detected waste with no reliable recommendation (underutilized GPU time,
+# GPU time with no pod): observed cost, shown below the actionable
+# findings, never added to a headline total.
+BASIS_DETECTED_NO_RECOMMENDATION = "detected_no_recommendation"
+
+# Sort order for the top-findings table: actionable first, then the
+# visibility upper bound, then waste with no recommendation at all.
+_TIER_RANK = {BASIS_VISIBILITY_UPPER_BOUND: 1, BASIS_DETECTED_NO_RECOMMENDATION: 2}
 
 
 @dataclass
@@ -52,6 +60,10 @@ class ReportSummary:
     # bound sized from hourly averages with no memory check, not a savings
     # figure to stand behind. Counted once per GPU like the headline.
     visibility_upper_bound_total_inr: float = 0.0
+    # Observed cost of GPU time below the efficient-use target that no
+    # actionable finding explains. Its hours never overlap an actionable or
+    # multi-GPU finding's (the detector excludes them), so it's a plain sum.
+    detected_no_recommendation_total_inr: float = 0.0
 
 
 def _total_counting_each_gpu_once(priceable: list[EstimateRow], basis: str) -> tuple[float, int]:
@@ -85,6 +97,10 @@ def aggregate(rows: list[EstimateRow], top_n: int, generated_at: float | None = 
 
     projected_total, overlapping_gpus = _total_counting_each_gpu_once(priceable, BASIS_PROJECTED_MONTHLY)
     visibility_total, _ = _total_counting_each_gpu_once(priceable, BASIS_VISIBILITY_UPPER_BOUND)
+    no_recommendation_total = sum(
+        r.amount_inr for r in priceable
+        if r.basis == BASIS_DETECTED_NO_RECOMMENDATION and r.amount_inr is not None
+    )
     observed_total = sum(
         r.amount_inr for r in priceable if r.basis == BASIS_OBSERVED_WINDOW and r.amount_inr is not None
     )
@@ -105,12 +121,13 @@ def aggregate(rows: list[EstimateRow], top_n: int, generated_at: float | None = 
     ]
     by_category.sort(key=lambda c: c.total_inr, reverse=True)
 
-    # Actionable findings first, largest first; visibility-only upper bounds
-    # after them, so the biggest-looking number isn't the least verified one.
+    # Actionable findings first, largest first; then the visibility-only
+    # upper bounds; then waste with no recommendation -- so the
+    # biggest-looking number is never the least verified one.
     top_findings = sorted(
         priceable,
         key=lambda r: (
-            r.basis == BASIS_VISIBILITY_UPPER_BOUND,
+            _TIER_RANK.get(r.basis, 0),
             -(r.amount_inr if r.amount_inr is not None else 0.0),
         ),
     )[:top_n]
@@ -127,4 +144,5 @@ def aggregate(rows: list[EstimateRow], top_n: int, generated_at: float | None = 
         unpriceable_samples=unpriceable[:5],
         projected_gpus_with_overlapping_estimates=overlapping_gpus,
         visibility_upper_bound_total_inr=visibility_total,
+        detected_no_recommendation_total_inr=no_recommendation_total,
     )

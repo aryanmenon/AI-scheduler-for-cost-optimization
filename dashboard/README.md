@@ -37,11 +37,15 @@ they're always identical for the same underlying data.
   this report inherits. The projected headline counts each GPU once, at
   its largest estimate: right-sizing and consolidating the same GPU are
   alternatives, not additive savings.
-- **A third, separate figure for multi-GPU jobs that may need fewer
-  GPUs** (`visibility_upper_bound` basis), shown only when present and
-  never added to the headline: it's sized on hourly averages with no
-  memory check. Those rows are also listed after actionable findings in
-  the top-findings table.
+- **A "Below actionable recommendations" section**, shown only when it
+  has something in it and never added to the headline figures:
+  - *Detected waste, no recommendation yet* (`detected_no_recommendation`
+    basis): observed cost of GPU time below the efficient-use target that
+    no actionable finding explains, including GPU time with no pod.
+  - *Multi-GPU jobs, possible fewer GPUs* (`visibility_upper_bound`
+    basis): a monthly upper bound sized on hourly averages with no memory
+    check.
+  In the top-findings table these rows come after the actionable ones.
 - **A "not priced" section**, not a silent omission, for findings whose
   GPU model or rate is unknown -- the point is to be auditable, not to
   make the biggest number possible.

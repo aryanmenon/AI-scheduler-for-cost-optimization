@@ -249,3 +249,22 @@ def test_multi_gpu_oversized_rejects_invalid_fraction(bad):
 
     estimate = estimate_for_finding(_finding(MULTI_GPU_OVERSIZED, metric_value=bad), [_rollup()], _config(), {})
     assert not estimate.priceable
+
+
+@pytest.mark.parametrize("category", ["underutilized", "unattributed_gpu_time"])
+def test_no_recommendation_tier_priced_as_observed_unused_capacity(category):
+    from savings_estimator.estimate import BASIS_DETECTED_NO_RECOMMENDATION
+
+    finding = _finding(category, metric_value=0.5, window_start=0.0, window_end=3 * 3600.0)
+    estimate = estimate_for_finding(finding, [_rollup(avg_utilization_pct=20.0)], _config(), {})
+    assert estimate.priceable
+    assert estimate.basis == BASIS_DETECTED_NO_RECOMMENDATION
+    # 300.00/hr * 0.5 below target * 3h observed -- not projected to a month
+    assert estimate.amount_inr == pytest.approx(300.00 * 0.5 * 3.0)
+    assert estimate.recommended_action.startswith("none yet")
+
+
+@pytest.mark.parametrize("bad", [0.0, 1.5, -0.1, float("nan")])
+def test_no_recommendation_tier_rejects_invalid_fraction(bad):
+    estimate = estimate_for_finding(_finding("underutilized", metric_value=bad), [_rollup()], _config(), {})
+    assert not estimate.priceable
