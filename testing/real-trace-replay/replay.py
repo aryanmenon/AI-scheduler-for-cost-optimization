@@ -288,6 +288,7 @@ for name, findings in [
         )
     print()
 
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 out_path = os.path.join(OUTPUT_DIR, "findings.pkl")
 with open(out_path, "wb") as f:
     pickle.dump(
