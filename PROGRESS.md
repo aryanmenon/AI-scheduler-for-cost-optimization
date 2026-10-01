@@ -1092,6 +1092,16 @@ are assumptions to replace with pilot/interview data.
   The real constraint is time: ~25 customers supportable alone (2.5 h
   support/customer/month at 40% of time), ~1 new customer/month. First
   hire = support engineer at ~20-25 customers (~₹60-75L ARR).
+- **Source-verified re-estimate (report section 8, Oct 2026) -- prefer
+  this when citing externally.** Built top-down from published figures
+  only: K8s cost management $2.23B (2026) x GPUs' 14% share of compute
+  cost (Datadog, 22 Apr 2026) = **global TAM ~$312M (~₹2,980 Cr)**; SAM
+  (NVIDIA 80-92%) ~$250-287M; SOM [A] ~$0.25-1.4M ARR. India = global x
+  1.89% (Gartner 2025 cloud spend 13.7/723.4): **TAM ~$5.9M (~₹56 Cr)**,
+  SAM ~$4.7-5.4M, SOM [A] ~$95-270K ARR. Closest category, GPU
+  monitoring software: ~$1.65B (2026). Cross-check: 2,700-28,674 Indian
+  K8s companies x 6% using GPUs (Datadog) = ~160-1,700 orgs. ₹95.45/$.
+  India likely understated (GPU capacity growing faster than cloud).
 - **TAM/SAM/SOM [A]:** India TAM ₹78-190 Cr/yr, SAM ~₹38 Cr (~885 orgs on
   Kubernetes), 3-yr SOM 27-45 customers / ₹0.8-1.35 Cr ARR. With SE Asia,
   Middle East, US, EU: TAM ~₹860 Cr, SAM ~₹270 Cr; 30 India + 15 overseas

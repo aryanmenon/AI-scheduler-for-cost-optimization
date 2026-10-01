@@ -106,6 +106,10 @@ s.append(make_table(
                           "to <b>~₹270 Cr (~$31M)</b> [A]. With the same 45 customers (30 India + 15 abroad), "
                           "year-3 ARR rises from ₹1.35 Cr to <b>~₹2.6 Cr</b> and net profit from ~₹62 L to "
                           "<b>~₹1.13 Cr</b> [A]. Overseas customers pay ~3-5x more for similar support effort."],
+        ["Verified re-estimate", "Rebuilt top-down from published figures only (section 8): global TAM <b>~$312M "
+                                 "(~₹2,980 Cr)</b>, SAM ~$250-287M; India TAM <b>~$5.9M (~₹56 Cr)</b>, SAM ~$4.7-5.4M. "
+                                 "Lower than the bottom-up India TAM in section 2, which rests on assumed org counts "
+                                 "and prices; prefer section 8 when citing figures externally."],
         ["Earlier study", "The Sept 2026 SMB market study's ₹216 Cr SAM / ₹7.2 Cr SOM sizes the <b>full planned "
                           "product with a team</b>; with its price assumption corrected it is ₹130 Cr / ₹4.35 Cr. "
                           "The gap to this report is the feature roadmap (section 7)."],
@@ -124,6 +128,7 @@ s.append(make_table(
 ))
 
 # ================================================================= Market context
+s.append(PageBreak())
 s.append(P("1. Market context", "H2"))
 s.append(make_table(
     ["Signal", "Figure", "Tag"],
@@ -593,9 +598,101 @@ s.append(P("<b>How to use the two documents.</b> Use this report to plan the bus
            "partnerships and validation plan (20 interviews, 5 read-only pilots, 2 paid pilots with verified "
            "15-25% savings) remain the right next steps.", "Callout"))
 
+# ================================================================= Verified sizing
+s.append(PageBreak())
+s.append(P("8. Independent, source-verified market sizing (October 2026)", "H2"))
+s.append(P("A from-scratch re-estimate that uses only published figures and none of this report's earlier "
+           "assumptions. It sizes the product exactly as built: self-hosted, read-only waste detection and ₹ "
+           "estimates for <b>NVIDIA GPUs on Kubernetes</b>, recommending without acting. Where no published "
+           "figure exists, the assumption and the arithmetic are shown. Several research-publisher sites "
+           "could not be opened directly; a figure is used only where multiple independent outlets report it "
+           "identically, and the table says which. Converted at ₹95.45/$ (September 2026 average) [S].",
+           "Body"))
+
+s.append(P("8.1 Verified inputs", "H3"))
+s.append(make_table(
+    ["Fact", "Figure", "How verified"],
+    [
+        ["Kubernetes cost management market", "$1.38B (2024), $1.75B (2025), <b>$2.23B (2026)</b>",
+         "Two publishers independently give $1.38B for 2024 (The Business Research Company, Growth Market "
+         "Reports); TBRC 2025/2026 figures carried by several outlets"],
+        ["GPU monitoring software market", "<b>$1.28B (2024)</b>, 13.6% CAGR",
+         "Single publisher (Growth Market Reports); primary page not reachable -- weaker"],
+        ["GPU share of compute costs", "<b>14%</b>", "Datadog's own GPU Monitoring press release, 22 Apr 2026 "
+                                                    "(Datadog AWS customer base)"],
+        ["Organizations running GPU workloads", "<b>6%</b> of organizations (Oct 2025)",
+         "Datadog State of Containers and Serverless page; skewed toward heavy cloud users"],
+        ["Kubernetes for GenAI inference", "66% of orgs hosting GenAI use it for some or all inference",
+         "CNCF 2025 Annual Cloud Native Survey (widely reported)"],
+        ["NVIDIA share of data-center GPUs", "80-92% depending on measure", "Multiple analyst reports"],
+        ["Public cloud spend, worldwide 2025", "<b>$723.4B</b>", "Gartner, consistently reported"],
+        ["Public cloud spend, India", "<b>$13.7B (2025)</b>, $17.5B (2026)", "Gartner press release, 1 Jun 2026"],
+        ["Indian companies using Kubernetes", "<b>2,700 to 28,674</b> (databases disagree ~10x)",
+         "TheirStack; ELP Data"],
+        ["USD/INR", "₹95.45 (Sept 2026 average)", "Trading Economics"],
+    ],
+    [1.9 * inch, 1.9 * inch, W - 3.8 * inch],
+))
+
+s.append(KeepTogether([P("8.2 Global", "H3"), make_table(
+    ["Level", "How it's calculated", "Size (2026)"],
+    [
+        ["<b>Market</b> (GPU monitoring software, closest category)", "$1.28B (2024) grown 13.6% for two years",
+         "<b>~$1.65B (~₹15,800 Cr)</b>"],
+        ["<b>TAM</b> (cost tooling for GPUs on Kubernetes)", "$2.23B K8s cost management x 14% GPU share of compute cost",
+         "<b>~$312M (~₹2,980 Cr)</b>"],
+        ["<b>SAM</b> (NVIDIA only, as built)", "TAM x 80-92% NVIDIA share", "<b>~$250-287M (~₹2,390-2,740 Cr)</b>"],
+        ["<b>SOM</b> (3 years) [A]", "0.1-0.5% of SAM (see 8.5)", "<b>~$0.25-1.4M ARR (~₹2.4-13.7 Cr)</b>"],
+    ],
+    [2.2 * inch, 2.7 * inch, W - 4.9 * inch],
+)]))
+
+s.append(KeepTogether([P("8.3 India", "H3"), make_table(
+    ["Level", "How it's calculated", "Size (2026)"],
+    [
+        ["<b>Market</b>", "Global market x India's 1.89% share of public cloud spend (13.7 / 723.4, Gartner 2025)",
+         "<b>~$31M (~₹299 Cr)</b>"],
+        ["<b>TAM</b>", "Global TAM x 1.89%", "<b>~$5.9M (~₹56 Cr)</b>"],
+        ["<b>SAM</b>", "TAM x 80-92% NVIDIA", "<b>~$4.7-5.4M (~₹45-52 Cr)</b>"],
+        ["<b>SOM</b> (3 years) [A]", "2-5% of SAM (see 8.5)", "<b>~$95-270K ARR (~₹0.9-2.6 Cr)</b>"],
+    ],
+    [2.2 * inch, 2.7 * inch, W - 4.9 * inch],
+)]))
+s.append(Spacer(1, 6))
+s.append(P("<b>Bottom-up cross-check:</b> 2,700-28,674 Indian Kubernetes companies x 6% running GPUs = "
+           "~160-1,700 organizations. Spread over the India SAM that is ~$2.7k-34k per organization per year, a "
+           "plausible tool budget, so the top-down and bottom-up views are consistent.", "Body"))
+
+s.append(P("8.4 Comparable valuations [S]", "H3"))
+s.append(bullets([
+    "<b>Cast AI:</b> valued at over $1B, January 2026 (Cast AI press release).",
+    "<b>ScaleOps:</b> over $800M, $130M Series C, March 2026 (Insight Partners).",
+    "Both automate changes and sell mostly outside India; the product as built does neither.",
+]))
+
+s.append(P("8.5 What is assumption, not fact", "H3"))
+s.append(bullets([
+    "No source measures spend on GPU-cost tools for Kubernetes specifically; the TAM assumes tool spend "
+    "follows GPUs' 14% share of compute cost.",
+    "India is approximated by its share of public cloud spend. India's GPU capacity is growing faster than "
+    "cloud overall (IndiaAI: 38,000+ GPUs onboarded, 100,000 targeted by Dec 2026), so the India figures are "
+    "probably understated.",
+    "SOM cannot be sourced; it is a capture-rate assumption. Only benchmark found: Kubecost, ~$6.2M revenue "
+    "(third-party estimate) against the ~$1.38B 2024 market (~0.45%) after ~5 years and $30.5M raised before "
+    "IBM acquired it (Sept 2024). A solo founder over 3 years should expect the low end globally; a home market "
+    "supports a higher share, hence 2-5% for India.",
+    "Market-research figures are single-firm, unaudited estimates: order-of-magnitude only.",
+]))
+s.append(P("<b>Bottom line:</b> the market is real and growing fast (Kubernetes cost management ~27% from 2025 to "
+           "2026; GPU-instance spend at Datadog's customers +40% in a year), but a read-only, NVIDIA-only, "
+           "Kubernetes-only product addresses a small slice: ~$300M globally and ~$5-6M in India today. That "
+           "supports a profitable small business from India, and venture scale only by selling globally or "
+           "widening what the product does. Note: section 8 uses ₹95.45/$; earlier sections use ₹88/$.",
+           "Callout"))
+
 # ================================================================= Assumptions + sources
 s.append(PageBreak())
-s.append(P("8. Assumptions ledger", "H2"))
+s.append(P("9. Assumptions ledger", "H2"))
 s.append(make_table(
     ["#", "Assumption", "Value", "Why / how to validate"],
     [
@@ -627,7 +724,7 @@ s.append(make_table(
     [0.4 * inch, 2.2 * inch, 1.1 * inch, W - 3.7 * inch],
 ))
 
-s.append(P("9. Sources", "H2"))
+s.append(P("10. Sources", "H2"))
 src = [
     "Gartner, India public cloud forecast (Jun 2026): gartner.com/en/newsroom/press-releases/2026-06-01-gartner-"
     "forecasts-end-user-public-cloud-spending-in-india-to-surpass-17-billion-us-dollars-in-2026",
@@ -668,6 +765,18 @@ src = [
     "researchandmarkets.com/reports/6225920/neocloud-global-market-report",
     "AI startup counts, US and Europe (StartUs Insights, StartupBlink): startus-insights.com/innovators-guide/"
     "how-many-ai-companies-are-there/ ; startupblink.com/blog/top-ai-startups/",
+    "Section 8 sources -- Kubernetes cost management market (TBRC via researchandmarkets.com/reports/6215668; "
+    "openpr.com/news/4642785); GPU monitoring software market: growthmarketreports.com/report/gpu-monitoring-software-market",
+    "Section 8 -- Datadog GPU Monitoring press release, 22 Apr 2026 (14% of compute costs): datadoghq.com/about/"
+    "latest-news/press-releases/datadog-gpu-monitoring-launch/ ; Datadog State of Containers and Serverless (6% of "
+    "orgs use GPUs): datadoghq.com/state-of-containers-and-serverless/",
+    "Section 8 -- Gartner worldwide public cloud $723.4B 2025 (techradar.com, telecompaper.com coverage); Gartner "
+    "India $13.7B/$17.5B (gartner.com newsroom, 1 Jun 2026)",
+    "Section 8 -- Kubernetes company counts: theirstack.com/en/technology/kubernetes/in ; elpdata.com/app/kubernetes",
+    "Section 8 -- NVIDIA share: siliconanalysts.com/analysis/nvidia-ai-accelerator-market-share-2024-2026 ; USD/INR: "
+    "tradingeconomics.com/india/currency ; Cast AI: cast.ai/press-release/cast-ai-valued-at-over-1-billion-with-"
+    "the-launch-of-its-gpu-marketplace/ ; ScaleOps: insightpartners.com (Series C, Mar 2026); Kubecost: "
+    "techcrunch.com/2024/09/17/ibm-acquires-kubernetes-cost-optimization-startup-kubecost/",
     "Earlier study: India GPU Optimization SaaS: SMB Market Research (September 2026), provided by the founder.",
     "Own test results: testing/real-trace-replay/RESULTS.md (Philly, 16.7% flagged after the 2026-10-01 detector fixes; originally reported as 23.0%); "
     "testing/azure-inference-trace-replay/RESULTS.md; PROGRESS.md.",
