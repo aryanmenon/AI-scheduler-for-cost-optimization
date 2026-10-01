@@ -1,4 +1,4 @@
-# Real-trace replay results (2026-09-27)
+# Real-trace replay results
 
 Full stdout from `replay.py` + `summarize.py` on the 2017-10-03 through 2017-11-02 window.
 
@@ -60,3 +60,29 @@ distinct (node,gpu,ns,workload) keys with >=1 finding: 15277
 total flagged hours (merged, no double-counting overlap): 353955
 fraction of observed capacity-hours flagged as some form of waste: 23.0%
 ```
+
+## Re-run 2026-10-01: corrected fragmentation detector
+
+Same trace, same 2017-10-03 to 2017-11-02 window, same thresholds. Only
+change: `waste_detector/fragmentation.py` now excludes any workload holding
+more than one GPU in an hour (multi-GPU training/inference can't be
+consolidated onto a shared GPU). The run above predates that fix and its
+23.0% figure is superseded.
+
+```
+idle findings:            10990
+over-provisioned findings: 279
+fragmented findings:       4636     (was 12568)
+recurring-pattern findings:6848
+
+total observed GPU-workload-hours (rollup rows): 1538668
+distinct (node,gpu,ns,workload) keys with >=1 finding: 12282
+total flagged hours (merged, no double-counting overlap): 263667
+fraction of observed capacity-hours flagged as some form of waste: 17.1%
+
+excluding fragmentation findings (idle + over-provisioned + recurring only):
+fraction of observed capacity-hours flagged as some form of waste: 14.7%
+```
+
+Idle, over-provisioned and recurring-pattern counts are identical to the
+first run, as expected: the fix only touched the fragmentation detector.

@@ -84,7 +84,7 @@ s.append(P("Scope: the product <b>as it is actually built today</b> (September 2
            "Kubernetes pod identity, classifies GPU waste into four categories (idle, over-provisioned, "
            "fragmented, recurring pattern), prices each finding in INR against a right-sizing ceiling, and shows "
            "it on a dashboard. It recommends; it does not act. It has been validated on GKE (L4), on a vast.ai/k3s "
-           "GPU node, against the real Microsoft Philly training trace (23.0% of GPU-workload-hours flagged as "
+           "GPU node, against the real Microsoft Philly training trace (17.1% of GPU-workload-hours flagged as "
            "waste) and the real Azure LLM inference trace (19,366/19,366 requests served, over-provisioning "
            "finding fired).", "Body"))
 s.append(P("How to read the numbers: every figure is tagged <b>[S]</b> (sourced, see Sources at the end) or "
@@ -359,8 +359,10 @@ s.append(P("Rule of thumb: LTV:CAC above 3x and payback under 12 months is healt
            "account executive at ~₹1.5-2 L/month [A] roughly doubles to triples CAC for the lower tiers.", "Body"))
 
 s.append(KeepTogether([P("4.3 Customer-side ROI: does the price make sense to the buyer?", "H3"), P("Recoverable waste assumed at <b>10% of GPU spend</b> [A]. Basis: the Philly replay flagged "
-           "23.0% of GPU-workload-hours as waste [S, own test]; not all flagged waste is recoverable (SLA "
-           "headroom, team inertia), so we assume 30-50% of it gets acted on, i.e. ~7-12%. GPU rates are the "
+           "17.1% of GPU-workload-hours as waste [S, own test; 14.7% excluding unverified consolidation "
+           "candidates]; not all flagged waste is recoverable (SLA headroom, team inertia), so if 30-50% of "
+           "it gets acted on that is ~5-9%. <b>10% is therefore at the optimistic end</b>; at 7%, every ROI "
+           "below is 30% lower (e.g. 16 x A100: 8.2x instead of 11.7x; 4 x L4: 1.4x). GPU rates are the "
            "product's own illustrative INR defaults (L4 ₹70/h, A100 80GB ₹300/h, H100 SXM ₹520/h), and "
            "IndiaAI's ~₹65/h [S]; 730 hours/month.", "Body"), make_table(
     ["Customer fleet", "GPU spend / month", "Tier", "Price as % of spend", "10% recovered", "ROI (x price)"],
@@ -407,8 +409,7 @@ s.append(P("<b>Your time is the constraint, not money.</b> At ~2.5 support hours
            "<b>First hire</b> (a support engineer, ~₹1.25 L/month): when support passes ~40% of your time or "
            "~20-25 customers (~₹60-75 L ARR).", "Body"))
 
-s.append(P("4.5 What would change these numbers most", "H3"))
-s.append(bullets([
+s.append(KeepTogether([P("4.5 What would change these numbers most", "H3"), bullets([
     "<b>Churn</b> (the biggest swing factor). If customers treat the product as a one-time audit, lifetime "
     "collapses. Counter-measures: continuous value (weekly ₹ reports, regression alerts when waste returns, "
     "per-team chargeback) and annual contracts.",
@@ -418,7 +419,7 @@ s.append(bullets([
     "pilot's before/after number replaces it.",
     "<b>Moving to action</b> (bin-packing recommendations, queue-depth-aware right-sizing) supports a "
     "higher price and lower churn, but brings you into direct competition with CAST AI and ScaleOps.",
-]))
+])]))
 
 # ================================================================= International
 s.append(P("5. International expansion", "H2"))
@@ -612,7 +613,7 @@ s.append(make_table(
         ["A9", "Support / onboarding hours", "See 4.1-4.2", "Measure on first pilots"],
         ["A10", "CAC per tier", "₹40k to ₹6 L", "Founder-led, ~4 free scans per win"],
         ["A11", "Monthly churn", "1.5-5%", "Biggest uncertainty; see 4.5"],
-        ["A12", "Recoverable waste", "10% of GPU spend", "From Philly 23% flagged x 30-50% acted on; prove in pilot"],
+        ["A12", "Recoverable waste", "10% of GPU spend", "Optimistic: Philly 17.1% flagged x 30-50% acted on = 5-9%; prove in pilot"],
         ["A13", "Monthly fixed costs (solo founder)", "₹50k-1.5 L", "With or without a ₹1 L personal draw"],
         ["A14", "3-year SAM capture (India)", "3-5%", "Typical for founder-led B2B infrastructure software"],
         ["A15", "Overseas orgs with GPU fleets", "SEA 370, ME 250, US 4,200, EU 1,500",
@@ -668,7 +669,7 @@ src = [
     "AI startup counts, US and Europe (StartUs Insights, StartupBlink): startus-insights.com/innovators-guide/"
     "how-many-ai-companies-are-there/ ; startupblink.com/blog/top-ai-startups/",
     "Earlier study: India GPU Optimization SaaS: SMB Market Research (September 2026), provided by the founder.",
-    "Own test results: testing/real-trace-replay/RESULTS.md (Philly, 23.0% flagged); "
+    "Own test results: testing/real-trace-replay/RESULTS.md (Philly, 17.1% flagged after the 2026-10-01 detector fix; originally reported as 23.0%); "
     "testing/azure-inference-trace-replay/RESULTS.md; PROGRESS.md.",
 ]
 s.append(ListFlowable([ListItem(P(x, "Small"), bulletColor=colors.black) for x in src], bulletType="bullet", start="•", leftIndent=12, spaceAfter=4))

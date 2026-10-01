@@ -134,9 +134,13 @@ Branch this was written on: `claude/cost-optimization-saas-telemetry-w4zbhb`
   trace (552 machines, 117k jobs, real per-minute utilization from
   `nvidia-smi`) through the actual `waste_detector` code at real (not
   smoke-test-lowered) pilot thresholds, over a real 31-day window: 10,990
-  idle, 279 over-provisioned, 12,568 fragmented, 6,848 recurring-pattern
-  findings, and **23.0% of observed GPU-workload-hours flagged as some form
-  of waste** (merged across categories, no double-counting) -- the first
+  idle, 279 over-provisioned, 4,636 fragmented, 6,848 recurring-pattern
+  findings, and **17.1% of observed GPU-workload-hours flagged as some form
+  of waste** (merged across categories, no double-counting; 14.7% without
+  the unverified fragmentation candidates). Originally reported as 23.0%
+  with 12,568 fragmented findings; corrected 2026-10-01 after the
+  fragmentation detector was fixed to exclude multi-GPU jobs it had been
+  telling users to consolidate -- the first
   real-evidence answer to "will this reliably find >=15-20% waste,"
   previously only a synthetic-data claim. Two public Alibaba `clusterdata`
   releases were tried first and ruled out (`cluster-trace-gpu-v2023` turned

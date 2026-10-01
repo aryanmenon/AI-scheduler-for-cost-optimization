@@ -79,13 +79,23 @@ attributed GPU-minute readings, 1,538,668 hourly rollup rows built:
 |---|---|
 | Idle | 10,990 |
 | Over-provisioned | 279 |
-| Fragmented | 12,568 |
+| Fragmented | 4,636 (12,568 before the 2026-10-01 multi-GPU fix) |
 | Recurring pattern | 6,848 |
 
-**23.0% of observed GPU-workload-hours were flagged as some form of
+**17.1% of observed GPU-workload-hours were flagged as some form of
 waste** (`summarize.py`'s merged-interval union across all four
 categories, so an hour double-flagged by e.g. both idle and fragmentation
-only counts once). This is the first real evidence-backed answer to "will
+only counts once). **14.7%** counting only idle, over-provisioned and
+recurring-pattern findings -- the floor, since fragmentation findings are
+unverified consolidation candidates (memory fit, combined compute and GPU
+sharing aren't checked).
+
+The original 2026-09-27 run reported 23.0%. That figure was inflated:
+the fragmentation detector didn't exclude multi-GPU jobs sitting next to
+another workload, and Philly is full of multi-GPU training jobs, so each
+of their GPUs got a "consolidate" finding that could never be acted on.
+Fixed 2026-10-01; same data, same window, re-run with the corrected
+detector. Both runs' raw output are in `RESULTS.md`. This is the first real evidence-backed answer to "will
 this detector reliably find real waste" -- previously only a synthetic-data
 claim.
 
