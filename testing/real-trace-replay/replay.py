@@ -50,6 +50,7 @@ from waste_detector.over_provisioning import detect_over_provisioning  # noqa: E
 from waste_detector.fragmentation import detect_fragmentation  # noqa: E402
 from waste_detector.patterns import detect_recurring_patterns  # noqa: E402
 from waste_detector.multi_gpu import detect_multi_gpu_oversized  # noqa: E402
+from waste_detector.unrecommended import detect_unrecommended_waste  # noqa: E402
 
 if len(sys.argv) < 2:
     print("usage: python3 replay.py /path/to/trace-data [output_dir]", file=sys.stderr)
@@ -272,6 +273,13 @@ over_provisioned_findings = detect_over_provisioning(rollup_rows, config)
 fragmented_findings = detect_fragmentation(rollup_rows, config)
 pattern_findings = detect_recurring_patterns(rollup_rows, config)
 multi_gpu_findings = detect_multi_gpu_oversized(rollup_rows, config)
+_tier = detect_unrecommended_waste(
+    rollup_rows,
+    idle_findings + over_provisioned_findings + fragmented_findings + pattern_findings + multi_gpu_findings,
+    config,
+)
+underutilized_findings = [f for f in _tier if f.category == "underutilized"]
+unattributed_findings = [f for f in _tier if f.category == "unattributed_gpu_time"]
 
 print()
 print("=" * 70)
@@ -282,6 +290,8 @@ print(f"over-provisioned findings: {len(over_provisioned_findings)}")
 print(f"fragmented findings:       {len(fragmented_findings)}")
 print(f"recurring-pattern findings:{len(pattern_findings)}")
 print(f"multi-GPU oversized findings (visibility only): {len(multi_gpu_findings)}")
+print(f"underutilized, no recommendation: {len(underutilized_findings)}")
+print(f"unattributed GPU time, no recommendation: {len(unattributed_findings)}")
 print()
 
 for name, findings in [
@@ -309,6 +319,8 @@ with open(out_path, "wb") as f:
             "fragmented": fragmented_findings,
             "recurring_pattern": pattern_findings,
             "multi_gpu_oversized": multi_gpu_findings,
+            "underutilized": underutilized_findings,
+            "unattributed_gpu_time": unattributed_findings,
             "rollup_row_count": len(rollup_rows),
             "attributed_readings": attributed_count,
             "in_window_readings": in_window_count,

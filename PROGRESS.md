@@ -143,7 +143,9 @@ fixes and the multi-GPU signal below; `...-w4zbhb` does not have those.
   without the unverified fragmentation candidates). Separately, the
   visibility-only multi-GPU signal shows **12.7%** of GPU-hours as
   releasable capacity (7.0% not already flagged) -- an upper bound, never
-  added to the 16.7%. **Use 16.7% (floor 14.7%) when quoting Philly.**
+  added to the 16.7%. The "no recommendation yet" tier adds 13.4% of
+  GPU-hours below the 70% target (2.5% of capacity), also separate.
+  **Use 16.7% (floor 14.7%) when quoting Philly.**
   History: originally reported as 23.0% with 12,568 fragmented findings;
   17.1% after fragmentation stopped flagging multi-GPU jobs; 16.7% after
   the per-workload mislabel fix (all 2026-10-01, see the fragmentation
@@ -317,6 +319,31 @@ fixes and the multi-GPU signal below; `...-w4zbhb` does not have those.
   workload. Philly: 17.1% -> 16.7%; multi-GPU signal 12.7% (7.0% new).
   `testing/real-trace-replay/replay.py` now saves `rollups.pkl` and
   `rerun_detectors.py` re-runs every detector on it in seconds.
+- **"Below actionable recommendations" tier: DONE (2026-10-01).** Founder's
+  requirement: *never detect less waste just because there's no correct
+  recommendation for it* -- detect it and classify it below the actionable
+  findings. New `waste-detector/src/waste_detector/unrecommended.py` runs
+  last (after the actionable detectors and the multi-GPU signal) and
+  reports every GPU-hour averaging below `UNDERUTILIZED_TARGET_PCT` (70%,
+  same as savings-estimator's SLA ceiling) that no finding already covers:
+  `underutilized` (attributed) and `unattributed_gpu_time` (GPU time with
+  no Kubernetes pod -- previously dropped by every detector).
+  metric_value = average shortfall below target as a fraction of the GPU.
+  Recurring-pattern findings only count as covering their own hour of
+  day. Priced as *observed* cost on a new `detected_no_recommendation`
+  basis (rate x shortfall x hours, not projected). Dashboard: new "Below
+  actionable recommendations" section holding this tier and the
+  multi-GPU upper bound (moved out of the headline row); never added to
+  either headline figure; rows sort after actionable findings. Also
+  fixed observed tier amounts being labeled "/mo". Helm:
+  `wasteDetector.underutilizedTargetPct` (70),
+  `wasteDetector.underutilizedMinRunHours` (1). Philly: 58,491 findings,
+  13.4% of GPU-hours, 2.5% of capacity below target (median run 1h).
+  **Tiers now, in order of trust:** (1) actionable: idle, over-provisioned,
+  recurring pattern, fragmentation candidates -> headline figures;
+  (2) multi-GPU "fewer GPUs" upper bound (projected/month); (3) detected
+  waste with no recommendation (observed). Tiers 2-3 never enter a
+  headline.
 
 ## 2. What's in progress right now
 
@@ -724,6 +751,10 @@ Ordered roughly by what was recommended first:
   per-minute readings instead of hourly average): needs percentiles in
   rollups (~+1 day). Calibrate on a pilot, then consider moving the
   multi-GPU signal from visibility-only toward a recommendation.
+- **No-recommendation tier tuning:** `underutilizedMinRunHours` defaults
+  to 1, so a live cluster will get many short findings (Philly: 58k,
+  median 1h). Raise it (or aggregate per day) if the dashboard gets
+  noisy; check on the first pilot.
 - **Step C -- read cluster scheduling settings** (is time-slicing/MPS/MIG
   configured; pod affinity) via the K8s API, still read-only. Later.
 - **GPU VM support (no Kubernetes)** -- today non-K8s customers get zero

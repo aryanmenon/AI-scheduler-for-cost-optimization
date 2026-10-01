@@ -88,6 +88,8 @@ attributed GPU-minute readings, 1,538,668 hourly rollup rows built:
 | Fragmented | 5,718 |
 | Recurring pattern | 6,848 |
 | Multi-GPU oversized (visibility only) | 24,570 |
+| Underutilized, no recommendation | 58,491 |
+| Unattributed GPU time, no recommendation | 0 (the replay only builds rows for GPU time attributed to a job) |
 
 **16.7% of observed GPU-workload-hours were flagged as actionable waste**
 (`summarize.py`'s merged-interval union across idle, over-provisioned,
@@ -101,6 +103,16 @@ aren't checked).
 run on fewer GPUs account for **12.7%** of GPU-hours as releasable capacity
 (**7.0%** not already flagged above). That's an upper bound sized on hourly
 averages with no memory check -- see `waste_detector/multi_gpu.py`.
+
+**Also separate: detected waste with no recommendation.** Every other
+GPU-hour averaging below the 70% efficient-use target that no finding
+explains: **13.4%** of GPU-hours, amounting to **2.5%** of total GPU
+capacity unused below the target (mostly short stretches -- median 1h,
+average shortfall ~19% of a GPU). Together, findings in some tier touch
+57.3% of GPU-hours; that's a coverage figure, not an amount of waste (a
+multi-GPU finding touches every GPU of a job even though only a fraction
+is releasable). The rest is hours at or above 70% (not waste by this
+definition) or low-coverage hours the detectors deliberately skip.
 
 ### How the headline figure changed
 

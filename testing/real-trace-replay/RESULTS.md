@@ -146,3 +146,39 @@ Peak-based found almost nothing because a job's busiest minute in an hour
 is usually high; average-based was chosen and is shown separately as a
 visibility-only upper bound rather than added to the headline.
 
+## Re-run 2026-10-01 (c): "below actionable recommendations" tier
+
+Same rollups, same thresholds; adds `waste_detector/unrecommended.py`,
+which runs last and reports every GPU-hour averaging below the 70%
+efficient-use target that no other finding covers.
+
+```
+idle findings: 10990
+over_provisioned findings: 279
+fragmented findings: 5718
+recurring_pattern findings: 6848
+multi_gpu_oversized findings: 24570
+underutilized findings: 58491
+unattributed_gpu_time findings: 0
+
+fraction of observed capacity-hours flagged as some form of waste: 16.7%
+multi-GPU oversized findings (visibility only, NOT in the figure above): 24570
+  releasable GPU-hours (upper bound): 194735 (12.7%), of which not already flagged above: 106952 (7.0%)
+below-target, no recommendation (underutilized + unattributed): 58491 findings, 205567 GPU-hours (13.4%),
+  unused capacity below target 38481 GPU-hours (2.5%)
+coverage: GPU-hours touched by at least one finding in any tier: 881707 (57.3%) -- not an amount of waste
+```
+
+Underutilized runs: median 1h, mean shortfall 0.195 of a GPU. Example:
+
+```
+averaged 51.8% busy over 1h, below the 70% efficient-use target, and not covered by
+any actionable finding -- detected waste, no reliable recommendation yet (e.g. bursts
+too short to call idle, no co-located workload to consolidate with, or a pattern the
+detectors don't classify)
+```
+
+Unattributed GPU time is 0 here only because replay.py builds rollups
+solely from readings it can attribute to a job; on a live cluster this
+category catches GPU time with no Kubernetes pod.
+

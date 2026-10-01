@@ -20,6 +20,7 @@ from waste_detector.idle import detect_idle  # noqa: E402
 from waste_detector.multi_gpu import detect_multi_gpu_oversized  # noqa: E402
 from waste_detector.over_provisioning import detect_over_provisioning  # noqa: E402
 from waste_detector.patterns import detect_recurring_patterns  # noqa: E402
+from waste_detector.unrecommended import detect_unrecommended_waste  # noqa: E402
 
 if len(sys.argv) < 2:
     print("usage: python3 rerun_detectors.py /path/to/output_dir", file=sys.stderr)
@@ -54,6 +55,11 @@ findings = {
     "recurring_pattern": detect_recurring_patterns(rollup_rows, config),
     "multi_gpu_oversized": detect_multi_gpu_oversized(rollup_rows, config),
 }
+# Last, over everything above -- same order as waste_detector.detector.
+already = [f for items in findings.values() for f in items]
+tier = detect_unrecommended_waste(rollup_rows, already, config)
+findings["underutilized"] = [f for f in tier if f.category == "underutilized"]
+findings["unattributed_gpu_time"] = [f for f in tier if f.category == "unattributed_gpu_time"]
 for name, items in findings.items():
     print(f"{name} findings: {len(items)}")
 

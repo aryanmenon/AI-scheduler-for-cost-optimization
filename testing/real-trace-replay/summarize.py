@@ -94,3 +94,32 @@ if "multi_gpu_oversized" in data:
     print(f"multi-GPU oversized findings (visibility only, NOT in the figure above): {len(data['multi_gpu_oversized'])}")
     print(f"  releasable GPU-hours (upper bound): {multi_total:.0f} ({100*multi_total/total_rollup_rows:.1f}%), "
           f"of which not already flagged above: {multi_new:.0f} ({100*multi_new/total_rollup_rows:.1f}%)")
+
+# The "below actionable recommendations" tier: GPU-hours below the
+# efficient-use target that no finding above explains (detected, no
+# recommendation). Its hours never overlap the actionable or multi-GPU
+# findings' (the detector excludes them), so it adds without double-counting.
+tier = data.get("underutilized", []) + data.get("unattributed_gpu_time", [])
+if "underutilized" in data:
+    tier_hours = 0.0
+    tier_capacity = 0.0
+    for finding in tier:
+        hours = (finding.window_end - finding.window_start) / BUCKET
+        tier_hours += hours
+        tier_capacity += hours * finding.metric_value
+    multi_units = set()
+    for finding in data.get("multi_gpu_oversized", []):
+        key = (finding.node, finding.gpu_index, finding.namespace, finding.workload)
+        t = finding.window_start
+        while t < finding.window_end:
+            multi_units.add((key, t))
+            t += BUCKET
+    any_waste = len(flagged_units | multi_units) + tier_hours
+    print(f"below-target, no recommendation (underutilized + unattributed): {len(tier)} findings, "
+          f"{tier_hours:.0f} GPU-hours ({100*tier_hours/total_rollup_rows:.1f}%), "
+          f"unused capacity below target {tier_capacity:.0f} GPU-hours ({100*tier_capacity/total_rollup_rows:.1f}%)")
+    # A coverage figure, not an amount of waste: a multi-GPU finding touches
+    # every GPU of the job even though only a fraction is releasable.
+    print(f"coverage: GPU-hours touched by at least one finding in any tier: "
+          f"{any_waste:.0f} ({100*any_waste/total_rollup_rows:.1f}%) -- not an amount of waste")
+
