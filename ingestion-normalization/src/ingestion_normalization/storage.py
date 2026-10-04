@@ -76,8 +76,12 @@ CREATE TABLE IF NOT EXISTS rollups (
     memory_total_mb REAL
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_rollup_bucket
-    ON rollups (granularity, bucket_start, node, gpu_index, COALESCE(gpu_instance_id, ''));
+-- One row per workload per GPU per bucket: a GPU whose pod changes within
+-- a bucket (a job ends and another starts, or no pod -> pod) has one row per
+-- workload, as compute_rollups groups them.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_rollup_bucket_workload
+    ON rollups (granularity, bucket_start, node, gpu_index, COALESCE(gpu_instance_id, ''),
+                namespace, COALESCE(workload, ''));
 CREATE INDEX IF NOT EXISTS idx_rollups_workload ON rollups (granularity, namespace, workload);
 """
 
@@ -101,6 +105,12 @@ class NormalizedStorage:
         self._conn = sqlite3.connect(path, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL;")
         self._conn.row_factory = sqlite3.Row
+        # The first release's unique index left out namespace/workload, so
+        # every bucket in which a GPU changed workload failed to store
+        # (found in the 2026-10-04 pilot install rehearsal). Drop it on
+        # existing volumes; the replacement above is strictly looser, so
+        # existing rows always satisfy it.
+        self._conn.execute("DROP INDEX IF EXISTS uq_rollup_bucket")
         self._conn.executescript(SCHEMA)
         existing = {row["name"] for row in self._conn.execute("PRAGMA table_info(rollups)")}
         for column, sql_type in _ROLLUP_ADDED_COLUMNS.items():

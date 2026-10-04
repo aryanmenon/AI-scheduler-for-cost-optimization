@@ -76,10 +76,21 @@ the real per-GPU-hour price.
 SSH in, then:
 
 ```bash
-# Stop background driver updates (they caused an NVML driver/library
-# mismatch mid-test before). If nvidia-smi ever fails with that error: reboot.
-sudo systemctl disable --now unattended-upgrades || true
+# Stop automatic upgrades FIRST. On a fresh VM they start within minutes of
+# boot and upgrade the NVIDIA driver underneath you, so every new GPU pod
+# fails with "Driver/library version mismatch" (happened in two runs, the
+# second on 2026-10-04 in testing/pilot-install-rehearsal). The upgrade is
+# started by the apt-daily timers: disabling unattended-upgrades.service
+# alone does NOT stop it.
+sudo systemctl disable --now apt-daily.timer apt-daily-upgrade.timer unattended-upgrades || true
+# If one already started, stop it cleanly (it finishes the current package,
+# then exits) and wait; never reboot while dpkg holds its lock.
+sudo pkill -TERM -f /usr/bin/unattended-upgrade; while pgrep -f /usr/bin/unattended-upgrade >/dev/null; do sleep 5; done
+sudo dpkg --audit && echo "packages consistent"
 nvidia-smi   # must list 4 A100s; note the driver version (>= 550)
+# If nvidia-smi fails with "Driver/library version mismatch": the driver was
+# already upgraded -- check `dkms status` shows the new nvidia version
+# "installed" for your kernels, then reboot.
 
 # NVIDIA Container Toolkit (NVIDIA's documented apt install)
 curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg

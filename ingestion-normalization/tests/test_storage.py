@@ -137,3 +137,50 @@ def test_existing_rollups_table_gains_new_memory_columns(tmp_path):
     finally:
         s.close()
     NormalizedStorage(path).close()  # re-opening an already-migrated table is a no-op
+
+
+def _switching_gpu_rollups(granularity):
+    # One GPU, one bucket: no pod for the first 20 minutes, then a pod --
+    # what every job start/stop on a real cluster looks like.
+    import dataclasses
+    before = [dataclasses.replace(_raw(i, i * 30), namespace="unattributed", pod=None, container=None)
+              for i in range(1, 40)]
+    after = [_raw(i, i * 30) for i in range(40, 120)]
+    normalized = [normalize_sample(r) for r in before + after]
+    return compute_rollups(normalized, granularity, scrape_interval_seconds=30)
+
+
+def test_gpu_changing_workload_within_a_bucket_stores_a_row_per_workload(storage):
+    # Regression (2026-10-04 pilot install rehearsal): the unique index was
+    # per GPU per bucket, so this raised IntegrityError and the bucket was
+    # never stored -- on a live cluster, every hour in which a job started
+    # or stopped.
+    for granularity, bucket in (("hourly", 3600), ("daily", 86400)):
+        rollups = _switching_gpu_rollups(granularity)
+        assert len(rollups) == 2
+        storage.replace_rollups(granularity, 0, bucket, rollups)
+        stored = {(r["namespace"], r["sample_count"]) for r in storage.rollups(granularity)}
+        assert stored == {("unattributed", 39), ("inference", 80)}
+
+
+def test_existing_volume_with_the_old_per_gpu_index_is_migrated(tmp_path):
+    import sqlite3
+    path = str(tmp_path / "old.db")
+    NormalizedStorage(path).close()
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        DROP INDEX uq_rollup_bucket_workload;
+        CREATE UNIQUE INDEX uq_rollup_bucket
+            ON rollups (granularity, bucket_start, node, gpu_index, COALESCE(gpu_instance_id, ''));
+    """)
+    conn.commit()
+    conn.close()
+
+    s = NormalizedStorage(path)
+    try:
+        s.replace_rollups("hourly", 0, 3600, _switching_gpu_rollups("hourly"))
+        assert len(s.rollups("hourly")) == 2
+        indexes = {r["name"] for r in s._conn.execute("PRAGMA index_list(rollups)")}
+        assert "uq_rollup_bucket" not in indexes and "uq_rollup_bucket_workload" in indexes
+    finally:
+        s.close()
