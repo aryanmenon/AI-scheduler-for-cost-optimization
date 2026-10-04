@@ -380,6 +380,26 @@ fixes and the multi-GPU signal below; `...-w4zbhb` does not have those.
     flag this load); it tests the assumption every right-sizing number
     rests on. One model, 15 min, two hosts, single run.
   - Fix built the same day and re-tested on an RTX 4060 Ti: held (section 4).
+- **Merged to the default branch (2026-10-04): PR #2**, 21 commits, CI 16/16
+  green (tests, all 5 Docker builds, pip-audit, helm lint); merging triggers
+  the GHCR image publish.
+- **Oversized-by-average right-sizing (2026-10-04, branch, not merged).** New
+  waste-detector category `oversized_by_average`: peak above the 30%
+  over-provisioned bar but the busiest observed hour averaged <= 30%
+  (`AVG_LOAD_THRESHOLD_PCT`, Helm `wasteDetector.avgLoadThresholdPct`),
+  same 24h minimum. Exists because GPU busy % reads ~100% whenever any
+  request is in flight, so LLM servers never trip the peak check (mini-test:
+  21% average, 71-75% peaks). savings-estimator reuses the bandwidth-aware
+  ceiling at a stricter 50% target (`AVG_LOAD_TARGET_UTILIZATION_PCT`,
+  Helm `savingsEstimator.avgLoadTargetUtilizationPct`) because hourly
+  averages hide bursts; priced projected-monthly, so it counts in the
+  headline. Dashboard label "Oversized for Its Average Load". 6 detector +
+  3 estimator tests; all suites green (37 + 66 + 97 + 74 + 49 + 2 = 325).
+  Philly re-run: 352 findings, actionable GPU-hours 16.7% -> 17.5%,
+  actionable capacity 11.1% -> 11.6%, total detected unchanged at 23.0%
+  (moved from the review/no-recommendation tiers). Evidence for sizing on
+  the average: the T4 run held capacity at 54% mean busy under the real,
+  bursty Azure trace. Not yet tested live as a finding.
 
 ## 2. What's in progress right now
 
@@ -763,6 +783,14 @@ debugging real problems as they come up, not running anything myself.
    answers task, not a blocker to starting outreach conversations.
 
 ### Open product items (decided or discussed 2026-09-29 to 2026-10-01, not built)
+
+- **Right-sizing ignores GPU memory capacity (found 2026-10-04, not built).**
+  `ceiling.py` checks TFLOPS and memory bandwidth but not whether the
+  workload's memory fits the target (e.g. an A100 80GB job can be told to
+  move to a 16 GB V100/T4). Rollups carry avg_memory_used_mb, but vLLM
+  pre-allocates ~90% of GPU memory and PyTorch caches freed memory, so used
+  memory overstates need for exactly the workloads this matters for. Until
+  fixed, every downsize recommendation should say memory fit is unchecked.
 
 - **`ceiling.py` memory-speed aware: BUILT and RE-TESTED 2026-10-04 --
   held out of sample, conservatively.** No A10/L4/V100 on vast.ai, so the
