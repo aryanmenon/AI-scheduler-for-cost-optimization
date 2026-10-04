@@ -806,6 +806,20 @@ debugging real problems as they come up, not running anything myself.
   actionable, 9.8% review, 2.5% no-recommendation, 23.0% total detected.
   Known remaining: review-tier fragmentation still projects each streak as
   a month (labeled upper bound) and fires on idle GPUs too.
+- **Sample report is now a CI regression test (2026-10-04).**
+  `integration-tests/tests/test_sample_report.py` runs
+  `docs/pilot/make_sample_report.py`'s `build()` and pins the hand-checked
+  figures (headline Rs2,76,150/mo, observed Rs43,200, each GPU's
+  recommendation, fragmentation outside the headline). Verified it fails
+  (Rs1,95,150) when the recurring-hours aggregation bug is reintroduced.
+- **Founder actions (2026-10-04):** `docs/pilot/FOUNDER_ACTIONS.md`.
+  Pricing: decided to set after the first pilot (PILOT_PLAN no longer
+  implies a savings-based fee). NDA: deferred to a lawyer. Image access:
+  open; recommended machine-account token per pilot, offline bundle only
+  on request (customers can read the source either way). Token revocation
+  steps written; CI uses only GITHUB_TOKEN. Credits table: figures from
+  third-party 2026 summaries, only Microsoft's "up to $150,000" confirmed
+  on an official page (others blocked/truncated from this environment).
 - **GPU memory-fit check: BUILT 2026-10-04** (was: right-sizing ignored
   memory capacity). ingestion-normalization rollups gain
   `max_memory_used_mb` and `memory_total_mb` (DCGM FB_USED + FB_FREE), with
