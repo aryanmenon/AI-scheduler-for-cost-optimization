@@ -1,6 +1,14 @@
 # Right-sizing mini-test (RTX 3090 -> T4)
 
-**Status: SCRIPTS DRY-RUN HERE (fake vLLM + fake nvidia-smi), NOT RUN ON REAL GPUs YET.**
+**Status: RUNNING (2026-10-04).** RTX 3090 calibration done (5 min, keep
+0.05, 87 requests, 0 errors): mean busy 23.5%, product-style peak **71%**
+(1 s max 93%), p95 2.24 s. Finding: GPU busy % reads high whenever any
+request is in flight, so a lightly loaded LLM service never gets under the
+product's 30% over-provisioned bar -- the product would not recommend
+shrinking it (safe, but this waste only shows in the no-recommendation
+tier). The run therefore tests the sizing assumption directly: does busy %
+move by the TFLOPS ratio (1.09x, product) or the memory-speed ratio (2.92x)
+on a T4? Before/after runs are 15 min each.
 
 Tests the product's riskiest unverified assumption for under ~$0.50: that a
 workload's busy % times its GPU's FP16 TFLOPS is the compute it needs, so a

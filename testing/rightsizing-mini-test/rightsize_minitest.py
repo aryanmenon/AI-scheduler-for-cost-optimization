@@ -54,7 +54,7 @@ def ensure_vllm() -> str:
              "print(vllm.__version__)")
     try:
         out = subprocess.run([sys.executable, "-c", check], capture_output=True, text=True, check=True)
-        return out.stdout.strip()
+        return out.stdout.strip().splitlines()[-1]
     except subprocess.CalledProcessError:
         log(f"installing vllm=={VLLM_VERSION} + {' '.join(COMPAT_PINS)} (several minutes) ...")
         subprocess.run([sys.executable, "-m", "pip", "install", "-q", f"vllm=={VLLM_VERSION}", *COMPAT_PINS],

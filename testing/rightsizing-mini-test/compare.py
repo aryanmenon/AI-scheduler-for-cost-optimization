@@ -1,5 +1,8 @@
 """Compare the "before" and "after" runs of the right-sizing mini-test and
-say whether the product's right-sizing recommendation held.
+say whether the product's right-sizing recommendation held -- or, when the
+"before" peak is too high for the product to flag (common for LLM serving:
+GPU busy % reads high whenever any request is in flight), whether the sizing
+assumption under every recommendation held: busy % moves by the TFLOPS ratio.
 
   python3 compare.py result-before.json result-after.json
 
@@ -54,23 +57,31 @@ def main() -> None:
           f"(true 1 s max {before['util']['max_1s_pct']}%, mean {before['util']['mean_pct']}%)")
     if not cap_b.known:
         raise SystemExit("before GPU is not in the product's capability table: no recommendation possible")
-    if peak > OVER_PROVISION_THRESHOLD_PCT:
-        raise SystemExit(f"peak {peak}% > {OVER_PROVISION_THRESHOLD_PCT}%: the product would NOT flag this "
-                         f"as over-provisioned. Re-run 'before' with a lower --keep-fraction.")
+    flagged = peak <= OVER_PROVISION_THRESHOLD_PCT
+    print(f"over-provisioned finding (peak <= {OVER_PROVISION_THRESHOLD_PCT:.0f}%): "
+          f"{'YES' if flagged else 'NO -- the product would not recommend a smaller GPU at this load'}")
     rec = right_sized_capability(cap_b.fp16_tflops, peak, SLA_TARGET_PCT)
-    print(f"product recommendation: {rec.detail}")
-    if rec.recommended is None:
-        raise SystemExit("no recommendation to test")
-    predicted_util = peak * cap_b.fp16_tflops / rec.recommended.fp16_tflops
-    print(f"product's implied busy % on {rec.recommended.canonical_name}: ~{predicted_util:.1f}% "
-          f"(target ceiling {SLA_TARGET_PCT:.0f}%)")
+    print(f"ceiling.py at this peak{'' if flagged else ' (hypothetical)'}: {rec.detail}")
 
-    print("\n== Was the 'after' run on the recommended GPU, under the same load? ==")
-    same_gpu = cap_a.canonical_name == rec.recommended.canonical_name
+    print("\n== Was the 'after' run comparable? ==")
+    if not cap_a.known:
+        raise SystemExit(f"after GPU {after['gpu_name']} is not in the capability table")
     same_load = all(before[k] == after[k] for k in ("model", "keep_fraction", "minutes"))
-    print(f"after GPU: {after['gpu_name']} -> {cap_a.canonical_name}: "
-          f"{'matches' if same_gpu else 'DOES NOT match'} the recommendation")
+    is_rec = rec.recommended is not None and cap_a.canonical_name == rec.recommended.canonical_name
+    print(f"after GPU: {after['gpu_name']} -> {cap_a.canonical_name} "
+          f"({'the' if is_rec else 'NOT the'} GPU ceiling.py picks at this peak)")
     print(f"same model, keep fraction and duration: {'yes' if same_load else 'NO -- comparison invalid'}")
+    # Every right-sizing number rests on this: busy % moves by the FP16
+    # TFLOPS ratio. The alternative for token generation is memory speed.
+    tflops_x = cap_b.fp16_tflops / cap_a.fp16_tflops
+    bw_x = (cap_b.mem_bandwidth_gbps / cap_a.mem_bandwidth_gbps
+            if cap_b.mem_bandwidth_gbps and cap_a.mem_bandwidth_gbps else None)
+    predicted_util = before["util"]["mean_pct"] * tflops_x
+    print(f"product's model (busy % x {tflops_x:.2f}, the TFLOPS ratio) predicts mean busy "
+          f"~{predicted_util:.1f}% on {cap_a.canonical_name}")
+    if bw_x:
+        print(f"memory-speed model (busy % x {bw_x:.2f}) predicts "
+              f"~{min(100.0, before['util']['mean_pct'] * bw_x):.1f}%")
 
     lb, la = before["load"], after["load"]
     print("\n== Measured before vs after ==")
@@ -100,19 +111,29 @@ def main() -> None:
         verdict = "MARGINAL"
     else:
         verdict = "FAIL"
-    if not (same_gpu and same_load):
-        verdict += " (INVALID: wrong GPU or different load)"
+    if not same_load:
+        verdict += " (INVALID: different load)"
 
+    measured = after["util"]["mean_pct"]
     print("\n== Verdict ==")
     print(f"capacity (did it keep up?): throughput {fmt(tput_ratio, 'x')}, errors "
           f"{'ok' if errors_ok else 'TOO HIGH'}, send lag {'ok' if lag_ok else 'TOO HIGH'}")
     print(f"latency: p95 {fmt(p95_ratio, 'x')} of before (PASS <= {P95_PASS}x, MARGINAL <= {P95_MARGINAL}x)")
-    print(f"busy %: product implied ~{predicted_util:.1f}%, measured "
-          f"{after['util']['product_peak_median_pct']}% peak / {after['util']['mean_pct']}% mean")
-    if cap_b.mem_bandwidth_gbps and rec.recommended.mem_bandwidth_gbps:
-        print(f"reference: compute drops {cap_b.fp16_tflops / rec.recommended.fp16_tflops:.1f}x, "
-              f"memory speed drops {cap_b.mem_bandwidth_gbps / rec.recommended.mem_bandwidth_gbps:.1f}x")
-    print(f"RIGHT-SIZING RECOMMENDATION: {verdict}")
+    print(f"mean busy %: product's TFLOPS model predicted ~{predicted_util:.1f}%, measured {measured}% "
+          f"(peak {after['util']['product_peak_median_pct']}% at 30 s sampling)")
+    if bw_x:
+        # Which model does the measured busy % ratio sit closer to (in log space)?
+        import math
+        obs_x = measured / before["util"]["mean_pct"] if before["util"]["mean_pct"] else None
+        if obs_x:
+            closer = ("TFLOPS (product's assumption holds)"
+                      if abs(math.log(obs_x / tflops_x)) <= abs(math.log(obs_x / bw_x))
+                      else "memory speed (product's assumption does NOT hold)")
+            print(f"busy % moved {obs_x:.2f}x vs TFLOPS {tflops_x:.2f}x / memory speed {bw_x:.2f}x "
+                  f"-> closer to {closer}")
+    label = ("RIGHT-SIZING RECOMMENDATION" if (flagged and is_rec)
+             else "SIZING ASSUMPTION (this load moved to this GPU)")
+    print(f"{label}: {verdict}")
 
 
 if __name__ == "__main__":
