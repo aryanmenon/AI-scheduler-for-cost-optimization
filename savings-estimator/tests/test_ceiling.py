@@ -175,7 +175,7 @@ def test_smaller_memory_target_carries_unchecked_fit_caution():
                                  current_mem_capacity_gb=a100.mem_capacity_gb)
     assert rec.recommended.canonical_name == "NVIDIA T4"
     assert rec.memory_fit_unchecked
-    assert "memory fit not checked -- the target has 16 GB vs 80 GB now" in rec.detail
+    assert "memory fit not checked (no memory usage data for this workload) -- the target has 16 GB vs 80 GB now" in rec.detail
 
 
 def test_same_or_more_memory_target_needs_no_caution():
@@ -192,3 +192,84 @@ def test_unknown_current_memory_is_flagged_not_assumed():
     rec = right_sized_capability(312.0, 10.0, 70.0)
     assert rec.memory_fit_unchecked
     assert "memory fit not checked" in rec.detail
+
+
+
+# --- memory capacity checked against peak memory used ---
+A100_80_MIB = 81920.0  # what DCGM reports (used + free) for an A100 80GB
+
+
+def _a100_rec(peak_mib, util=10.0, total_mib=A100_80_MIB):
+    a100 = _cap("NVIDIA A100 80GB")
+    return right_sized_capability(a100.fp16_tflops, util, 70.0,
+                                  current_mem_bandwidth_gbps=a100.mem_bandwidth_gbps,
+                                  current_mem_capacity_gb=a100.mem_capacity_gb,
+                                  peak_memory_used_mib=peak_mib, current_memory_total_mib=total_mib)
+
+
+def test_measured_peak_that_fits_removes_the_caution():
+    rec = _a100_rec(peak_mib=10 * 1024)  # 10 GiB peak -> 11 GiB needed; a T4 has ~14.9 usable
+    assert rec.recommended.canonical_name == "NVIDIA T4"
+    assert not rec.memory_fit_unchecked
+    assert "memory fit" not in rec.detail
+    assert "11.0 GiB of memory (peak 10.0 GiB used + 10%)" in rec.detail
+
+
+def test_measured_peak_too_big_skips_to_a_gpu_that_holds_it():
+    # 20 GiB peak -> 22 GiB needed: a T4 can't hold it; L4 (24 GB) can, and
+    # also meets the compute and bandwidth needs at a 10% peak.
+    rec = _a100_rec(peak_mib=20 * 1024)
+    assert rec.recommended.canonical_name == "NVIDIA L4"
+    assert not rec.memory_fit_unchecked
+    from savings_estimator.ceiling import _usable_mib
+    assert _usable_mib(rec.recommended.mem_capacity_gb) >= rec.required_memory_mib
+
+
+def test_peak_needing_more_than_any_smaller_gpu_keeps_a_big_one():
+    rec = _a100_rec(peak_mib=50 * 1024)  # 55 GiB needed: only the 80 GB parts hold it
+    assert rec.recommended.mem_capacity_gb >= 80.0
+
+
+def test_preallocating_workload_keeps_the_caution_with_the_reason():
+    # vLLM's default gpu_memory_utilization=0.9 shows as ~90% used.
+    rec = _a100_rec(peak_mib=0.9 * A100_80_MIB)
+    assert rec.recommended.canonical_name == "NVIDIA T4"  # memory not used to size
+    assert rec.memory_fit_unchecked
+    assert "holds 90% of GPU memory, typical of vLLM/TensorFlow pre-allocation" in rec.detail
+    assert rec.required_memory_mib == 0.0
+
+
+def test_mini_test_3090_run_was_measured_not_preallocated():
+    # The RTX 3090 vLLM run used --gpu-memory-utilization 0.5: 12813 MiB of
+    # 24576. Below the pre-allocation bar, so it is sized as measured --
+    # 12.5 GiB x 1.1 fits the A10 (24 GB) the bandwidth check picks.
+    rtx3090 = _cap("NVIDIA GeForce RTX 3090")
+    rec = right_sized_capability(rtx3090.fp16_tflops, 25.0, 70.0,
+                                 current_mem_bandwidth_gbps=rtx3090.mem_bandwidth_gbps,
+                                 current_mem_capacity_gb=rtx3090.mem_capacity_gb,
+                                 peak_memory_used_mib=12813.0, current_memory_total_mib=24576.0)
+    assert rec.recommended.canonical_name == "NVIDIA A10"
+    assert not rec.memory_fit_unchecked
+
+
+def test_current_total_falls_back_to_spec_when_dcgm_total_missing():
+    rec = _a100_rec(peak_mib=0.9 * A100_80_MIB, total_mib=None)
+    assert rec.memory_fit_unchecked  # 72 GiB of ~74.4 usable is still pre-allocation
+
+
+def test_every_recommendation_holds_the_measured_peak():
+    for cap in _all_recommendable_and_consumer():
+        if not cap.mem_capacity_gb:
+            continue
+        total = cap.mem_capacity_gb * 1024.0
+        for frac in (0.1, 0.3, 0.6, 0.8):
+            for peak in (5.0, 20.0, 29.0):
+                rec = right_sized_capability(cap.fp16_tflops, peak, 70.0,
+                                             current_mem_bandwidth_gbps=cap.mem_bandwidth_gbps,
+                                             current_mem_capacity_gb=cap.mem_capacity_gb,
+                                             peak_memory_used_mib=frac * total, current_memory_total_mib=total)
+                if rec.recommended is None:
+                    continue
+                from savings_estimator.ceiling import _usable_mib
+                assert _usable_mib(rec.recommended.mem_capacity_gb) >= frac * total * 1.10
+                assert not rec.memory_fit_unchecked

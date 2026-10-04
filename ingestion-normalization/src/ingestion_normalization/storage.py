@@ -71,13 +71,24 @@ CREATE TABLE IF NOT EXISTS rollups (
     avg_power_draw_w REAL,
     avg_effective_tflops REAL,
     gpu_model TEXT,
-    fp16_tflops REAL
+    fp16_tflops REAL,
+    max_memory_used_mb REAL,
+    memory_total_mb REAL
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_rollup_bucket
     ON rollups (granularity, bucket_start, node, gpu_index, COALESCE(gpu_instance_id, ''));
 CREATE INDEX IF NOT EXISTS idx_rollups_workload ON rollups (granularity, namespace, workload);
 """
+
+
+# Columns added to `rollups` after its first release. CREATE TABLE IF NOT
+# EXISTS leaves an existing table (a pilot's persistent volume) untouched,
+# so each one is added in place on startup; old rows read back as NULL.
+_ROLLUP_ADDED_COLUMNS = {
+    "max_memory_used_mb": "REAL",
+    "memory_total_mb": "REAL",
+}
 
 
 class NormalizedStorage:
@@ -91,6 +102,10 @@ class NormalizedStorage:
         self._conn.execute("PRAGMA journal_mode=WAL;")
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA)
+        existing = {row["name"] for row in self._conn.execute("PRAGMA table_info(rollups)")}
+        for column, sql_type in _ROLLUP_ADDED_COLUMNS.items():
+            if column not in existing:
+                self._conn.execute(f"ALTER TABLE rollups ADD COLUMN {column} {sql_type}")
         self._conn.commit()
 
     @contextmanager
@@ -182,8 +197,8 @@ class NormalizedStorage:
                     workload, sample_count, expected_sample_count, coverage_ratio,
                     low_confidence, avg_utilization_pct, max_utilization_pct,
                     avg_memory_used_mb, avg_power_draw_w, avg_effective_tflops,
-                    gpu_model, fp16_tflops)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    gpu_model, fp16_tflops, max_memory_used_mb, memory_total_mb)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 [
                     (
                         granularity, r.bucket_start, r.node, r.gpu_index, r.gpu_instance_id,
@@ -191,6 +206,7 @@ class NormalizedStorage:
                         r.coverage_ratio, int(r.low_confidence), r.avg_utilization_pct,
                         r.max_utilization_pct, r.avg_memory_used_mb, r.avg_power_draw_w,
                         r.avg_effective_tflops, r.gpu_model, r.fp16_tflops,
+                        r.max_memory_used_mb, r.memory_total_mb,
                     )
                     for r in rollups
                 ],

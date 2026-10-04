@@ -784,17 +784,17 @@ debugging real problems as they come up, not running anything myself.
 
 ### Open product items (decided or discussed 2026-09-29 to 2026-10-01, not built)
 
-- **Right-sizing ignores GPU memory capacity (found 2026-10-04; caution BUILT, real check not built).**
-  `ceiling.py` checks TFLOPS and memory bandwidth but not whether the
-  workload's memory fits the target (e.g. an A100 80GB job can be told to
-  move to a 16 GB V100/T4). Rollups carry avg_memory_used_mb, but vLLM
-  pre-allocates ~90% of GPU memory and PyTorch caches freed memory, so used
-  memory overstates need for exactly the workloads this matters for.
-  Interim caution built 2026-10-04: when the target GPU has less memory
-  than the current one (or the current capacity is unknown), the detail
-  says "memory fit not checked -- the target has X GB vs Y GB now" and the
-  recommended action ends "; memory fit not checked)". A real check would
-  need model-weight size (e.g. from the serving pod's config), not used memory.
+- **GPU memory-fit check: BUILT 2026-10-04** (was: right-sizing ignored
+  memory capacity). ingestion-normalization rollups gain
+  `max_memory_used_mb` and `memory_total_mb` (DCGM FB_USED + FB_FREE), with
+  an in-place `ALTER TABLE` migration for existing volumes. `ceiling.py`:
+  candidate's usable memory (spec GB x 1024 x 0.93) must hold peak x 1.10.
+  Workloads holding >= 85% of their GPU (vLLM default 0.9, TensorFlow) and
+  windows where any hour lacks a peak keep the "memory fit not checked"
+  caution with the reason. Tests: 2 rollup, 1 migration, 7 ceiling, 3
+  estimator, 1 end-to-end (raw DCGM -> L4 instead of T4). Still not
+  solved: true need for pre-allocating servers (would need model weight
+  size from the pod spec / vLLM config).
 
 - **`ceiling.py` memory-speed aware: BUILT and RE-TESTED 2026-10-04 --
   held out of sample, conservatively.** No A10/L4/V100 on vast.ai, so the

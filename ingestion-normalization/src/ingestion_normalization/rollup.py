@@ -51,6 +51,13 @@ class RollupRecord:
     # from avg_effective_tflops, which is impossible when utilization is 0.
     gpu_model: str | None
     fp16_tflops: float | None
+    # Peak framebuffer memory used in the bucket, and the GPU's usable
+    # memory size as reported by DCGM (used + free on the same sample).
+    # savings-estimator's right-sizing needs the peak, not the average, to
+    # decide whether a workload fits a smaller GPU. Defaults keep older
+    # callers (and rows written before these columns existed) valid.
+    max_memory_used_mb: float | None = None
+    memory_total_mb: float | None = None
 
 
 def bucket_start_for(ts: float, bucket_seconds: int) -> float:
@@ -115,6 +122,12 @@ def compute_rollups(
                 avg_effective_tflops=_avg([i.effective_tflops for i in items]),
                 gpu_model=items[0].gpu_model,
                 fp16_tflops=items[0].fp16_tflops,
+                max_memory_used_mb=_max([i.memory_used_mb for i in items]),
+                memory_total_mb=_max([
+                    i.memory_used_mb + i.memory_free_mb
+                    for i in items
+                    if i.memory_used_mb is not None and i.memory_free_mb is not None
+                ]),
             )
         )
     return rollups

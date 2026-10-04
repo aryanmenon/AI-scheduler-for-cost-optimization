@@ -1,3 +1,5 @@
+import pytest
+
 from ingestion_normalization.normalizer import NormalizedRecord
 from ingestion_normalization.rollup import bucket_start_for, compute_rollups
 
@@ -110,3 +112,21 @@ def test_hourly_and_daily_granularities_use_larger_buckets():
     assert len(hourly) == 1
     assert hourly[0].sample_count == 12
     assert hourly[0].coverage_ratio == 1.0
+
+
+def test_rollup_keeps_peak_memory_and_gpu_memory_size():
+    # Right-sizing needs the peak, not the average: a workload that spikes
+    # to 9 GB once an hour does not fit an 8 GB GPU, whatever its mean.
+    records = [_record(scraped_at=i * 30, memory_used_mb=used, memory_free_mb=24576.0 - used)
+               for i, used in enumerate([2000.0, 9000.0, 3000.0])]
+    rollup = compute_rollups(records, "hourly", scrape_interval_seconds=30)[0]
+    assert rollup.max_memory_used_mb == 9000.0
+    assert rollup.avg_memory_used_mb == pytest.approx(14000.0 / 3)
+    assert rollup.memory_total_mb == 24576.0
+
+
+def test_rollup_memory_fields_are_none_without_samples():
+    records = [_record(scraped_at=0, memory_used_mb=None, memory_free_mb=None)]
+    rollup = compute_rollups(records, "hourly", scrape_interval_seconds=30)[0]
+    assert rollup.max_memory_used_mb is None
+    assert rollup.memory_total_mb is None

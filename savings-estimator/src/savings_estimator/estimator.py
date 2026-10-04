@@ -117,10 +117,12 @@ def estimate_for_finding(
     if finding.category == IDLE:
         return _estimate_idle(finding, price)
     if finding.category == OVER_PROVISIONED:
-        return _estimate_over_provisioned(finding, capability, price, config, rate_overrides)
+        return _estimate_over_provisioned(finding, capability, price, config, rate_overrides,
+                                          rollup_rows=rollup_rows)
     if finding.category == OVERSIZED_BY_AVERAGE:
         return _estimate_over_provisioned(
             finding, capability, price, config, rate_overrides,
+            rollup_rows=rollup_rows,
             target_pct=config.avg_load_target_utilization_pct,
             load_basis="busiest-hour average utilization (bursts within an hour aren't visible, "
                        "hence the stricter target)",
@@ -174,9 +176,22 @@ def _estimate_idle(finding: FindingRow, price) -> SavingsEstimate:
     )
 
 
+def _memory_evidence(rollup_rows: list[RollupRow]) -> tuple[float | None, float | None]:
+    """(peak memory used, GPU usable memory) in MiB across the finding's
+    window. The peak only counts when every row carries one: a window that
+    mixes in pre-upgrade rows (NULL) could hide a bigger peak, and an
+    understated peak is exactly the error that causes an OOM."""
+    peaks = [r.max_memory_used_mb for r in rollup_rows]
+    if not peaks or any(p is None for p in peaks):
+        return None, None
+    totals = [r.memory_total_mb for r in rollup_rows if r.memory_total_mb is not None]
+    return max(peaks), (max(totals) if totals else None)
+
+
 def _estimate_over_provisioned(
     finding: FindingRow, capability, price, config: Config, rate_overrides: dict[str, float],
     target_pct: float | None = None, load_basis: str = "peak utilization",
+    rollup_rows: list[RollupRow] | None = None,
 ) -> SavingsEstimate:
     # Shared by OVER_PROVISIONED (metric_value = peak utilization %, sized
     # to the SLA target) and OVERSIZED_BY_AVERAGE (metric_value = busiest
@@ -200,10 +215,13 @@ def _estimate_over_provisioned(
             "would misprice the recommendation",
         )
 
+    peak_mem, total_mem = _memory_evidence(rollup_rows or [])
     rec = right_sized_capability(
         capability.fp16_tflops, finding.metric_value, target_pct,
         current_mem_bandwidth_gbps=capability.mem_bandwidth_gbps,
         current_mem_capacity_gb=capability.mem_capacity_gb,
+        peak_memory_used_mib=peak_mem,
+        current_memory_total_mib=total_mem,
     )
 
     if rec.recommended is None:

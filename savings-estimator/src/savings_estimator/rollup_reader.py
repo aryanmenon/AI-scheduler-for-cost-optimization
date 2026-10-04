@@ -30,6 +30,10 @@ class RollupRow:
     gpu_model: str | None
     fp16_tflops: float | None
     coverage_ratio: float
+    # Peak memory used and the GPU's usable memory (DCGM used + free), MiB.
+    # None for rows written before ingestion-normalization added them.
+    max_memory_used_mb: float | None = None
+    memory_total_mb: float | None = None
 
 
 class RollupReader:
@@ -78,6 +82,8 @@ class RollupReader:
             gpu_model=row["gpu_model"],
             fp16_tflops=row["fp16_tflops"],
             coverage_ratio=row["coverage_ratio"],
+            max_memory_used_mb=row["max_memory_used_mb"] if "max_memory_used_mb" in row.keys() else None,
+            memory_total_mb=row["memory_total_mb"] if "memory_total_mb" in row.keys() else None,
         )
 
     def close(self) -> None:
