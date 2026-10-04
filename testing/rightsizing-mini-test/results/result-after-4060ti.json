@@ -1,0 +1,42 @@
+{
+    "label": "after-4060ti",
+    "gpu_name": "NVIDIA GeForce RTX 4060 Ti",
+    "driver": "580.95.05",
+    "gpu_memory_mib": 16380.0,
+    "vllm": "0.8.5.post1",
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "gpu_mem_fraction": 0.75,
+    "keep_fraction": 0.05,
+    "minutes": 15.0,
+    "util": {
+        "samples": 900,
+        "mean_pct": 45.69,
+        "p95_1s_pct": 94.0,
+        "max_1s_pct": 100.0,
+        "product_peak_median_pct": 94.0,
+        "product_peak_max_pct": 100.0,
+        "memory_used_max_mib": 12498.0
+    },
+    "load": {
+        "requests": 237,
+        "ok": 237,
+        "errors": 0,
+        "error_rate": 0.0,
+        "latency_p50_s": 3.460010290145874,
+        "latency_p95_s": 3.8001744747161865,
+        "latency_p99_s": 3.8904359340667725,
+        "latency_mean_s": 2.5921307153339628,
+        "start_lag_p95_s": 0.012440919876098633,
+        "output_tokens": 43211,
+        "output_tokens_per_s": 48.03314650500518,
+        "wall_seconds": 899.6079404354095,
+        "label": "after-4060ti",
+        "loops": 1,
+        "model": "main",
+        "target": "http://localhost:8000",
+        "speed": 1.0,
+        "keep_fraction": 0.05,
+        "started": 1791127804.7284942,
+        "ended": 1791128704.3367712
+    }
+}

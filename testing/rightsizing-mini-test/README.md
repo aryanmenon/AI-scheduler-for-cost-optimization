@@ -26,24 +26,40 @@ full `compare.py` output).
   ran in a uv-made Python 3.12 venv (`pip install uv && uv venv --seed -p
   3.12 /content/v`, then run with `/content/v/bin/python`).
 
-### Fix built (2026-10-04) -- awaiting an out-of-sample re-test
+### Fix built and re-tested out of sample (2026-10-04): HELD, conservatively
 
 `ceiling.py` now requires the target GPU to fit on both FP16 TFLOPS and
 memory bandwidth (required = current x peak / 70% for each), and every
 recommendation states an expected latency factor F = max(1, compute drop,
-bandwidth drop), shown in the recommended action ("each request may take up
-to ~Fx longer -- fine for batch/offline work, check latency targets before
-moving an interactive service"). For this 3090 workload at the highest peak
-the product would flag (30%), it now recommends an **A10** (600 GB/s,
-F = 1.56x) instead of a T4/L4.
+bandwidth drop) in the recommended action ("each request may take up to ~Fx
+longer -- fine for batch/offline work, check latency targets before moving an
+interactive service"). For this 3090 workload at the highest peak the product
+would flag (30%), it now recommends an **A10** (600 GB/s, F = 1.56x) instead
+of a T4/L4.
 
-`compare.py` now checks the product's promise for whatever GPU the "after"
-run used: throughput/errors/queueing kept up, busy % and p95 latency rose by
-no more than F (+15% tolerance). Re-run on the existing T4 data: all checks
-pass (`results/compare-output-after-fix.txt`) -- but that is in-sample (the
-fix was derived from it). **The real check is a new GPU: the A10.** Re-use
-`result-before.json`; run the "after" side on an A10 with the same settings
-as the 3090 (`--gpu-mem 0.50`, 24 GB).
+`compare.py` checks the product's promise for whatever GPU the "after" run
+used: kept up (throughput, errors, queueing) and busy % / p95 latency rose by
+no more than F (+15%). No A10/L4/V100 was available, so the out-of-sample
+check used an **RTX 4060 Ti** -- 1.24x *more* compute but 3.25x *less*
+memory bandwidth than the 3090, so the two sizing models disagree on
+direction:
+
+| vs RTX 3090 (same 237 requests, 0 errors) | T4 (in-sample) | RTX 4060 Ti (out-of-sample) |
+|---|---|---|
+| old TFLOPS-only prediction | 1.09x | 0.80x (faster) |
+| fixed prediction (up to F) | 2.92x | 3.25x |
+| measured busy % (mean) | 2.54x (21.4 -> 54.3%) | 2.14x (21.4 -> 45.7%) |
+| measured latency p95 | 2.33x (2.21 -> 5.16 s) | 1.72x (2.21 -> 3.80 s) |
+| throughput | 1.00x | 1.00x |
+| fixed product's promise | held | held |
+
+The old logic was wrong in the unsafe direction both times (on the 4060 Ti it
+predicted faster; it was 1.7x slower). The fix never under-predicted, but it
+over-predicted on the 4060 Ti by ~1.5-1.9x (Ada's large L2 cache softens the
+bandwidth penalty), so it will sometimes understate savings and over-warn on
+latency -- the safe side. Not yet tested: the actual A10 recommendation on a
+datacenter GPU, other models, training workloads, longer runs. Outputs:
+`results/compare-output-after-fix.txt` (T4), `results/compare-output-4060ti.txt`.
 
 ## Files
 - `rightsize_minitest.py` -- one side: installs vllm 0.8.5.post1 if missing,

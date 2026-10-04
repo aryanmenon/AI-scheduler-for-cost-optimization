@@ -379,7 +379,7 @@ fixes and the multi-GPU signal below; `...-w4zbhb` does not have those.
   - Not a product recommendation tested literally (the product wouldn't
     flag this load); it tests the assumption every right-sizing number
     rests on. One model, 15 min, two hosts, single run.
-  - Fix built the same day (section 4); out-of-sample A10 re-test pending.
+  - Fix built the same day and re-tested on an RTX 4060 Ti: held (section 4).
 
 ## 2. What's in progress right now
 
@@ -764,8 +764,15 @@ debugging real problems as they come up, not running anything myself.
 
 ### Open product items (decided or discussed 2026-09-29 to 2026-10-01, not built)
 
-- **`ceiling.py` memory-speed aware: BUILT 2026-10-04, awaiting A10
-  re-test.** Target must fit on both FP16 TFLOPS and memory bandwidth;
+- **`ceiling.py` memory-speed aware: BUILT and RE-TESTED 2026-10-04 --
+  held out of sample, conservatively.** No A10/L4/V100 on vast.ai, so the
+  re-test used an RTX 4060 Ti (1.24x more compute, 3.25x less bandwidth
+  than the 3090): old logic predicted 0.80x (faster); fixed predicted up to
+  3.25x; measured busy 2.14x, p95 latency 1.72x, throughput 1.00x, 0
+  errors. Fix never under-predicts (T4 in-sample 2.92x vs 2.54x/2.33x);
+  over-predicts on the 4060 Ti (large L2), so savings may be understated.
+  Still untested: the A10 recommendation itself, other models, training.
+  Details in `testing/rightsizing-mini-test/README.md`. Target must fit on both FP16 TFLOPS and memory bandwidth;
   `RightSizingRecommendation` gained `required_mem_bandwidth_gbps` and
   `expected_latency_factor` (max of compute and bandwidth drops); the
   estimator passes the current GPU's bandwidth and the recommended action
