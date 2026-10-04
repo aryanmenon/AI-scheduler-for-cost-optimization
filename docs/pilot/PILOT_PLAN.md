@@ -51,5 +51,5 @@ commands and leaves nothing behind.
 
 ## After the pilot
 
-No obligation. If it's useful, we'll propose pricing based on what it
-saved you in the pilot.
+No obligation. If it's useful, we'll propose pricing at the week 4
+results call, once we've both seen what the pilot measured.

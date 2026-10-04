@@ -70,9 +70,11 @@ def workload_hour(node, gpu, h, rng):
     return "batch", "video-transcode", 82 + rng.uniform(-5, 5), 98.0, 12000.0  # healthy T4
 
 
-def main() -> None:
+def build(tmp: str):
+    """Run the real pipeline over the fictional cluster in `tmp`; return
+    (estimates, summary). integration-tests/tests/test_sample_report.py
+    pins the result, so a change that skews the money fails CI."""
     rng = random.Random(42)
-    tmp = tempfile.mkdtemp()
     normalized, findings, savings = (os.path.join(tmp, n) for n in ("n.db", "f.db", "s.db"))
 
     rows = []
@@ -108,11 +110,16 @@ def main() -> None:
     fr.close(); sr.close(); ss.close()
 
     estimates = ReportReader(savings).all_estimates()
+    return estimates, aggregate(estimates, top_n=15)
+
+
+def main() -> None:
+    estimates, summary = build(tempfile.mkdtemp())
     if os.environ.get("DUMP"):
         for e in sorted(estimates, key=lambda e: (e.category, e.workload or "")):
             print(f"{e.category:22} {e.workload or '-':18} {e.node}/{e.gpu_index} "
                   f"{(e.window_end - e.window_start) / 3600:5.0f}h Rs{e.amount_inr or 0:>11,.0f} {e.basis} | {e.recommended_action[:90]}")
-    html = render_report(aggregate(estimates, top_n=15))
+    html = render_report(summary)
     banner = ('<div style="background:#7c2d12;color:#fff;padding:10px 16px;font:600 14px sans-serif">'
               "SAMPLE REPORT &middot; fictional 7-GPU cluster, 8 days of made-up utilization &middot; "
               "every finding and &#8377; figure below is computed by the product's real pipeline &middot; "
