@@ -804,11 +804,17 @@ Ordered roughly by what was recommended first:
   scenario. Pinned images: vllm/vllm-openai:v0.8.5.post1,
   pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime (both confirmed on Docker
   Hub); driver must be >= 550.
-- **Use an existing dcgm-exporter (Helm value)** -- small (~hours). The
-  collector's DCGM_EXPORTER_URL is hard-coded to the chart's own service
-  (`templates/collector.yaml:8`); `dcgmExporter.enabled: false` exists but
-  there's no way to point at a cluster's GPU-Operator dcgm-exporter.
-  Main blocker for neocloud/managed GPU clusters.
+- **Use an existing dcgm-exporter: BUILT 2026-10-04 (not yet run on a
+  GPU Operator cluster).** `dcgmExporter.enabled: false` now uses
+  `dcgmExporter.external`: either `url` (used as-is) or `namespace` +
+  `podSelector` (defaults `gpu-operator` / `app: nvidia-dcgm-exporter`),
+  for which the chart renders a *headless* Service in that namespace
+  (`templates/dcgm-exporter-external.yaml`) so DNS returns every node's
+  exporter pod -- the GPU Operator's own Service is a normal ClusterIP one
+  and would reintroduce the one-node-per-cycle starvation bug. Collector
+  still has no API access. Misconfiguration fails at `helm install` with
+  a clear message. Verified with `helm lint` / `helm template` (default,
+  selector, url, misconfigured, all overlays).
 - **Optional ~1h alternative to step B:** keep fragmentation on the
   dashboard but out of the headline ₹ total. Recommended before pilots;
   not chosen yet.

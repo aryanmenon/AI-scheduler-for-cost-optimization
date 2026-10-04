@@ -5,7 +5,7 @@ metadata:
   labels:
     {{- include "gpu-telemetry-collector.labels" . | nindent 4 }}
 data:
-  DCGM_EXPORTER_URL: "http://{{ include "gpu-telemetry-collector.fullname" . }}-dcgm-exporter:9400/metrics"
+  DCGM_EXPORTER_URL: {{ include "gpu-telemetry-collector.dcgmExporterUrl" . | quote }}
   KUBE_STATE_METRICS_URL: "http://{{ include "gpu-telemetry-collector.fullname" . }}-kube-state-metrics:8080/metrics"
   TELEMETRY_SQLITE_PATH: "/data/telemetry.db"
   SCRAPE_INTERVAL_SECONDS: {{ .Values.collector.scrapeIntervalSeconds | quote }}

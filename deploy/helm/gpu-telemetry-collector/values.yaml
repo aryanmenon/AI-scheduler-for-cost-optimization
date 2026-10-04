@@ -204,7 +204,32 @@ persistence:
   size: 5Gi
 
 dcgmExporter:
+  # true: this chart runs its own dcgm-exporter DaemonSet. Set false on a
+  # cluster that already runs one (NVIDIA GPU Operator, a neocloud's
+  # managed stack) -- two exporters on one GPU node fight over the DCGM
+  # host engine -- and fill in `external` below instead.
   enabled: true
+  # Used only when enabled: false. Point the collector at the cluster's
+  # existing exporter in one of two ways:
+  #  1. external.namespace + external.podSelector (recommended): the chart
+  #     creates a small *headless* Service in that namespace selecting the
+  #     existing exporter pods, so DNS returns every node's pod IP and the
+  #     collector scrapes each node. The GPU Operator's own Service is a
+  #     normal ClusterIP one; scraping it directly would reach a single
+  #     random node per cycle and silently starve the others (the bug
+  #     behind metrics_client.resolve_targets). Defaults match a stock GPU
+  #     Operator install. Creating this Service happens at install time,
+  #     by whoever runs helm -- the collector itself still gets no
+  #     Kubernetes API access.
+  #  2. external.url: a full metrics URL used as-is (e.g. an exporter that
+  #     is already behind a headless Service, or a single-node cluster).
+  #     Takes precedence over option 1.
+  external:
+    url: ""
+    namespace: gpu-operator
+    podSelector:
+      app: nvidia-dcgm-exporter
+    port: 9400
   image:
     repository: nvcr.io/nvidia/k8s/dcgm-exporter
     tag: "3.3.5-3.4.1-ubuntu22.04"

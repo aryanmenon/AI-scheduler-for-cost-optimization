@@ -239,6 +239,20 @@ cluster:
   kubectl label node <node-name> nvidia.com/gpu.present=true
   ```
 
+**Cluster that already runs a dcgm-exporter** (NVIDIA GPU Operator, most
+managed GPU clusters): don't run a second one. Turn the chart's off and let
+it put a headless Service in front of the existing pods, so every GPU node
+gets scraped (defaults match a stock GPU Operator install):
+
+```bash
+helm install gpu-telemetry deploy/helm/gpu-telemetry-collector \
+  --namespace gpu-optimizer --create-namespace \
+  --set dcgmExporter.enabled=false
+# non-default install: --set dcgmExporter.external.namespace=<ns> and
+#   --set-json 'dcgmExporter.external.podSelector={"app":"<label>"}'
+# or point at a URL directly: --set dcgmExporter.external.url=http://...
+```
+
 Images are built and published to GHCR by `.github/workflows/ci.yml`'s
 `docker-build` job on every push to this repo's default branch (`:latest`
 and `:<git-sha>` tags); `values.yaml`'s five `image.tag` fields default to
