@@ -20,6 +20,12 @@ both is conservative for either kind of workload.
 Even a capacity-correct downsize makes each request slower when the target
 GPU is weaker on either axis, so every recommendation carries an expected
 latency factor: the larger of the compute and memory-bandwidth drops.
+
+GPU memory *capacity* is not checked: used memory overstates need for the
+workloads this matters most for (vLLM pre-allocates ~90% of the GPU,
+PyTorch caches freed memory). So whenever the recommended GPU has less
+memory than the current one, the recommendation says plainly that fit
+was not checked. A target with at least as much memory always fits.
 """
 from __future__ import annotations
 
@@ -38,6 +44,9 @@ class RightSizingRecommendation:
     # Upper estimate of how much slower each request gets on the
     # recommended GPU (>= 1.0); None when nothing is recommended.
     expected_latency_factor: float | None = None
+    # True when the recommended GPU has less memory than the current one,
+    # so the workload may not fit (unchecked -- see module docstring).
+    memory_fit_unchecked: bool = False
 
 
 def latency_note(factor: float | None) -> str:
@@ -48,11 +57,30 @@ def latency_note(factor: float | None) -> str:
             f"check latency targets before moving an interactive service")
 
 
+def memory_note(current_gb: float | None, target_gb: float | None) -> str | None:
+    """Caution when the target GPU has less memory; None when it can't matter."""
+    if current_gb and target_gb and target_gb >= current_gb:
+        return None
+    if current_gb and target_gb:
+        return (f"memory fit not checked -- the target has {target_gb:.0f} GB vs {current_gb:.0f} GB now; "
+                f"confirm model weights and working memory fit")
+    return "memory fit not checked -- confirm model weights and working memory fit the target GPU"
+
+
+def recommendation_cautions(rec: "RightSizingRecommendation") -> str:
+    """The cautions every downsize recommendation carries, for one-line display."""
+    parts = [latency_note(rec.expected_latency_factor)]
+    if rec.memory_fit_unchecked:
+        parts.append("memory fit not checked")
+    return "; ".join(parts)
+
+
 def right_sized_capability(
     current_fp16_tflops: float,
     observed_peak_utilization_pct: float,
     sla_target_utilization_pct: float,
     current_mem_bandwidth_gbps: float | None = None,
+    current_mem_capacity_gb: float | None = None,
 ) -> RightSizingRecommendation:
     """What's the smallest known SKU that keeps this workload's peak load
     at or below the SLA target, given its current peak on its current GPU?
@@ -110,12 +138,14 @@ def right_sized_capability(
     if current_mem_bandwidth_gbps and smallest.mem_bandwidth_gbps:
         drops.append(current_mem_bandwidth_gbps / smallest.mem_bandwidth_gbps)
     latency_factor = max(1.0, *drops)
+    mem_note = memory_note(current_mem_capacity_gb, smallest.mem_capacity_gb)
     detail = (
         f"peak demand sized to a {sla_target_utilization_pct:.0f}% ceiling needs {needs}; "
         f"recommends {smallest.canonical_name} ({smallest.fp16_tflops:.0f} TFLOPS"
         + (f", {smallest.mem_bandwidth_gbps:.0f} GB/s" if smallest.mem_bandwidth_gbps else "") + ")"
         + ("" if required_bw else " -- memory bandwidth not checked (unknown for the current GPU)")
         + f"; {latency_note(latency_factor)}"
+        + (f"; {mem_note}" if mem_note else "")
     )
     return RightSizingRecommendation(
         required_fp16_tflops=required_fp16_tflops,
@@ -123,4 +153,5 @@ def right_sized_capability(
         detail=detail,
         required_mem_bandwidth_gbps=required_bw,
         expected_latency_factor=latency_factor,
+        memory_fit_unchecked=mem_note is not None,
     )

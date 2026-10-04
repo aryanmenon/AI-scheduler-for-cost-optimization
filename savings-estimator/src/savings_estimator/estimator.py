@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from ingestion_normalization.capability import lookup_capability
 
-from savings_estimator.ceiling import latency_note, right_sized_capability
+from savings_estimator.ceiling import recommendation_cautions, right_sized_capability
 from savings_estimator.config import Config
 from savings_estimator.estimate import (
     BASIS_OBSERVED_WINDOW,
@@ -203,6 +203,7 @@ def _estimate_over_provisioned(
     rec = right_sized_capability(
         capability.fp16_tflops, finding.metric_value, target_pct,
         current_mem_bandwidth_gbps=capability.mem_bandwidth_gbps,
+        current_mem_capacity_gb=capability.mem_capacity_gb,
     )
 
     if rec.recommended is None:
@@ -227,7 +228,7 @@ def _estimate_over_provisioned(
         basis=BASIS_PROJECTED_MONTHLY,
         amount_inr=monthly_savings,
         recommended_action=(
-            f"right-size to {rec.recommended.canonical_name} ({latency_note(rec.expected_latency_factor)})"
+            f"right-size to {rec.recommended.canonical_name} ({recommendation_cautions(rec)})"
         ),
         methodology=(
             f"sized on {load_basis} {finding.metric_value:.1f}%: {rec.detail}; "

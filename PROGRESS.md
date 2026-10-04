@@ -784,13 +784,17 @@ debugging real problems as they come up, not running anything myself.
 
 ### Open product items (decided or discussed 2026-09-29 to 2026-10-01, not built)
 
-- **Right-sizing ignores GPU memory capacity (found 2026-10-04, not built).**
+- **Right-sizing ignores GPU memory capacity (found 2026-10-04; caution BUILT, real check not built).**
   `ceiling.py` checks TFLOPS and memory bandwidth but not whether the
   workload's memory fits the target (e.g. an A100 80GB job can be told to
   move to a 16 GB V100/T4). Rollups carry avg_memory_used_mb, but vLLM
   pre-allocates ~90% of GPU memory and PyTorch caches freed memory, so used
-  memory overstates need for exactly the workloads this matters for. Until
-  fixed, every downsize recommendation should say memory fit is unchecked.
+  memory overstates need for exactly the workloads this matters for.
+  Interim caution built 2026-10-04: when the target GPU has less memory
+  than the current one (or the current capacity is unknown), the detail
+  says "memory fit not checked -- the target has X GB vs Y GB now" and the
+  recommended action ends "; memory fit not checked)". A real check would
+  need model-weight size (e.g. from the serving pod's config), not used memory.
 
 - **`ceiling.py` memory-speed aware: BUILT and RE-TESTED 2026-10-04 --
   held out of sample, conservatively.** No A10/L4/V100 on vast.ai, so the

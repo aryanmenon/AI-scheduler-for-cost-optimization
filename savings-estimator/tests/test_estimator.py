@@ -87,6 +87,9 @@ def test_over_provisioned_recommends_smaller_sku_and_monthly_savings():
     # bandwidth, so the action must warn that requests get slower.
     assert "longer" in estimate.recommended_action
     assert "GB/s" in estimate.methodology
+    # A T4 (16 GB) has far less memory than an A100 80GB, and fit isn't checked.
+    assert estimate.recommended_action.endswith("; memory fit not checked)")
+    assert "16 GB vs 80 GB" in estimate.methodology
 
 
 def test_over_provisioned_high_peak_may_yield_zero_savings():
