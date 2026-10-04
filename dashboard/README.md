@@ -28,12 +28,14 @@ they're always identical for the same underlying data.
 ## What the report shows, and why it's split the way it is
 
 - **Two headline numbers, never added together**: "Projected Monthly
-  Savings" (over-provisioned/fragmented/recurring-pattern findings,
+  Savings" (over-provisioned/oversized-by-average/recurring-pattern findings,
   extrapolated from a sustained observed rate) and "Already-Wasted Spend
   Observed" (idle findings, priced strictly against their own observed
   window). Combining a monthly rate with a one-off observed figure would
   produce a number that overstates both -- see
-  `../savings-estimator/README.md`'s basis table for the full reasoning
+  `../savings-estimator/README.md`'s basis table for the full reasoning.
+  Fragmentation and multi-GPU "fewer GPUs" findings are review candidates
+  (upper bounds) shown below the headline, never in it
   this report inherits. The projected headline counts each GPU once, at
   its largest estimate: right-sizing and consolidating the same GPU are
   alternatives, not additive savings.

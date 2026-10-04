@@ -264,9 +264,13 @@ def _estimate_fragmented(finding: FindingRow, rollup_rows: list[RollupRow], pric
     wasted_fraction = max(0.0, 1 - avg_util / 100.0) * config.fragmentation_capture_fraction
     monthly_savings = price.hourly_inr * wasted_fraction * config.hours_per_month
 
+    # Upper-bound review candidate, kept out of the headline (like
+    # multi_gpu_oversized): GPU-sharing support, memory fit and combined
+    # compute are unchecked, and each finding is one streak (e.g. one quiet
+    # night) projected as if it lasted all month.
     return SavingsEstimate(
         **_base_kwargs(finding),
-        basis=BASIS_PROJECTED_MONTHLY,
+        basis=BASIS_VISIBILITY_UPPER_BOUND,
         amount_inr=monthly_savings,
         recommended_action=(
             "review whether this workload can share a GPU with the other underutilized workloads "

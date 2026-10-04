@@ -31,6 +31,7 @@ total_rollup_rows = data["rollup_row_count"]
 
 # key -> list of (start, end) intervals to merge
 intervals = {}
+headline_intervals = {}
 
 
 def add(finding, start=None, end=None):
@@ -38,6 +39,10 @@ def add(finding, start=None, end=None):
     s = finding.window_start if start is None else start
     e = finding.window_end if end is None else end
     intervals.setdefault(key, []).append((s, e))
+    # Fragmentation is a review candidate kept out of the dashboard's
+    # headline since 2026-10-04; track the headline-eligible hours apart.
+    if finding.category != "fragmented":
+        headline_intervals.setdefault(key, []).append((s, e))
 
 
 pattern_re = re.compile(r"on (\d+)/(\d+) observed days")
@@ -60,16 +65,21 @@ for finding in data["recurring_pattern"]:
     for i in range(n_days):
         add(finding, start=finding.window_start + i * BUCKET, end=finding.window_start + (i + 1) * BUCKET)
 
-total_flagged_hours = 0.0
-for key, ivs in intervals.items():
-    ivs.sort()
-    merged = []
-    for s, e in ivs:
-        if merged and s <= merged[-1][1]:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
-        else:
-            merged.append((s, e))
-    total_flagged_hours += sum((e - s) / BUCKET for s, e in merged)
+def merged_hours(by_key):
+    total = 0.0
+    for ivs in by_key.values():
+        merged = []
+        for s, e in sorted(ivs):
+            if merged and s <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+            else:
+                merged.append((s, e))
+        total += sum((e - s) / BUCKET for s, e in merged)
+    return total
+
+
+total_flagged_hours = merged_hours(intervals)
+headline_flagged_hours = merged_hours(headline_intervals)
 
 # multi_gpu_oversized is visibility-only (an upper bound sized on hourly
 # averages) and is reported separately, never folded into the flagged-waste
@@ -100,6 +110,8 @@ print(f"total observed GPU-workload-hours (rollup rows): {total_rollup_rows}")
 print(f"distinct (node,gpu,ns,workload) keys with >=1 finding: {len(intervals)}")
 print(f"total flagged hours (merged, no double-counting overlap): {total_flagged_hours:.0f}")
 print(f"fraction of observed capacity-hours flagged as some form of waste: {100*total_flagged_hours/total_rollup_rows:.1f}%")
+print(f"  of which with a headline recommendation (idle, over-provisioned, oversized-by-average, recurring; "
+      f"fragmentation is a review candidate): {100*headline_flagged_hours/total_rollup_rows:.1f}%")
 if "multi_gpu_oversized" in data:
     print(f"multi-GPU oversized findings (visibility only, NOT in the figure above): {len(data['multi_gpu_oversized'])}")
     print(f"  releasable GPU-hours (upper bound): {multi_total:.0f} ({100*multi_total/total_rollup_rows:.1f}%), "
@@ -150,10 +162,11 @@ if os.path.exists(rollups_path) and "underutilized" in data:
         rollup_rows = pickle.load(f)
 
     tiers = [
-        ("actionable (idle, over-provisioned, oversized-by-average, recurring, fragmentation)",
+        ("actionable (idle, over-provisioned, oversized-by-average, recurring)",
          covered_units(data["idle"] + data["over_provisioned"] + data.get("oversized_by_average", [])
-                       + data["fragmented"] + data["recurring_pattern"])),
-        ("multi-GPU jobs, could use fewer GPUs (review)", covered_units(data["multi_gpu_oversized"])),
+                       + data["recurring_pattern"])),
+        ("review candidates (fragmentation, multi-GPU fewer GPUs)",
+         covered_units(data["fragmented"] + data["multi_gpu_oversized"])),
         ("detected, no recommendation yet", covered_units(data["underutilized"] + data["unattributed_gpu_time"])),
     ]
     by_tier = [0.0] * len(tiers)

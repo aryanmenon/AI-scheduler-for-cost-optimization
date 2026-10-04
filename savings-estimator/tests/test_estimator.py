@@ -153,7 +153,8 @@ def test_fragmented_priced_with_capture_discount():
     config = _config(fragmentation_capture_fraction=0.5)
     estimate = estimate_for_finding(finding, rows, config, {})
     assert estimate.priceable
-    assert estimate.basis == BASIS_PROJECTED_MONTHLY
+    # A review candidate, never in the headline (see estimator.py).
+    assert estimate.basis == "visibility_upper_bound"
     # wasted_fraction = (1 - 0.20) * 0.5 = 0.40; monthly = 300.00 * 0.40 * 730
     assert estimate.amount_inr == 300.00 * 0.40 * 730.0
 

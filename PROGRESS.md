@@ -145,7 +145,7 @@ fixes and the multi-GPU signal below; `...-w4zbhb` does not have those.
   releasable capacity (7.0% not already flagged) -- an upper bound, never
   added to the 16.7%. The "no recommendation yet" tier adds 13.4% of
   GPU-hours below the 70% target (2.5% of capacity), also separate.
-  **Use 16.7% (floor 14.7%) when quoting Philly.**
+  **Superseded 2026-10-04: quote 15.6% of GPU-hours with a headline recommendation (fragmentation moved to review tier), 23.0% of capacity detected in total.**
   **Total waste, all tiers in one unit** (GPU capacity unused below the
   70% target; `summarize.py` with `rollups.pkl`): total waste **27.0% of
   capacity**, of which **23.0% detected (85%)** -- actionable 11.1%,
@@ -784,6 +784,28 @@ debugging real problems as they come up, not running anything myself.
 
 ### Open product items (decided or discussed 2026-09-29 to 2026-10-01, not built)
 
+- **Pilot pack + headline fixes (2026-10-04).** `docs/pilot/`: PILOT_PLAN.md
+  (prospect-facing pilot terms), PILOT_GUIDE.md (install/security/uninstall,
+  commands verified against `helm template`), OUTREACH.md (internal: ICP,
+  evidence-backed claims, templates, objections), README.md (founder-only
+  decisions: image access, chart delivery, token rotation, pricing, NDA,
+  credits), sample-report.html from `make_sample_report.py` (real pipeline
+  over a fictional 8-day 7-GPU cluster). The sample report exposed two
+  headline bugs, both fixed: (1) **fragmentation moved to the review tier**
+  (`visibility_upper_bound`, founder chose this): each finding was one
+  streak (e.g. one quiet night) projected as a full month, ~Rs1.09L/mo per
+  night on one GPU, Rs18.8L/mo category total for a ~Rs15L/mo cluster;
+  (2) **recurring-pattern hour slots now add up per GPU** in the headline
+  (were max'd like alternatives: 10 quiet hours counted as 1, a 10x
+  undercount). Sample headline now Rs2,76,150/mo, hand-verified.
+  Security audit for the guide: only outbound calls are in-cluster scrapes
+  + optional webhook; product containers non-root/read-only rootfs; the
+  chart's dcgm-exporter is privileged + SYS_ADMIN (avoid via
+  dcgmExporter.enabled=false on GPU Operator clusters). Philly re-quoted:
+  15.6% of GPU-hours with a headline recommendation, 10.7% of capacity
+  actionable, 9.8% review, 2.5% no-recommendation, 23.0% total detected.
+  Known remaining: review-tier fragmentation still projects each streak as
+  a month (labeled upper bound) and fires on idle GPUs too.
 - **GPU memory-fit check: BUILT 2026-10-04** (was: right-sizing ignored
   memory capacity). ingestion-normalization rollups gain
   `max_memory_used_mb` and `memory_total_mb` (DCGM FB_USED + FB_FREE), with

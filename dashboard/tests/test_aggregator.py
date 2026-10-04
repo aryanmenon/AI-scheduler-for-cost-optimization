@@ -152,3 +152,23 @@ def test_no_recommendation_tier_summed_separately_and_sorted_last():
     assert summary.observed_window_total_inr == 10.0
     assert summary.visibility_upper_bound_total_inr == 900.0
     assert [r.id for r in summary.top_findings] == [4, 5, 3, 1, 2]
+
+
+def test_recurring_hour_slots_on_one_gpu_add_up_in_the_headline():
+    # Regression: ten quiet hour-of-day slots on one GPU are ten hours of
+    # savings, not alternatives -- taking only the largest single slot
+    # undercounted the headline 10x (sample report, 2026-10-04).
+    rows = [_row(id=i, category="recurring_pattern", basis=BASIS_PROJECTED_MONTHLY, amount_inr=9000.0)
+            for i in range(10)]
+    assert aggregate(rows, top_n=20).projected_monthly_total_inr == 90000.0
+
+
+def test_recurring_total_is_still_one_alternative_among_a_gpus_actions():
+    # Right-sizing the GPU and scaling it down at night overlap: take the
+    # bigger of the two, never their sum.
+    rows = [_row(id=i, category="recurring_pattern", basis=BASIS_PROJECTED_MONTHLY, amount_inr=9000.0)
+            for i in range(3)]
+    rows.append(_row(id=9, category="over_provisioned", basis=BASIS_PROJECTED_MONTHLY, amount_inr=50000.0))
+    assert aggregate(rows, top_n=20).projected_monthly_total_inr == 50000.0
+    rows.append(_row(id=10, category="recurring_pattern", basis=BASIS_PROJECTED_MONTHLY, amount_inr=30000.0))
+    assert aggregate(rows, top_n=20).projected_monthly_total_inr == 57000.0
