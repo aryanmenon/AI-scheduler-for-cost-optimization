@@ -271,7 +271,7 @@ Then **destroy** the instance in vast.ai (stopping still bills storage).
 Rent **1× the GPU from step 7** (any vast.ai instance type is fine; the
 product isn't needed here). Then:
 ```bash
-pip install vllm==0.8.5.post1
+pip install vllm==0.8.5.post1 "transformers==4.51.3" "huggingface-hub<1.0" "tokenizers<0.22"  # newer transformers breaks vllm 0.8.5 startup
 VLLM_USE_V1=0 nohup python3 -m vllm.entrypoints.openai.api_server \
   --model Qwen/Qwen2.5-1.5B-Instruct --served-model-name main --dtype half \
   --max-model-len 4096 --gpu-memory-utilization 0.90 --port 8000 > vllm.log 2>&1 &

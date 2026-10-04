@@ -26,6 +26,10 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 VLLM_VERSION = "0.8.5.post1"  # same pin as the client-cluster kit's image
+# vllm 0.8.5 doesn't cap transformers, and transformers 5.x removed
+# tokenizer.all_special_tokens_extended, which vllm 0.8.5 calls at startup
+# (found on the first real run). Pin the stack from vllm 0.8.5's release.
+COMPAT_PINS = ["transformers==4.51.3", "huggingface-hub<1.0", "tokenizers<0.22"]
 # The product's telemetry collector scrapes DCGM every 30 s by default
 # (deploy/helm/gpu-telemetry-collector/values.yaml scrapeIntervalSeconds),
 # and over_provisioning.py takes the max of those samples as the peak.
@@ -45,13 +49,16 @@ def server_up(port: int) -> bool:
 
 
 def ensure_vllm() -> str:
+    check = ("import vllm, transformers; "
+             "assert transformers.__version__.startswith('4.'), transformers.__version__; "
+             "print(vllm.__version__)")
     try:
-        out = subprocess.run([sys.executable, "-c", "import vllm; print(vllm.__version__)"],
-                             capture_output=True, text=True, check=True)
+        out = subprocess.run([sys.executable, "-c", check], capture_output=True, text=True, check=True)
         return out.stdout.strip()
     except subprocess.CalledProcessError:
-        log(f"installing vllm=={VLLM_VERSION} (several minutes) ...")
-        subprocess.run([sys.executable, "-m", "pip", "install", "-q", f"vllm=={VLLM_VERSION}"], check=True)
+        log(f"installing vllm=={VLLM_VERSION} + {' '.join(COMPAT_PINS)} (several minutes) ...")
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", f"vllm=={VLLM_VERSION}", *COMPAT_PINS],
+                       check=True)
         return VLLM_VERSION
 
 
