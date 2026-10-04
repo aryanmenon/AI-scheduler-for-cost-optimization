@@ -66,6 +66,9 @@ class ReportSummary:
     detected_no_recommendation_total_inr: float = 0.0
 
 
+_RECURRING_PATTERN = "recurring_pattern"
+
+
 def _total_counting_each_gpu_once(priceable: list[EstimateRow], basis: str) -> tuple[float, int]:
     """Projected-monthly recommendations for the same physical GPU are
     alternatives, not additive: you can right-size a GPU or consolidate it
@@ -76,15 +79,26 @@ def _total_counting_each_gpu_once(priceable: list[EstimateRow], basis: str) -> t
 
     Observed-window (idle) amounts are left summed: they're cost already
     incurred during distinct observed windows, which genuinely add up.
+
+    Recurring-pattern findings are the exception: each covers a different
+    hour of the day on the same GPU, so they add up with each other (ten
+    quiet hours save ten hours' cost) while still being one alternative
+    to the GPU's other actions.
     """
     best_by_gpu: dict[tuple, float] = {}
+    recurring_by_gpu: dict[tuple, float] = defaultdict(float)
     estimates_per_gpu: dict[tuple, int] = defaultdict(int)
     for r in priceable:
         if r.basis != basis or r.amount_inr is None:
             continue
         key = (r.node, r.gpu_index, r.gpu_instance_id)
         estimates_per_gpu[key] += 1
-        best_by_gpu[key] = max(best_by_gpu.get(key, 0.0), r.amount_inr)
+        if r.category == _RECURRING_PATTERN:
+            recurring_by_gpu[key] += r.amount_inr
+        else:
+            best_by_gpu[key] = max(best_by_gpu.get(key, 0.0), r.amount_inr)
+    for key, recurring_total in recurring_by_gpu.items():
+        best_by_gpu[key] = max(best_by_gpu.get(key, 0.0), recurring_total)
     overlapping = sum(1 for n in estimates_per_gpu.values() if n > 1)
     return sum(best_by_gpu.values()), overlapping
 

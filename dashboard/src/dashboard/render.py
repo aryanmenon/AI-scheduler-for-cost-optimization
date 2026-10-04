@@ -24,7 +24,7 @@ _CATEGORY_LABELS = {
     "idle": "Idle GPUs",
     "over_provisioned": "Over-Provisioned",
     "oversized_by_average": "Oversized for Its Average Load",
-    "fragmented": "Fragmented Capacity",
+    "fragmented": "Fragmented: Could Share GPUs? (upper bound, not in headline)",
     "recurring_pattern": "Recurring Low-Usage Pattern",
     "multi_gpu_oversized": "Multi-GPU Jobs: Fewer GPUs? (upper bound, not in headline)",
     "underutilized": "Underutilized: No Recommendation Yet",
@@ -146,11 +146,11 @@ def _below_actionable_section(summary: ReportSummary) -> str:
     if summary.visibility_upper_bound_total_inr:
         cards.append(f"""
     <div class="stat-card visibility">
-      <div class="label">Multi-GPU Jobs: Possible Fewer GPUs (Upper Bound)</div>
+      <div class="label">Review Candidates (Upper Bound)</div>
       <div class="value">{_e(_fmt_inr(summary.visibility_upper_bound_total_inr))}/mo</div>
-      <div class="note">Not included in Projected Monthly Savings. Jobs holding several GPUs whose
-        combined hourly-average busy time would fit on fewer; bursts above the hourly average and
-        GPU memory fit were not checked. A prompt to review GPU counts, not a recommendation.</div>
+      <div class="note">Not included in Projected Monthly Savings. GPUs that might share with other
+        underused GPUs on their node, and multi-GPU jobs that might need fewer GPUs. GPU-sharing
+        support, memory fit and bursts were not checked. Prompts to review, not recommendations.</div>
     </div>""")
     if not cards:
         return ""
@@ -324,7 +324,7 @@ def render_report(summary: ReportSummary) -> str:
     <div class="stat-card projected">
       <div class="label">Projected Monthly Savings</div>
       <div class="value">{_e(_fmt_inr(summary.projected_monthly_total_inr))}</div>
-      <div class="note">If right-sizing / consolidation / scale-down recommendations below are
+      <div class="note">If right-sizing / scale-down recommendations below are
         acted on and current usage patterns continue. Not a guarantee.{_overlap_note(summary)}</div>
     </div>
     <div class="stat-card observed">

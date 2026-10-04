@@ -222,3 +222,75 @@ def test_second_cycle_with_no_new_data_does_not_duplicate_anything(tmp_path):
     normalized_storage.close()
     findings_storage.close()
     savings_storage.close()
+
+
+_DCGM_MEMORY_TEXT = """# TYPE DCGM_FI_DEV_GPU_UTIL gauge
+DCGM_FI_DEV_GPU_UTIL{{gpu="0",device="nvidia0",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-1",namespace="inference",pod="bert-large-7d4f-xk2p9",container="model-server"}} {util}
+# TYPE DCGM_FI_DEV_FB_USED gauge
+DCGM_FI_DEV_FB_USED{{gpu="0",device="nvidia0",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-1",namespace="inference",pod="bert-large-7d4f-xk2p9",container="model-server"}} {used}
+# TYPE DCGM_FI_DEV_FB_FREE gauge
+DCGM_FI_DEV_FB_FREE{{gpu="0",device="nvidia0",modelName="NVIDIA A100-SXM4-80GB",Hostname="gpu-node-1",namespace="inference",pod="bert-large-7d4f-xk2p9",container="model-server"}} {free}
+"""
+
+
+def test_right_sizing_respects_peak_gpu_memory_end_to_end(tmp_path):
+    # An A100 80GB peaking at 10% busy would be sent to a T4 on compute and
+    # bandwidth alone, but it once used 20 GiB of memory (x1.1 = 22 GiB):
+    # the T4 can't hold that, so the pipeline must land on an L4 (24 GB).
+    telemetry_path = str(tmp_path / "telemetry.db")
+    normalized_path = str(tmp_path / "normalized.db")
+    findings_path = str(tmp_path / "findings.db")
+    savings_path = str(tmp_path / "savings.db")
+
+    telemetry_storage = TelemetryStorage(telemetry_path)
+    for hour in range(24):
+        used = 20480.0 if hour == 7 else 8192.0
+        text = _DCGM_MEMORY_TEXT.format(util=10.0, used=used, free=81920.0 - used)
+        telemetry_storage.record_scrape(correlate(parse_metrics(text)), duration_ms=5.0, success=True,
+                                        scraped_at=hour * _HOUR)
+    telemetry_storage.close()
+
+    normalized_storage = NormalizedStorage(normalized_path)
+    raw_reader = RawReader(telemetry_path)
+    ingestion_run_once(
+        IngestionConfig(raw_sqlite_path=telemetry_path, normalized_sqlite_path=normalized_path,
+                        poll_interval_seconds=0, source_scrape_interval_seconds=_HOUR,
+                        low_confidence_coverage_threshold=0.5, normalized_samples_retention_hours=0,
+                        rollups_retention_hours=0),
+        raw_reader, normalized_storage)
+    raw_reader.close()
+    normalized_storage.close()
+
+    findings_storage = FindingsStorage(findings_path)
+    waste_rollup_reader = WasteRollupReader(normalized_path)
+    waste_run_once(
+        WasteConfig(normalized_sqlite_path=normalized_path, findings_sqlite_path=findings_path,
+                    poll_interval_seconds=0, min_coverage_ratio=0.8, idle_threshold_pct=2.0,
+                    min_idle_streak_hours=4, over_provision_threshold_pct=30.0,
+                    over_provision_min_observation_hours=24, fragmentation_threshold_pct=50.0,
+                    fragmentation_min_underutilized_gpus=2, fragmentation_min_streak_hours=4,
+                    pattern_min_days_observed=7, pattern_idle_threshold_pct=5.0,
+                    pattern_min_consistent_fraction=0.8, findings_retention_hours=0),
+        waste_rollup_reader, findings_storage)
+    waste_rollup_reader.close()
+    findings_storage.close()
+
+    savings_storage = SavingsStorage(savings_path)
+    findings_reader = FindingsReader(findings_path)
+    savings_rollup_reader = SavingsRollupReader(normalized_path)
+    savings_run_once(
+        SavingsConfig(findings_sqlite_path=findings_path, normalized_sqlite_path=normalized_path,
+                      savings_sqlite_path=savings_path, poll_interval_seconds=0, min_finding_confidence=0.7,
+                      sla_target_utilization_pct=70.0, hours_per_month=730.0,
+                      fragmentation_capture_fraction=0.5, gpu_hourly_rates_json=None,
+                      savings_estimates_retention_hours=0),
+        findings_reader, savings_rollup_reader, savings_storage)
+    findings_reader.close()
+    savings_rollup_reader.close()
+    estimates = [e for e in savings_storage.all_estimates() if e["category"] == "over_provisioned"]
+    savings_storage.close()
+
+    assert len(estimates) == 1
+    assert estimates[0]["recommended_action"].startswith("right-size to NVIDIA L4 (")
+    assert "memory fit not checked" not in estimates[0]["recommended_action"]
+    assert "peak 20.0 GiB used" in estimates[0]["methodology"]

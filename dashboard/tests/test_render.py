@@ -175,13 +175,13 @@ def test_overlap_note_shown_only_when_a_gpu_has_multiple_projected_estimates():
 
 def test_visibility_card_shown_only_when_there_are_visibility_estimates():
     plain = aggregate([_row()], top_n=10)
-    assert "Possible Fewer GPUs" not in render_report(plain)
+    assert "Review Candidates (Upper Bound)" not in render_report(plain)
 
     with_multi = aggregate([
         _row(id=1, category="multi_gpu_oversized", basis="visibility_upper_bound", amount_inr=5000.0),
     ], top_n=10)
     out = render_report(with_multi)
-    assert "Possible Fewer GPUs" in out
+    assert "Review Candidates (Upper Bound)" in out
     assert "Not included in Projected Monthly Savings" in out
     assert "not in headline" in out
 
@@ -211,3 +211,13 @@ def test_no_recommendation_amounts_labeled_observed_not_monthly():
     out = render_report(summary)
     assert "₹4.3k obs." in out
     assert "₹4,321.00 /mo" not in out
+
+
+def test_fragmentation_is_presented_as_a_review_candidate_not_headline():
+    from dashboard.aggregator import aggregate as _aggregate
+    from dashboard.render import render_report as _render
+    rows = [_row(id=1, category="fragmented", basis="visibility_upper_bound", amount_inr=60.0)]
+    html = _render(_aggregate(rows, top_n=10))
+    assert "Fragmented: Could Share GPUs? (upper bound, not in headline)" in html
+    assert "Review Candidates (Upper Bound)" in html
+    assert "consolidation" not in html.lower()

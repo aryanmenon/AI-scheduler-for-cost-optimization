@@ -14,7 +14,8 @@ spent" money with "projected future" money would overclaim:
 |---|---|---|
 | `idle` | `observed_window` | An idle streak's own idle-fraction is 100% by construction (that's what makes it a streak). Projecting that rate to a full month would claim the GPU is idle *all the time*, which the finding says nothing about outside its own window. Priced as money already spent with zero value during exactly that window -- a defensible lower bound, not a forecast. |
 | `over_provisioned` | `projected_monthly` | Requires 24h+ of observed peak-never-exceeds-threshold evidence before it fires at all -- built to represent a persistent state, so projecting its rate forward is the standard basis for a right-sizing ROI calculation. |
-| `fragmented` | `projected_monthly` | Same reasoning: a 4h+ sustained streak is the detector's minimum before flagging, so it's evidence of an ongoing pattern. |
+| `oversized_by_average` | `projected_monthly` | Peak too high for `over_provisioned` (any in-flight request reads as busy on an LLM server) but the busiest hour averaged low. Same right-sizing as `over_provisioned`, sized on that average against the stricter `AVG_LOAD_TARGET_UTILIZATION_PCT` (default 50%) because an hourly average hides bursts. |
+| `fragmented` | `visibility_upper_bound` | A review candidate, not headline savings: GPU-sharing support, memory fit and combined compute are unchecked, and each finding is one 4h+ streak (e.g. one quiet night) projected as if it lasted the month. Discounted by `FRAGMENTATION_CAPTURE_FRACTION`. |
 | `recurring_pattern` | `projected_monthly` | Explicitly measures a rate across many observed calendar days already -- extrapolation is what the category is *for*. |
 | `underutilized`, `unattributed_gpu_time` | `detected_no_recommendation` | Waste with no reliable recommendation. Priced like idle -- rate x shortfall below the efficient-use target x observed hours, already spent, not projected -- and kept out of the headline totals. |
 | `multi_gpu_oversized` | `visibility_upper_bound` | Projected monthly like the above, but sized on hourly averages with no memory check, so it's an upper bound to prompt a review, not a figure to stand behind. Its own basis keeps it out of the headline total; discounted by `MULTI_GPU_CAPTURE_FRACTION` (default 0.5). |
@@ -27,6 +28,24 @@ configurable `SLA_TARGET_UTILIZATION_PCT` (default 70%) -- not 100%. Full
 utilization leaves no headroom for a traffic spike or a latency-sensitive
 retry storm; a right-sizing recommendation that causes an SLA breach costs
 more customer trust than the waste it fixed.
+
+A candidate must fit on all three resources a workload can run out of:
+
+- **FP16 compute** and **memory bandwidth**, each sized as current
+  capacity x observed load / target. Sizing on compute alone was disproved
+  on real GPUs: token generation is bandwidth-bound (see
+  `testing/rightsizing-mini-test/`).
+- **Memory capacity**: the target's usable memory must hold the window's
+  peak memory used (rollups' `max_memory_used_mb`) x 1.1. When the workload
+  holds >= 85% of its GPU's memory -- vLLM and TensorFlow pre-allocate --
+  or no peak is recorded for every hour, need can't be seen; then a
+  smaller-memory target is still recommended but the action says
+  "memory fit not checked".
+
+Every recommendation states its expected per-request slowdown (the larger
+of the compute and bandwidth drops), e.g. "right-size to NVIDIA A10 (each
+request may take up to ~1.6x longer -- fine for batch/offline work, check
+latency targets before moving an interactive service)".
 
 ## Pricing is configurable, not asserted
 

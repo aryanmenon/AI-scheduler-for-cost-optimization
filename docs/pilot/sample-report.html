@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPU Cost Optimization Report</title>
+<style>
+  :root {
+    --page: #0d0d0d; --surface: #1a1a19; --surface-raised: #232322;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --border: rgba(255,255,255,0.08); --gridline: #2c2c2a;
+    --idle: #3987e5; --overprov: #d95926;
+    --warning-bg: rgba(250,178,25,0.12); --warning-fg: #fab219;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 20px 64px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+  .logo {
+    width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--idle), var(--overprov));
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 800; font-size: 16px;
+  }
+  header h1 { margin: 0; font-size: 19px; font-weight: 700; }
+  header .subtitle { color: var(--text-muted); font-size: 12.5px; margin-top: 2px; }
+  .stat-row { display: flex; gap: 20px; margin-bottom: 20px; }
+  @media (max-width: 640px) { .stat-row { flex-direction: column; } }
+  .stat-card {
+    flex: 1; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 22px 24px; box-shadow: var(--shadow);
+  }
+  .stat-card .label { color: var(--text-muted); font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 10px; }
+  .stat-card .value { font-size: 30px; font-weight: 800; letter-spacing: -0.4px;
+    font-variant-numeric: tabular-nums; }
+  .stat-card.projected .value { color: var(--overprov); }
+  .stat-card.observed .value { color: var(--idle); }
+  .stat-card .note { color: var(--text-secondary); font-size: 12.5px; margin-top: 8px; line-height: 1.5; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    padding: 22px 24px; margin-bottom: 20px; box-shadow: var(--shadow);
+  }
+  .card h2 { margin: 0 0 16px; font-size: 13px; font-weight: 700; }
+  .stack-bar { display: flex; height: 22px; border-radius: 6px; overflow: hidden;
+    background: var(--surface-raised); gap: 2px; margin-bottom: 16px; }
+  .stack-bar .segment { flex-shrink: 1; flex-basis: 0; min-width: 6px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-secondary); }
+  .legend-item .amount { color: var(--text-primary); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .legend-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 10px; border-bottom: 1px solid var(--gridline); vertical-align: top; }
+  th { color: var(--text-muted); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+  td { color: var(--text-secondary); }
+  td.workload { color: var(--text-primary); font-weight: 600; }
+  td.num { font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.empty { color: var(--text-muted); text-align: center; padding: 24px; }
+  .methodology { color: var(--text-muted); font-size: 11px; margin-top: 3px; }
+  .chip { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .muted { color: var(--text-secondary); font-size: 13px; }
+  .empty { color: var(--text-muted); font-size: 13px; }
+  .unpriced-item { display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 14px; background: var(--warning-bg); border: 1px solid rgba(250,178,25,0.2);
+    border-radius: 10px; margin-top: 10px; }
+  .unpriced-item .name { font-weight: 600; font-size: 13.5px; }
+  .unpriced-item .why { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  .unpriced-item .flag { font-size: 11px; font-weight: 700; color: var(--warning-fg); text-transform: uppercase; white-space: nowrap; }
+  .disclaimer { color: var(--text-muted); font-size: 12px; border-top: 1px solid var(--gridline);
+    margin-top: 32px; padding-top: 16px; }
+</style>
+</head>
+<body><div style="background:#7c2d12;color:#fff;padding:10px 16px;font:600 14px sans-serif">SAMPLE REPORT &middot; fictional 7-GPU cluster, 8 days of made-up utilization &middot; every finding and &#8377; figure below is computed by the product's real pipeline &middot; illustrative INR rates, not a real customer's</div>
+<div class="wrap">
+  <header>
+    <div class="logo">G</div>
+    <div>
+      <h1>GPU Cost Optimization Report</h1>
+      <div class="subtitle">Generated 2026-10-04 18:41 UTC &middot;
+        37 findings evaluated (37 priced,
+        0 not priceable)</div>
+    </div>
+  </header>
+
+  <div class="stat-row">
+    <div class="stat-card projected">
+      <div class="label">Projected Monthly Savings</div>
+      <div class="value">₹276,150.00</div>
+      <div class="note">If right-sizing / scale-down recommendations below are
+        acted on and current usage patterns continue. Not a guarantee. Each GPU is counted once, at its largest estimate: 1 GPU appears in more than one recommendation, so the category totals below add up to more than this figure.</div>
+    </div>
+    <div class="stat-card observed">
+      <div class="label">Already-Wasted Spend Observed</div>
+      <div class="value">₹43,200.00</div>
+      <div class="note">Actual cost of idle GPU time during the exact windows observed --
+        a lower bound, not extrapolated to a full month.</div>
+    </div>
+  </div>
+
+  <section class="card">
+    <h2>Below actionable recommendations</h2>
+    <div class="stat-row">
+    <div class="stat-card no-recommendation">
+      <div class="label">Detected Waste: No Recommendation Yet</div>
+      <div class="value">₹2,557.39</div>
+      <div class="note">Cost of GPU capacity left unused below the efficient-use target during the
+        observed hours, where no recommendation above applies -- including GPU time with no
+        Kubernetes pod. Already spent, not projected. Not included in either figure above.</div>
+    </div>
+    <div class="stat-card visibility">
+      <div class="label">Review Candidates (Upper Bound)</div>
+      <div class="value">₹454,323.82/mo</div>
+      <div class="note">Not included in Projected Monthly Savings. GPUs that might share with other
+        underused GPUs on their node, and multi-GPU jobs that might need fewer GPUs. GPU-sharing
+        support, memory fit and bursts were not checked. Prompts to review, not recommendations.</div>
+    </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>By category</h2>
+    <div class="stack-bar"><div class="segment" style="flex-grow:43200.0;background:#3987e5" title="Idle GPUs — ₹43,200.00"></div><div class="segment" style="flex-grow:91250.0;background:#d95926" title="Over-Provisioned — ₹91,250.00"></div><div class="segment" style="flex-grow:94900.0;background:#c2410c" title="Oversized for Its Average Load — ₹94,900.00"></div><div class="segment" style="flex-grow:1882954.2533444304;background:#199e70" title="Fragmented: Could Share GPUs? (upper bound, not in headline) — ₹1,882,954.25"></div><div class="segment" style="flex-grow:90000.0;background:#c98500" title="Recurring Low-Usage Pattern — ₹90,000.00"></div><div class="segment" style="flex-grow:2557.3911138160324;background:#8f8f86" title="Underutilized: No Recommendation Yet — ₹2,557.39"></div></div><div class="legend"><div class="legend-item"><div class="legend-dot" style="background:#3987e5"></div><span>Idle GPUs (1)</span><span class="amount">₹43.2k obs.</span></div><div class="legend-item"><div class="legend-dot" style="background:#d95926"></div><span>Over-Provisioned (1)</span><span class="amount">₹91.2k /mo</span></div><div class="legend-item"><div class="legend-dot" style="background:#c2410c"></div><span>Oversized for Its Average Load (3)</span><span class="amount">₹94.9k /mo</span></div><div class="legend-item"><div class="legend-dot" style="background:#199e70"></div><span>Fragmented: Could Share GPUs? (upper bound, not in headline) (20)</span><span class="amount">₹18.8L /mo</span></div><div class="legend-item"><div class="legend-dot" style="background:#c98500"></div><span>Recurring Low-Usage Pattern (10)</span><span class="amount">₹90.0k /mo</span></div><div class="legend-item"><div class="legend-dot" style="background:#8f8f86"></div><span>Underutilized: No Recommendation Yet (2)</span><span class="amount">₹2.6k obs.</span></div></div>
+  </section>
+
+  <section class="card">
+    <h2>Top findings</h2>
+    <div class="table-scroll">
+    <table>
+      <thead><tr>
+        <th>Category</th><th>Workload</th><th>Namespace</th><th>GPU</th>
+        <th>Window</th><th>Impact</th><th>Confidence</th><th>Recommendation</th>
+      </tr></thead>
+      <tbody><tr><td><span class="chip" style="background:#d959261a;color:#d95926">Over-Provisioned</span></td><td class="workload">embeddings</td><td>search</td><td>gpu-a100-1 / gpu1</td><td>2026-09-21 00:00 UTC (192.0h)</td><td class="num">₹91,250.00 /mo</td><td>100%</td><td>right-size to NVIDIA V100 16GB (each request may take up to ~2.5x longer -- fine for batch/offline work, check latency targets before moving an interactive service)<div class="methodology">sized on peak utilization 24.0%: peak demand sized to a 70% ceiling needs 107 TFLOPS and 699 GB/s memory bandwidth and 10.3 GiB of memory (peak 9.4 GiB used + 10%); recommends NVIDIA V100 16GB (125 TFLOPS, 900 GB/s); each request may take up to ~2.5x longer -- fine for batch/offline work, check latency targets before moving an interactive service; ₹300.00/hr -&gt; ₹175.00/hr, projected over 730h/month if this profile continues</div></td></tr>
+<tr><td><span class="chip" style="background:#c2410c1a;color:#c2410c">Oversized for Its Average Load</span></td><td class="workload">llm-chat-api</td><td>chat</td><td>gpu-a100-1 / gpu0</td><td>2026-09-21 00:00 UTC (192.0h)</td><td class="num">₹58,400.00 /mo</td><td>100%</td><td>right-size to NVIDIA A100 40GB (each request may take up to ~1.3x longer -- fine for batch/offline work, check latency targets before moving an interactive service; memory fit not checked)<div class="methodology">sized on busiest-hour average utilization (bursts within an hour aren&#x27;t visible, hence the stricter target) 23.8%: peak demand sized to a 50% ceiling needs 148 TFLOPS and 970 GB/s memory bandwidth; recommends NVIDIA A100 40GB (312 TFLOPS, 1555 GB/s); each request may take up to ~1.3x longer -- fine for batch/offline work, check latency targets before moving an interactive service; memory fit not checked (the workload holds 90% of GPU memory, typical of vLLM/TensorFlow pre-allocation, so its real need isn&#x27;t visible) -- the target has 40 GB vs 80 GB now; confirm model weights and working memory fit; ₹300.00/hr -&gt; ₹220.00/hr, projected over 730h/month if this profile continues</div></td></tr>
+<tr><td><span class="chip" style="background:#3987e51a;color:#3987e5">Idle GPUs</span></td><td class="workload">notebook-priya</td><td>research</td><td>gpu-a100-2 / gpu1</td><td>2026-09-23 00:00 UTC (144.0h)</td><td class="num">₹43,200.00</td><td>100%</td><td>terminate or reclaim this idle GPU allocation<div class="methodology">144.0h idle at ₹300.00/hr (illustrative_public_list_price) -- already-incurred cost for this observed window only, not projected</div></td></tr>
+<tr><td><span class="chip" style="background:#c2410c1a;color:#c2410c">Oversized for Its Average Load</span></td><td class="workload">ocr-worker</td><td>docs</td><td>gpu-l4-1 / gpu0</td><td>2026-09-21 00:00 UTC (192.0h)</td><td class="num">₹18,250.00 /mo</td><td>100%</td><td>right-size to NVIDIA T4 (each request may take up to ~1.9x longer -- fine for batch/offline work, check latency targets before moving an interactive service)<div class="methodology">sized on busiest-hour average utilization (bursts within an hour aren&#x27;t visible, hence the stricter target) 22.0%: peak demand sized to a 50% ceiling needs 53 TFLOPS and 132 GB/s memory bandwidth and 4.3 GiB of memory (peak 3.9 GiB used + 10%); recommends NVIDIA T4 (65 TFLOPS, 320 GB/s); each request may take up to ~1.9x longer -- fine for batch/offline work, check latency targets before moving an interactive service; ₹70.00/hr -&gt; ₹45.00/hr, projected over 730h/month if this profile continues</div></td></tr>
+<tr><td><span class="chip" style="background:#c2410c1a;color:#c2410c">Oversized for Its Average Load</span></td><td class="workload">reranker</td><td>docs</td><td>gpu-l4-1 / gpu1</td><td>2026-09-21 00:00 UTC (192.0h)</td><td class="num">₹18,250.00 /mo</td><td>100%</td><td>right-size to NVIDIA T4 (each request may take up to ~1.9x longer -- fine for batch/offline work, check latency targets before moving an interactive service)<div class="methodology">sized on busiest-hour average utilization (bursts within an hour aren&#x27;t visible, hence the stricter target) 22.0%: peak demand sized to a 50% ceiling needs 53 TFLOPS and 132 GB/s memory bandwidth and 4.3 GiB of memory (peak 3.9 GiB used + 10%); recommends NVIDIA T4 (65 TFLOPS, 320 GB/s); each request may take up to ~1.9x longer -- fine for batch/offline work, check latency targets before moving an interactive service; ₹70.00/hr -&gt; ₹45.00/hr, projected over 730h/month if this profile continues</div></td></tr>
+<tr><td><span class="chip" style="background:#c985001a;color:#c98500">Recurring Low-Usage Pattern</span></td><td class="workload">finetune-runner</td><td>research</td><td>gpu-a100-2 / gpu0</td><td>2026-09-21 00:00 UTC (169.0h)</td><td class="num">₹9,000.00 /mo</td><td>100%</td><td>scale down or scale to zero during this recurring low-usage window<div class="methodology">100% of observed days quiet at this hour -&gt; ~30.0h/month at ₹300.00/hr, projected if the pattern continues</div></td></tr>
+<tr><td><span class="chip" style="background:#c985001a;color:#c98500">Recurring Low-Usage Pattern</span></td><td class="workload">finetune-runner</td><td>research</td><td>gpu-a100-2 / gpu0</td><td>2026-09-21 01:00 UTC (169.0h)</td><td class="num">₹9,000.00 /mo</td><td>100%</td><td>scale down or scale to zero during this recurring low-usage window<div class="methodology">100% of observed days quiet at this hour -&gt; ~30.0h/month at ₹300.00/hr, projected if the pattern continues</div></td></tr>
+<tr><td><span class="chip" style="background:#c985001a;color:#c98500">Recurring Low-Usage Pattern</span></td><td class="workload">finetune-runner</td><td>research</td><td>gpu-a100-2 / gpu0</td><td>2026-09-21 02:00 UTC (169.0h)</td><td class="num">₹9,000.00 /mo</td><td>100%</td><td>scale down or scale to zero during this recurring low-usage window<div class="methodology">100% of observed days quiet at this hour -&gt; ~30.0h/month at ₹300.00/hr, projected if the pattern continues</div></td></tr>
+<tr><td><span class="chip" style="background:#c985001a;color:#c98500">Recurring Low-Usage Pattern</span></td><td class="workload">finetune-runner</td><td>research</td><td>gpu-a100-2 / gpu0</td><td>2026-09-21 03:00 UTC (169.0h)</td><td class="num">₹9,000.00 /mo</td><td>100%</td><td>scale down or scale to zero during this recurring low-usage window<div class="methodology">100% of observed days quiet at this hour -&gt; ~30.0h/month at ₹300.00/hr, projected if the pattern continues</div></td></tr>
+<tr><td><span class="chip" style="background:#c985001a;color:#c98500">Recurring Low-Usage Pattern</span></td><td class="workload">finetune-runner</td><td>research</td><td>gpu-a100-2 / gpu0</td><td>2026-09-21 04:00 UTC (169.0h)</td><td class="num">₹9,000.00 /mo</td><td>100%</td><td>scale down or scale to zero during this recurring low-usage window<div class="methodology">100% of observed days quiet at this hour -&gt; ~30.0h/month at ₹300.00/hr, projected if the pattern continues</div></td></tr>
+<tr><td><span class="chip" style="background:#c985001a;color:#c98500">Recurring Low-Usage Pattern</span></td><td class="workload">finetune-runner</td><td>research</td><td>gpu-a100-2 / gpu0</td><td>2026-09-21 05:00 UTC (169.0h)</td><td class="num">₹9,000.00 /mo</td><td>100%</td><td>scale down or scale to zero during this recurring low-usage window<div class="methodology">100% of observed days quiet at this hour -&gt; ~30.0h/month at ₹300.00/hr, projected if the pattern continues</div></td></tr>
+<tr><td><span class="chip" style="background:#c985001a;color:#c98500">Recurring Low-Usage Pattern</span></td><td class="workload">finetune-runner</td><td>research</td><td>gpu-a100-2 / gpu0</td><td>2026-09-21 06:00 UTC (169.0h)</td><td class="num">₹9,000.00 /mo</td><td>100%</td><td>scale down or scale to zero during this recurring low-usage window<div class="methodology">100% of observed days quiet at this hour -&gt; ~30.0h/month at ₹300.00/hr, projected if the pattern continues</div></td></tr>
+<tr><td><span class="chip" style="background:#c985001a;color:#c98500">Recurring Low-Usage Pattern</span></td><td class="workload">finetune-runner</td><td>research</td><td>gpu-a100-2 / gpu0</td><td>2026-09-21 07:00 UTC (169.0h)</td><td class="num">₹9,000.00 /mo</td><td>100%</td><td>scale down or scale to zero during this recurring low-usage window<div class="methodology">100% of observed days quiet at this hour -&gt; ~30.0h/month at ₹300.00/hr, projected if the pattern continues</div></td></tr>
+<tr><td><span class="chip" style="background:#c985001a;color:#c98500">Recurring Low-Usage Pattern</span></td><td class="workload">finetune-runner</td><td>research</td><td>gpu-a100-2 / gpu0</td><td>2026-09-21 22:00 UTC (169.0h)</td><td class="num">₹9,000.00 /mo</td><td>100%</td><td>scale down or scale to zero during this recurring low-usage window<div class="methodology">100% of observed days quiet at this hour -&gt; ~30.0h/month at ₹300.00/hr, projected if the pattern continues</div></td></tr>
+<tr><td><span class="chip" style="background:#c985001a;color:#c98500">Recurring Low-Usage Pattern</span></td><td class="workload">finetune-runner</td><td>research</td><td>gpu-a100-2 / gpu0</td><td>2026-09-21 23:00 UTC (169.0h)</td><td class="num">₹9,000.00 /mo</td><td>100%</td><td>scale down or scale to zero during this recurring low-usage window<div class="methodology">100% of observed days quiet at this hour -&gt; ~30.0h/month at ₹300.00/hr, projected if the pattern continues</div></td></tr></tbody>
+    </table>
+    </div>
+  </section>
+
+  
+
+  <div class="disclaimer">
+    Rupee figures depend on the GPU hourly rates configured for this deployment -- verify
+    against your actual contracted pricing before treating any number here as final.
+    This report reflects observed telemetry only; results depend on the pilot window being
+    representative of normal usage.
+  </div>
+</div>
+</body>
+</html>

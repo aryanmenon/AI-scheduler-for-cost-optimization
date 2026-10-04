@@ -103,3 +103,37 @@ def test_prune_rollups_older_than_removes_old_keeps_recent(storage):
     remaining = storage.rollups("5m")
     assert len(remaining) == 1
     assert remaining[0]["bucket_start"] == 1_999_800
+
+
+def test_existing_rollups_table_gains_new_memory_columns(tmp_path):
+    # A pilot's persistent volume holds a rollups table from before these
+    # columns existed; startup must add them in place, not fail on insert.
+    import sqlite3
+    path = str(tmp_path / "old.db")
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        CREATE TABLE rollups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, granularity TEXT NOT NULL,
+            bucket_start REAL NOT NULL, node TEXT NOT NULL, gpu_index TEXT NOT NULL,
+            gpu_instance_id TEXT, namespace TEXT NOT NULL, workload TEXT,
+            sample_count INTEGER NOT NULL, expected_sample_count REAL NOT NULL,
+            coverage_ratio REAL NOT NULL, low_confidence INTEGER NOT NULL,
+            avg_utilization_pct REAL, max_utilization_pct REAL, avg_memory_used_mb REAL,
+            avg_power_draw_w REAL, avg_effective_tflops REAL, gpu_model TEXT, fp16_tflops REAL);
+        INSERT INTO rollups (granularity, bucket_start, node, gpu_index, namespace, sample_count,
+                             expected_sample_count, coverage_ratio, low_confidence)
+        VALUES ('hourly', 0, 'n', '0', 'ns', 1, 120, 0.01, 1);
+    """)
+    conn.commit()
+    conn.close()
+
+    s = NormalizedStorage(path)
+    try:
+        old = s.rollups("hourly")[0]
+        assert old["max_memory_used_mb"] is None and old["memory_total_mb"] is None
+        normalized = [normalize_sample(_raw(i, 3600 + i * 30)) for i in range(3)]
+        s.replace_rollups("hourly", 3600, 7200, compute_rollups(normalized, "hourly", scrape_interval_seconds=30))
+        assert len(s.rollups("hourly")) == 2
+    finally:
+        s.close()
+    NormalizedStorage(path).close()  # re-opening an already-migrated table is a no-op

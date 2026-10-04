@@ -153,7 +153,8 @@ def test_fragmented_priced_with_capture_discount():
     config = _config(fragmentation_capture_fraction=0.5)
     estimate = estimate_for_finding(finding, rows, config, {})
     assert estimate.priceable
-    assert estimate.basis == BASIS_PROJECTED_MONTHLY
+    # A review candidate, never in the headline (see estimator.py).
+    assert estimate.basis == "visibility_upper_bound"
     # wasted_fraction = (1 - 0.20) * 0.5 = 0.40; monthly = 300.00 * 0.40 * 730
     assert estimate.amount_inr == 300.00 * 0.40 * 730.0
 
@@ -311,3 +312,30 @@ def test_oversized_by_average_mini_test_workload_gets_a_bandwidth_safe_target():
     estimate = estimate_for_finding(finding, [rollup], _config(), {})
     assert estimate.recommended_action.startswith("right-size to NVIDIA A10 (")
     assert estimate.amount_inr == 0.0
+
+
+def test_over_provisioned_uses_measured_peak_memory_to_pick_a_gpu_that_holds_it():
+    # A100 80GB at a 10% peak would go to a T4 -- but this workload peaked
+    # at 20 GiB of memory, which a T4 can't hold. Every row carries a peak.
+    rows = [_rollup(max_memory_used_mb=used, memory_total_mb=81920.0) for used in (12000.0, 20480.0)]
+    estimate = estimate_for_finding(_finding(OVER_PROVISIONED, metric_value=10.0), rows, _config(), {})
+    assert estimate.recommended_action.startswith("right-size to NVIDIA L4 (")
+    assert "memory fit not checked" not in estimate.recommended_action
+    assert "22.0 GiB of memory (peak 20.0 GiB used + 10%)" in estimate.methodology
+    assert estimate.amount_inr == pytest.approx((300.00 - 70.00) * 730.0)
+
+
+def test_preallocated_memory_keeps_the_caution():
+    rows = [_rollup(max_memory_used_mb=73728.0, memory_total_mb=81920.0)]  # 90%, vLLM default
+    estimate = estimate_for_finding(_finding(OVER_PROVISIONED, metric_value=10.0), rows, _config(), {})
+    assert estimate.recommended_action.endswith("; memory fit not checked)")
+    assert "pre-allocation" in estimate.methodology
+
+
+def test_window_with_pre_upgrade_rows_is_not_trusted_for_memory():
+    # One row predates the memory columns: its peak is unknown and could be
+    # larger, so memory isn't used to size and the caution stays.
+    rows = [_rollup(max_memory_used_mb=4096.0, memory_total_mb=81920.0), _rollup()]
+    estimate = estimate_for_finding(_finding(OVER_PROVISIONED, metric_value=10.0), rows, _config(), {})
+    assert estimate.recommended_action.startswith("right-size to NVIDIA T4 (")
+    assert estimate.recommended_action.endswith("; memory fit not checked)")

@@ -21,17 +21,37 @@ Even a capacity-correct downsize makes each request slower when the target
 GPU is weaker on either axis, so every recommendation carries an expected
 latency factor: the larger of the compute and memory-bandwidth drops.
 
-GPU memory *capacity* is not checked: used memory overstates need for the
-workloads this matters most for (vLLM pre-allocates ~90% of the GPU,
-PyTorch caches freed memory). So whenever the recommended GPU has less
-memory than the current one, the recommendation says plainly that fit
-was not checked. A target with at least as much memory always fits.
+GPU memory *capacity* is checked against the workload's peak memory used
+(DCGM_FI_DEV_FB_USED, max per hourly rollup) plus MEMORY_HEADROOM: a
+target whose usable memory can't hold that is skipped. Peak used memory is
+an upper bound on real need (PyTorch's caching allocator keeps freed
+blocks), so this errs toward bigger targets, never toward an OOM. It can't
+see through pre-allocation, though: vLLM reserves ~90% of the GPU by
+default (gpu_memory_utilization=0.9) and TensorFlow grabs all of it, so a
+workload holding >= PREALLOCATED_FRACTION of its GPU tells us nothing
+about need. For those, and when no memory data exists, a smaller-memory
+target still carries an explicit "memory fit not checked" caution. A
+target with at least as much memory as the current GPU always fits.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from ingestion_normalization.capability import GPUCapability, all_known_capabilities
+
+# Peak memory used x this must fit the target. Covers allocator
+# fragmentation and a slightly larger batch than the busiest one observed.
+MEMORY_HEADROOM = 1.10
+# Holding at least this share of the GPU's memory looks like pre-allocation
+# (vLLM default 0.9, TensorFlow default ~all), not need.
+PREALLOCATED_FRACTION = 0.85
+# Spec-sheet GB vs what the driver exposes: a "16 GB" T4 reports 15360 MiB
+# (0.94 of 16 GiB). Applied to every target's spec capacity.
+USABLE_FRACTION_OF_SPEC = 0.93
+
+
+def _usable_mib(capacity_gb: float | None) -> float | None:
+    return capacity_gb * 1024.0 * USABLE_FRACTION_OF_SPEC if capacity_gb else None
 
 
 @dataclass
@@ -44,9 +64,11 @@ class RightSizingRecommendation:
     # Upper estimate of how much slower each request gets on the
     # recommended GPU (>= 1.0); None when nothing is recommended.
     expected_latency_factor: float | None = None
-    # True when the recommended GPU has less memory than the current one,
-    # so the workload may not fit (unchecked -- see module docstring).
+    # True when the recommended GPU has less memory than the current one
+    # and fit could not be checked (pre-allocation or no memory data).
     memory_fit_unchecked: bool = False
+    # Peak memory used x MEMORY_HEADROOM, MiB; 0.0 when not used to size.
+    required_memory_mib: float = 0.0
 
 
 def latency_note(factor: float | None) -> str:
@@ -57,14 +79,14 @@ def latency_note(factor: float | None) -> str:
             f"check latency targets before moving an interactive service")
 
 
-def memory_note(current_gb: float | None, target_gb: float | None) -> str | None:
-    """Caution when the target GPU has less memory; None when it can't matter."""
+def memory_note(current_gb: float | None, target_gb: float | None,
+                reason: str = "no memory usage data for this workload") -> str | None:
+    """Caution when the target GPU has less memory and fit couldn't be
+    checked; None when it can't matter (target at least as large)."""
     if current_gb and target_gb and target_gb >= current_gb:
         return None
-    if current_gb and target_gb:
-        return (f"memory fit not checked -- the target has {target_gb:.0f} GB vs {current_gb:.0f} GB now; "
-                f"confirm model weights and working memory fit")
-    return "memory fit not checked -- confirm model weights and working memory fit the target GPU"
+    sizes = f"the target has {target_gb:.0f} GB vs {current_gb:.0f} GB now; " if current_gb and target_gb else ""
+    return f"memory fit not checked ({reason}) -- {sizes}confirm model weights and working memory fit"
 
 
 def recommendation_cautions(rec: "RightSizingRecommendation") -> str:
@@ -81,6 +103,8 @@ def right_sized_capability(
     sla_target_utilization_pct: float,
     current_mem_bandwidth_gbps: float | None = None,
     current_mem_capacity_gb: float | None = None,
+    peak_memory_used_mib: float | None = None,
+    current_memory_total_mib: float | None = None,
 ) -> RightSizingRecommendation:
     """What's the smallest known SKU that keeps this workload's peak load
     at or below the SLA target, given its current peak on its current GPU?
@@ -92,6 +116,11 @@ def right_sized_capability(
     exactly the SLA target (not 100%) is what keeps headroom:
     required = demand / (target / 100), and a candidate must meet the
     requirement on both resources.
+
+    Memory capacity: given peak_memory_used_mib (and the current GPU's
+    usable memory, current_memory_total_mib from DCGM used+free, falling
+    back to its spec), a candidate must also hold peak x MEMORY_HEADROOM --
+    unless the peak shows pre-allocation (see module docstring).
     """
     if observed_peak_utilization_pct <= 0:
         return RightSizingRecommendation(
@@ -106,6 +135,14 @@ def right_sized_capability(
     required_fp16_tflops = peak_demand_tflops / headroom
     required_bw = (current_mem_bandwidth_gbps * share / headroom) if current_mem_bandwidth_gbps else 0.0
 
+    current_total = current_memory_total_mib or _usable_mib(current_mem_capacity_gb)
+    if peak_memory_used_mib is None:
+        memory_status, required_mem = "unknown", 0.0
+    elif current_total and peak_memory_used_mib >= PREALLOCATED_FRACTION * current_total:
+        memory_status, required_mem = "preallocated", 0.0
+    else:
+        memory_status, required_mem = "measured", peak_memory_used_mib * MEMORY_HEADROOM
+
     # recommendable excludes SKUs (consumer/gaming cards) that are safe to
     # price a customer's own telemetry against but nonsensical to suggest
     # as a right-sizing *target* -- no real cluster racks them as a node
@@ -118,17 +155,21 @@ def right_sized_capability(
         and cap.fp16_tflops >= required_fp16_tflops
         and cap.recommendable
         and (not required_bw or (cap.mem_bandwidth_gbps is not None and cap.mem_bandwidth_gbps >= required_bw))
+        and (not required_mem or (_usable_mib(cap.mem_capacity_gb) or 0.0) >= required_mem)
     ]
 
     needs = f"{required_fp16_tflops:.0f} TFLOPS"
     if required_bw:
         needs += f" and {required_bw:.0f} GB/s memory bandwidth"
+    if required_mem:
+        needs += f" and {required_mem / 1024:.1f} GiB of memory (peak {peak_memory_used_mib / 1024:.1f} GiB used + 10%)"
     if not candidates:
         return RightSizingRecommendation(
             required_fp16_tflops=required_fp16_tflops,
             recommended=None,
             detail=f"no known SKU meets the required {needs} at a {sla_target_utilization_pct:.0f}% target ceiling",
             required_mem_bandwidth_gbps=required_bw,
+            required_memory_mib=required_mem,
         )
 
     # Smallest by compute, then by memory bandwidth (e.g. A10 before V100
@@ -138,7 +179,16 @@ def right_sized_capability(
     if current_mem_bandwidth_gbps and smallest.mem_bandwidth_gbps:
         drops.append(current_mem_bandwidth_gbps / smallest.mem_bandwidth_gbps)
     latency_factor = max(1.0, *drops)
-    mem_note = memory_note(current_mem_capacity_gb, smallest.mem_capacity_gb)
+    if memory_status == "measured":
+        mem_note = None  # checked: every candidate holds the peak + headroom
+    elif memory_status == "preallocated":
+        mem_note = memory_note(
+            current_mem_capacity_gb, smallest.mem_capacity_gb,
+            reason=f"the workload holds {peak_memory_used_mib / current_total:.0%} of GPU memory, typical of "
+                   f"vLLM/TensorFlow pre-allocation, so its real need isn't visible",
+        )
+    else:
+        mem_note = memory_note(current_mem_capacity_gb, smallest.mem_capacity_gb)
     detail = (
         f"peak demand sized to a {sla_target_utilization_pct:.0f}% ceiling needs {needs}; "
         f"recommends {smallest.canonical_name} ({smallest.fp16_tflops:.0f} TFLOPS"
@@ -154,4 +204,5 @@ def right_sized_capability(
         required_mem_bandwidth_gbps=required_bw,
         expected_latency_factor=latency_factor,
         memory_fit_unchecked=mem_note is not None,
+        required_memory_mib=required_mem,
     )
