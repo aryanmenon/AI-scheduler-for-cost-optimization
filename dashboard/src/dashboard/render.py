@@ -23,6 +23,7 @@ from dashboard.report_reader import EstimateRow
 _CATEGORY_LABELS = {
     "idle": "Idle GPUs",
     "over_provisioned": "Over-Provisioned",
+    "oversized_by_average": "Oversized for Its Average Load",
     "fragmented": "Fragmented Capacity",
     "recurring_pattern": "Recurring Low-Usage Pattern",
     "multi_gpu_oversized": "Multi-GPU Jobs: Fewer GPUs? (upper bound, not in headline)",
@@ -38,6 +39,7 @@ _CATEGORY_LABELS = {
 _CATEGORY_COLORS = {
     "idle": "#3987e5",
     "over_provisioned": "#d95926",
+    "oversized_by_average": "#c2410c",
     "fragmented": "#199e70",
     "recurring_pattern": "#c98500",
     "multi_gpu_oversized": "#8a5cd1",

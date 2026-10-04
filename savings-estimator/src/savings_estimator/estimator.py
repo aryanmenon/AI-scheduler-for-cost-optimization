@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from ingestion_normalization.capability import lookup_capability
 
-from savings_estimator.ceiling import latency_note, right_sized_capability
+from savings_estimator.ceiling import recommendation_cautions, right_sized_capability
 from savings_estimator.config import Config
 from savings_estimator.estimate import (
     BASIS_OBSERVED_WINDOW,
@@ -48,6 +48,7 @@ from waste_detector.findings import (
     IDLE,
     MULTI_GPU_OVERSIZED,
     OVER_PROVISIONED,
+    OVERSIZED_BY_AVERAGE,
     RECURRING_PATTERN,
     UNATTRIBUTED_GPU_TIME,
     UNDERUTILIZED,
@@ -117,6 +118,13 @@ def estimate_for_finding(
         return _estimate_idle(finding, price)
     if finding.category == OVER_PROVISIONED:
         return _estimate_over_provisioned(finding, capability, price, config, rate_overrides)
+    if finding.category == OVERSIZED_BY_AVERAGE:
+        return _estimate_over_provisioned(
+            finding, capability, price, config, rate_overrides,
+            target_pct=config.avg_load_target_utilization_pct,
+            load_basis="busiest-hour average utilization (bursts within an hour aren't visible, "
+                       "hence the stricter target)",
+        )
     if finding.category == FRAGMENTED:
         return _estimate_fragmented(finding, rollup_rows, price, config)
     if finding.category == RECURRING_PATTERN:
@@ -167,8 +175,13 @@ def _estimate_idle(finding: FindingRow, price) -> SavingsEstimate:
 
 
 def _estimate_over_provisioned(
-    finding: FindingRow, capability, price, config: Config, rate_overrides: dict[str, float]
+    finding: FindingRow, capability, price, config: Config, rate_overrides: dict[str, float],
+    target_pct: float | None = None, load_basis: str = "peak utilization",
 ) -> SavingsEstimate:
+    # Shared by OVER_PROVISIONED (metric_value = peak utilization %, sized
+    # to the SLA target) and OVERSIZED_BY_AVERAGE (metric_value = busiest
+    # hour's average utilization %, sized to a stricter target).
+    target_pct = config.sla_target_utilization_pct if target_pct is None else target_pct
     if finding.gpu_instance_id is not None:
         # capability.fp16_tflops here is the *physical* GPU's full capacity
         # (capability is re-derived from gpu_model alone, upstream of any
@@ -187,11 +200,10 @@ def _estimate_over_provisioned(
             "would misprice the recommendation",
         )
 
-    # metric_value for this category IS the observed peak utilization %
-    # (see waste_detector.over_provisioning) -- no need to re-derive it.
     rec = right_sized_capability(
-        capability.fp16_tflops, finding.metric_value, config.sla_target_utilization_pct,
+        capability.fp16_tflops, finding.metric_value, target_pct,
         current_mem_bandwidth_gbps=capability.mem_bandwidth_gbps,
+        current_mem_capacity_gb=capability.mem_capacity_gb,
     )
 
     if rec.recommended is None:
@@ -216,10 +228,11 @@ def _estimate_over_provisioned(
         basis=BASIS_PROJECTED_MONTHLY,
         amount_inr=monthly_savings,
         recommended_action=(
-            f"right-size to {rec.recommended.canonical_name} ({latency_note(rec.expected_latency_factor)})"
+            f"right-size to {rec.recommended.canonical_name} ({recommendation_cautions(rec)})"
         ),
         methodology=(
-            f"{rec.detail}; ₹{price.hourly_inr:.2f}/hr -> ₹{recommended_price.hourly_inr:.2f}/hr, "
+            f"sized on {load_basis} {finding.metric_value:.1f}%: {rec.detail}; "
+            f"₹{price.hourly_inr:.2f}/hr -> ₹{recommended_price.hourly_inr:.2f}/hr, "
             f"projected over {config.hours_per_month:.0f}h/month if this profile continues"
         ),
     )

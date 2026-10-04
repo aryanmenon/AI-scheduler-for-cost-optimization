@@ -39,6 +39,7 @@ data:
   PATTERN_IDLE_THRESHOLD_PCT: {{ .Values.wasteDetector.patternIdleThresholdPct | quote }}
   PATTERN_MIN_CONSISTENT_FRACTION: {{ .Values.wasteDetector.patternMinConsistentFraction | quote }}
   MULTI_GPU_TARGET_UTILIZATION_PCT: {{ .Values.wasteDetector.multiGpuTargetUtilizationPct | quote }}
+  AVG_LOAD_THRESHOLD_PCT: {{ .Values.wasteDetector.avgLoadThresholdPct | quote }}
   MULTI_GPU_MIN_STREAK_HOURS: {{ .Values.wasteDetector.multiGpuMinStreakHours | quote }}
   UNDERUTILIZED_TARGET_PCT: {{ .Values.wasteDetector.underutilizedTargetPct | quote }}
   UNDERUTILIZED_MIN_RUN_HOURS: {{ .Values.wasteDetector.underutilizedMinRunHours | quote }}
@@ -51,6 +52,7 @@ data:
   HOURS_PER_MONTH: {{ .Values.savingsEstimator.hoursPerMonth | quote }}
   FRAGMENTATION_CAPTURE_FRACTION: {{ .Values.savingsEstimator.fragmentationCaptureFraction | quote }}
   MULTI_GPU_CAPTURE_FRACTION: {{ .Values.savingsEstimator.multiGpuCaptureFraction | quote }}
+  AVG_LOAD_TARGET_UTILIZATION_PCT: {{ .Values.savingsEstimator.avgLoadTargetUtilizationPct | quote }}
   {{- if .Values.savingsEstimator.gpuHourlyRatesJson }}
   # Always prefer setting this to the customer's actual contracted rates
   # over the illustrative public list-price defaults baked into pricing.py.

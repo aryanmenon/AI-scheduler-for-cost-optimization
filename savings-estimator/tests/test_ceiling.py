@@ -165,3 +165,30 @@ def test_every_recommendation_fits_both_resources():
 def _all_recommendable_and_consumer():
     from ingestion_normalization.capability import all_known_capabilities
     return [c for c in all_known_capabilities() if c.fp16_tflops and c.mem_bandwidth_gbps]
+
+
+# --- memory capacity is not checked, so smaller-memory targets say so ---
+
+def test_smaller_memory_target_carries_unchecked_fit_caution():
+    a100 = _cap("NVIDIA A100 80GB")
+    rec = right_sized_capability(a100.fp16_tflops, 10.0, 70.0, current_mem_bandwidth_gbps=a100.mem_bandwidth_gbps,
+                                 current_mem_capacity_gb=a100.mem_capacity_gb)
+    assert rec.recommended.canonical_name == "NVIDIA T4"
+    assert rec.memory_fit_unchecked
+    assert "memory fit not checked -- the target has 16 GB vs 80 GB now" in rec.detail
+
+
+def test_same_or_more_memory_target_needs_no_caution():
+    rtx3090 = _cap("NVIDIA GeForce RTX 3090")  # 24 GB -> A10 24 GB
+    rec = right_sized_capability(rtx3090.fp16_tflops, 25.0, 70.0,
+                                 current_mem_bandwidth_gbps=rtx3090.mem_bandwidth_gbps,
+                                 current_mem_capacity_gb=rtx3090.mem_capacity_gb)
+    assert rec.recommended.canonical_name == "NVIDIA A10"
+    assert not rec.memory_fit_unchecked
+    assert "memory fit" not in rec.detail
+
+
+def test_unknown_current_memory_is_flagged_not_assumed():
+    rec = right_sized_capability(312.0, 10.0, 70.0)
+    assert rec.memory_fit_unchecked
+    assert "memory fit not checked" in rec.detail

@@ -68,6 +68,10 @@ class Config:
     # hourly averages and is an upper bound, and actually shrinking a job's
     # GPU count takes engineering work and may not be possible at all.
     multi_gpu_capture_fraction: float = 0.5
+    # Utilization ceiling for right-sizing an oversized_by_average finding.
+    # Stricter than sla_target_utilization_pct because that finding is
+    # sized on an hourly average, which hides bursts within the hour.
+    avg_load_target_utilization_pct: float = 50.0
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -93,6 +97,9 @@ class Config:
             ),
             gpu_hourly_rates_json=os.environ.get("GPU_HOURLY_RATES_JSON"),
             multi_gpu_capture_fraction=float(os.environ.get("MULTI_GPU_CAPTURE_FRACTION", "0.5")),
+            avg_load_target_utilization_pct=float(
+                os.environ.get("AVG_LOAD_TARGET_UTILIZATION_PCT", "50.0")
+            ),
             savings_estimates_retention_hours=float(
                 os.environ.get("SAVINGS_ESTIMATES_RETENTION_HOURS", "2160")
             ),
