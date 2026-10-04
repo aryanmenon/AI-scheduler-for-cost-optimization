@@ -18,7 +18,7 @@ from waste_detector.config import Config  # noqa: E402
 from waste_detector.fragmentation import detect_fragmentation  # noqa: E402
 from waste_detector.idle import detect_idle  # noqa: E402
 from waste_detector.multi_gpu import detect_multi_gpu_oversized  # noqa: E402
-from waste_detector.over_provisioning import detect_over_provisioning  # noqa: E402
+from waste_detector.over_provisioning import detect_over_provisioning, detect_oversized_by_average  # noqa: E402
 from waste_detector.patterns import detect_recurring_patterns  # noqa: E402
 from waste_detector.unrecommended import detect_unrecommended_waste  # noqa: E402
 
@@ -51,6 +51,7 @@ config = Config(
 findings = {
     "idle": detect_idle(rollup_rows, config),
     "over_provisioned": detect_over_provisioning(rollup_rows, config),
+    "oversized_by_average": detect_oversized_by_average(rollup_rows, config),
     "fragmented": detect_fragmentation(rollup_rows, config),
     "recurring_pattern": detect_recurring_patterns(rollup_rows, config),
     "multi_gpu_oversized": detect_multi_gpu_oversized(rollup_rows, config),

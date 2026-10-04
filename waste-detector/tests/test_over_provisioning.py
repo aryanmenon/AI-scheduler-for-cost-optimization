@@ -115,3 +115,59 @@ def test_mig_instances_evaluated_independently():
     findings = detect_over_provisioning(rows, _config())
     assert len(findings) == 1
     assert findings[0].workload == "small-model-a"
+
+
+# --- oversized by average load (testing/rightsizing-mini-test/, 2026-10-04) ---
+from waste_detector.findings import OVERSIZED_BY_AVERAGE  # noqa: E402
+from waste_detector.over_provisioning import detect_oversized_by_average  # noqa: E402
+
+
+def _serving_rows(hours=24, avg=21.4, peak=75.0, **overrides):
+    # The measured RTX 3090 LLM-serving shape: ~21% average busy, 71-75%
+    # momentary peaks, because any in-flight request reads as busy.
+    return [_row(i * 3600.0, max_utilization_pct=peak, avg_utilization_pct=avg, **overrides) for i in range(hours)]
+
+
+def test_llm_serving_shape_is_invisible_to_peak_check_but_flagged_by_average():
+    rows = _serving_rows()
+    assert detect_over_provisioning(rows, _config()) == []
+    findings = detect_oversized_by_average(rows, _config())
+    assert len(findings) == 1
+    f = findings[0]
+    assert f.category == OVERSIZED_BY_AVERAGE
+    assert f.metric_value == 21.4
+    assert f.confidence == 1.0
+    assert "momentary peaks reached 75%" in f.detail
+
+
+def test_busiest_hour_average_decides_not_the_overall_mean():
+    rows = _serving_rows(avg=10.0)
+    rows[5] = _row(5 * 3600.0, max_utilization_pct=90.0, avg_utilization_pct=45.0)
+    assert detect_oversized_by_average(rows, _config()) == []
+
+
+def test_average_threshold_is_inclusive_and_configurable():
+    assert len(detect_oversized_by_average(_serving_rows(avg=30.0), _config())) == 1
+    assert detect_oversized_by_average(_serving_rows(avg=30.1), _config()) == []
+    assert len(detect_oversized_by_average(_serving_rows(avg=35.0), _config(avg_load_threshold_pct=40.0))) == 1
+
+
+def test_never_double_reports_what_the_peak_check_owns():
+    rows = _serving_rows(avg=10.0, peak=25.0)
+    assert len(detect_over_provisioning(rows, _config())) == 1
+    assert detect_oversized_by_average(rows, _config()) == []
+
+
+def test_needs_the_same_minimum_observation_hours():
+    assert detect_oversized_by_average(_serving_rows(hours=23), _config()) == []
+
+
+def test_skips_unattributed_and_low_coverage_rows():
+    assert detect_oversized_by_average(_serving_rows(workload=None), _config()) == []
+    assert detect_oversized_by_average(_serving_rows(coverage_ratio=0.5), _config()) == []
+
+
+def test_full_run_reports_it_once_and_not_again_as_no_recommendation_waste():
+    from waste_detector.detector import run_all_detectors
+    categories = [f.category for f in run_all_detectors(_serving_rows(), _config(), now=24 * 3600.0)]
+    assert categories == [OVERSIZED_BY_AVERAGE]

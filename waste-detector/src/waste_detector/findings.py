@@ -13,6 +13,11 @@ from dataclasses import dataclass
 
 IDLE = "idle"
 OVER_PROVISIONED = "over_provisioned"
+# Peak too high for OVER_PROVISIONED but the busiest hour's *average* load
+# is low -- the shape of a lightly used LLM-serving workload, whose busy %
+# reads near 100% whenever any request is in flight (see
+# over_provisioning.detect_oversized_by_average).
+OVERSIZED_BY_AVERAGE = "oversized_by_average"
 FRAGMENTED = "fragmented"
 RECURRING_PATTERN = "recurring_pattern"
 MULTI_GPU_OVERSIZED = "multi_gpu_oversized"

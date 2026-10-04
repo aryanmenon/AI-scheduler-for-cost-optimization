@@ -64,6 +64,9 @@ class Config:
     # the job is given fewer GPUs, and how long that must hold before it's
     # reported.
     multi_gpu_target_utilization_pct: float = 70.0
+    # Oversized-by-average (see over_provisioning.py): the busiest observed
+    # hour's average utilization must stay at or below this.
+    avg_load_threshold_pct: float = 30.0
     multi_gpu_min_streak_hours: int = 4
 
     # Waste detected without a reliable recommendation (see
@@ -121,6 +124,7 @@ class Config:
                 os.environ.get("MULTI_GPU_TARGET_UTILIZATION_PCT", "70.0")
             ),
             multi_gpu_min_streak_hours=int(os.environ.get("MULTI_GPU_MIN_STREAK_HOURS", "4")),
+            avg_load_threshold_pct=float(os.environ.get("AVG_LOAD_THRESHOLD_PCT", "30.0")),
             underutilized_target_pct=float(os.environ.get("UNDERUTILIZED_TARGET_PCT", "70.0")),
             underutilized_min_run_hours=int(os.environ.get("UNDERUTILIZED_MIN_RUN_HOURS", "1")),
             alert_consecutive_failure_threshold=int(

@@ -44,7 +44,7 @@ pattern_re = re.compile(r"on (\d+)/(\d+) observed days")
 
 for finding in data["idle"]:
     add(finding)
-for finding in data["over_provisioned"]:
+for finding in data["over_provisioned"] + data.get("oversized_by_average", []):
     add(finding)
 for finding in data["fragmented"]:
     add(finding)
@@ -150,8 +150,9 @@ if os.path.exists(rollups_path) and "underutilized" in data:
         rollup_rows = pickle.load(f)
 
     tiers = [
-        ("actionable (idle, over-provisioned, recurring, fragmentation)",
-         covered_units(data["idle"] + data["over_provisioned"] + data["fragmented"] + data["recurring_pattern"])),
+        ("actionable (idle, over-provisioned, oversized-by-average, recurring, fragmentation)",
+         covered_units(data["idle"] + data["over_provisioned"] + data.get("oversized_by_average", [])
+                       + data["fragmented"] + data["recurring_pattern"])),
         ("multi-GPU jobs, could use fewer GPUs (review)", covered_units(data["multi_gpu_oversized"])),
         ("detected, no recommendation yet", covered_units(data["underutilized"] + data["unattributed_gpu_time"])),
     ]

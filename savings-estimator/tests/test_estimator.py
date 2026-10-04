@@ -1,5 +1,5 @@
 import pytest
-from waste_detector.findings import FRAGMENTED, IDLE, OVER_PROVISIONED, RECURRING_PATTERN
+from waste_detector.findings import FRAGMENTED, IDLE, OVER_PROVISIONED, OVERSIZED_BY_AVERAGE, RECURRING_PATTERN
 
 from savings_estimator.config import Config
 from savings_estimator.estimate import BASIS_OBSERVED_WINDOW, BASIS_PROJECTED_MONTHLY
@@ -272,3 +272,39 @@ def test_no_recommendation_tier_priced_as_observed_unused_capacity(category):
 def test_no_recommendation_tier_rejects_invalid_fraction(bad):
     estimate = estimate_for_finding(_finding("underutilized", metric_value=bad), [_rollup()], _config(), {})
     assert not estimate.priceable
+
+
+def test_oversized_by_average_sized_on_busiest_hour_with_stricter_target():
+    # A100 80GB whose busiest hour averaged 20%: at the default 50% target
+    # it needs ~125 TFLOPS and ~816 GB/s -> V100 16GB (125 TFLOPS, 900 GB/s).
+    finding = _finding(OVERSIZED_BY_AVERAGE, metric_value=20.0)
+    estimate = estimate_for_finding(finding, [_rollup(max_utilization_pct=80.0)], _config(), {})
+    assert estimate.priceable
+    assert estimate.basis == BASIS_PROJECTED_MONTHLY
+    assert estimate.recommended_action.startswith("right-size to NVIDIA V100 16GB (")
+    assert "longer" in estimate.recommended_action
+    assert estimate.amount_inr == pytest.approx((300.00 - 175.00) * 730.0)
+    assert "busiest-hour average utilization" in estimate.methodology
+    assert "50% ceiling" in estimate.methodology
+
+
+def test_oversized_by_average_target_is_configurable_and_separate_from_sla():
+    finding = _finding(OVERSIZED_BY_AVERAGE, metric_value=20.0)
+    looser = estimate_for_finding(finding, [_rollup()], _config(avg_load_target_utilization_pct=70.0), {})
+    assert looser.recommended_action.startswith("right-size to NVIDIA A10 (")
+    # The peak-based category keeps using the SLA target, unaffected.
+    peak = estimate_for_finding(_finding(OVER_PROVISIONED, metric_value=20.0), [_rollup()],
+                                _config(avg_load_target_utilization_pct=10.0), {})
+    assert peak.recommended_action.startswith("right-size to NVIDIA A10 (")
+
+
+def test_oversized_by_average_mini_test_workload_gets_a_bandwidth_safe_target():
+    # The measured RTX 3090 LLM server (busiest hour ~21.4%): TFLOPS-only
+    # sizing would have said T4; the T4 run showed 2.3x latency. At the
+    # 50% target it needs ~401 GB/s -> A10. The A10 costs more than a
+    # 3090 at the illustrative rates, so the projected saving floors at 0.
+    finding = _finding(OVERSIZED_BY_AVERAGE, metric_value=21.4)
+    rollup = _rollup(gpu_model="NVIDIA GeForce RTX 3090", fp16_tflops=71.0)
+    estimate = estimate_for_finding(finding, [rollup], _config(), {})
+    assert estimate.recommended_action.startswith("right-size to NVIDIA A10 (")
+    assert estimate.amount_inr == 0.0
