@@ -1,0 +1,16 @@
+# A pod that holds one GPU and does nothing -- the simplest real waste for
+# the product to find (an "idle" finding once a full clock hour has passed).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: idle-notebook
+  namespace: rehearsal
+spec:
+  restartPolicy: Never
+  containers:
+    - name: notebook
+      image: nvidia/cuda:12.4.1-base-ubuntu22.04
+      command: ["sleep", "infinity"]
+      resources:
+        limits:
+          nvidia.com/gpu: 1

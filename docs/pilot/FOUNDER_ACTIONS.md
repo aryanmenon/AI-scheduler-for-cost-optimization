@@ -7,7 +7,7 @@ Status as of 2026-10-04. Only you can do these; the product side is done.
 | 0 | Protect the source code | Built: images ship compiled code only (`docs/IP_PROTECTION.md`) |
 | 1 | How pilots get the images | Decided 2026-10-04: **machine-account token**, one per pilot — set up the account (steps below) |
 | 2 | Chart delivery | Ready — one command |
-| 3 | Revoke the GitHub tokens pasted into chat earlier | **Do now** — steps below |
+| 3 | Revoke the GitHub tokens pasted into chat earlier | Done 2026-10-04 (founder deleted all of them) |
 | 4 | Post-pilot pricing | Decided: set after the first pilot's results |
 | 5 | Pilot agreement with IP clauses | **Required before the first install** — with a lawyer; clause list in `docs/IP_PROTECTION.md` (layer 2) |
 | 6 | Startup cloud credits | Apply — table below |

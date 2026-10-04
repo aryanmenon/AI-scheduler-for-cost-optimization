@@ -1,0 +1,30 @@
+# Pilot install rehearsal: the published, COMPILED images from the PR #6
+# merge (commit eac69a9), pulled exactly as a pilot customer would --
+# with the pilot machine account's read:packages token in ghcr-secret.
+# Detection thresholds are the smoke-test ones (values-smoke-test.yaml) so
+# findings appear within ~1-2 hours instead of 24h+; persistence stays ON
+# (unlike the smoke overlay) because a real pilot uses a PersistentVolume.
+global:
+  imagePullSecrets:
+    - name: ghcr-secret
+collector:
+  image: {tag: "eac69a998522fa1b60c36f3d42187da79705097a"}
+  scrapeIntervalSeconds: 10
+ingestion:
+  image: {tag: "eac69a998522fa1b60c36f3d42187da79705097a"}
+  pollIntervalSeconds: 15
+wasteDetector:
+  image: {tag: "eac69a998522fa1b60c36f3d42187da79705097a"}
+  pollIntervalSeconds: 20
+  minIdleStreakHours: 1
+  overProvisionMinObservationHours: 1
+  fragmentationMinStreakHours: 1
+  multiGpuMinStreakHours: 1
+  patternMinDaysObserved: 2
+savingsEstimator:
+  image: {tag: "eac69a998522fa1b60c36f3d42187da79705097a"}
+  pollIntervalSeconds: 20
+dashboard:
+  image: {tag: "eac69a998522fa1b60c36f3d42187da79705097a"}
+persistence:
+  enabled: true
