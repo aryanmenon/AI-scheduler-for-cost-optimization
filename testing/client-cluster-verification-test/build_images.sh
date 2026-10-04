@@ -16,11 +16,11 @@ build() {  # name context dockerfile
   sudo docker save "local/$1:test" | sudo k3s ctr images import -
 }
 
-build telemetry-collector     telemetry-collector     telemetry-collector/Dockerfile
-build ingestion-normalization ingestion-normalization ingestion-normalization/Dockerfile
-build waste-detector          waste-detector          waste-detector/Dockerfile
+build telemetry-collector     .                       telemetry-collector/Dockerfile
+build ingestion-normalization .                       ingestion-normalization/Dockerfile
+build waste-detector          .                       waste-detector/Dockerfile
 build savings-estimator       .                       savings-estimator/Dockerfile
-build dashboard               dashboard               dashboard/Dockerfile
+build dashboard               .                       dashboard/Dockerfile
 
 echo "== images now in k3s:"
 sudo k3s ctr images ls | grep 'local/' | awk '{print $1}'

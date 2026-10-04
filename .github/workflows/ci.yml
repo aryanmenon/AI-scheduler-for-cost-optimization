@@ -77,9 +77,10 @@ jobs:
   docker-build:
     # Each Dockerfile is referenced by the Helm chart's values.yaml as the
     # image every sidecar actually runs -- an untested Dockerfile is an
-    # untested deployment. savings-estimator is the odd one out: it needs
-    # its two sibling packages copied in (see its Dockerfile's own
-    # comment), so it alone builds from the repo root.
+    # untested deployment. Every image builds from the repo root: each
+    # Dockerfile compiles its package with deploy/compile/compile_packages.py
+    # so the shipped image holds no Python source, and the verify step
+    # below fails the job if any .py/.pyc of ours made it into an image.
     #
     # Every push builds (a broken Dockerfile on a feature branch should
     # fail loudly), but only a push to the repo's default branch also
@@ -94,20 +95,15 @@ jobs:
       matrix:
         include:
           - component: telemetry-collector
-            context: telemetry-collector
-            dockerfile: telemetry-collector/Dockerfile
+            packages: telemetry_collector
           - component: ingestion-normalization
-            context: ingestion-normalization
-            dockerfile: ingestion-normalization/Dockerfile
+            packages: ingestion_normalization
           - component: waste-detector
-            context: waste-detector
-            dockerfile: waste-detector/Dockerfile
+            packages: waste_detector
           - component: savings-estimator
-            context: .
-            dockerfile: savings-estimator/Dockerfile
+            packages: ingestion_normalization waste_detector savings_estimator
           - component: dashboard
-            context: dashboard
-            dockerfile: dashboard/Dockerfile
+            packages: dashboard
     steps:
       - uses: actions/checkout@v4
 
@@ -140,15 +136,65 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build (and publish on the default branch) ${{ matrix.component }} image
+      - name: Build ${{ matrix.component }} image
         uses: docker/build-push-action@v6
         with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          push: ${{ steps.publish.outputs.push == 'true' }}
+          context: .
+          file: ${{ matrix.component }}/Dockerfile
+          load: true
+          push: false
           tags: |
             ${{ steps.image.outputs.prefix }}/${{ matrix.component }}:latest
             ${{ steps.image.outputs.prefix }}/${{ matrix.component }}:${{ github.sha }}
+
+      - name: Verify the image ships no Python source and its modules load
+        # The product's IP protection (docs/IP_PROTECTION.md) is only as
+        # good as this check: any .py other than a package's version-only
+        # __init__.py, or any .pyc of ours, fails the build.
+        run: |
+          IMAGE="${{ steps.image.outputs.prefix }}/${{ matrix.component }}:${{ github.sha }}"
+          docker run --rm --entrypoint sh "$IMAGE" -c '
+            set -e
+            SITE=/opt/venv/lib/python3.12/site-packages
+            for pkg in ${{ matrix.packages }}; do
+              leaked=$(find "$SITE/$pkg" \( -name "*.py" ! -name "__init__.py" \) -o -name "*.pyc")
+              if [ -n "$leaked" ]; then echo "source shipped in $pkg:"; echo "$leaked"; exit 1; fi
+              compiled=$(find "$SITE/$pkg" -name "*.so" | wc -l)
+              echo "$pkg: $compiled compiled modules, no source"
+              [ "$compiled" -gt 0 ]
+              python -c "import importlib, pkgutil, $pkg as p; [importlib.import_module(m.name) for m in pkgutil.walk_packages(p.__path__, p.__name__ + \".\")]"
+            done'
+
+      - name: Publish ${{ matrix.component }} image (default branch only)
+        if: steps.publish.outputs.push == 'true'
+        run: |
+          docker push "${{ steps.image.outputs.prefix }}/${{ matrix.component }}:latest"
+          docker push "${{ steps.image.outputs.prefix }}/${{ matrix.component }}:${{ github.sha }}"
+
+  test-compiled:
+    # The images run Cython-compiled code, not the source the `test` job
+    # exercises; run every suite again against the compiled packages so a
+    # compile-only behavior change can't reach a customer.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies and Cython
+        run: |
+          python -m pip install "cython==3.1.4" "setuptools>=68" \
+            -e "telemetry-collector[dev]" \
+            -e "ingestion-normalization[dev]" \
+            -e "waste-detector[dev]" \
+            -e "savings-estimator[dev]" \
+            -e "dashboard[dev]" \
+            -e "integration-tests[dev]"
+
+      - name: Compile and run every suite against the compiled packages
+        run: bash deploy/compile/test_compiled.sh
 
   dependency-audit:
     # Scans the pinned runtime dependency versions (requests,

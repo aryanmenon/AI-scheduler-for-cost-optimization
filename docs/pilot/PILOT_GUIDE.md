@@ -60,6 +60,9 @@ checked" instead of guessing.
   `ClusterIP` by default — not exposed outside the cluster.
 - Every product container runs as non-root with a read-only root
   filesystem.
+- The product ships as compiled code. Everything you'd review for
+  security — the Helm chart, every Kubernetes resource and permission it
+  creates, configuration and logs — is plain text.
 
 ## Requirements
 

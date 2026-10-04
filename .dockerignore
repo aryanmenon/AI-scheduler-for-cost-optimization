@@ -1,0 +1,13 @@
+# Every image builds with the repo root as context (see each Dockerfile);
+# send only what the builds COPY.
+.git
+.github
+docs
+reports
+testing
+integration-tests
+**/tests
+**/__pycache__
+**/*.egg-info
+**/build
+**/*.pyc

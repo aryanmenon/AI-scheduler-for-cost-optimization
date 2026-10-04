@@ -806,6 +806,24 @@ debugging real problems as they come up, not running anything myself.
   actionable, 9.8% review, 2.5% no-recommendation, 23.0% total detected.
   Known remaining: review-tier fragmentation still projects each streak as
   a month (labeled upper bound) and fires on idle GPUs too.
+- **Source-code protection (2026-10-04), founder chose option A.** All
+  five Dockerfiles are now two-stage, built from the repo root (with a
+  root `.dockerignore`): `deploy/compile/compile_packages.py` Cython-
+  compiles every module except the version-only `__init__.py` to stripped
+  `.so` (docstrings off, `annotation_typing=False` to keep Python
+  semantics), deletes .py/.c/.pyc, and fails if anything is left. CI:
+  docker-build loads each image and fails on any shipped .py/.pyc of ours,
+  then imports every compiled module (publish is now a separate `docker
+  push` step); new `test-compiled` job runs all six suites against the
+  compiled packages (`deploy/compile/test_compiled.sh`). Verified locally:
+  45 modules compile; all suites pass compiled with a probe confirming 0
+  modules loaded from source; the verify snippet passes clean packages
+  and catches a planted .py; comments/formulas absent from the .so,
+  function names and user-facing messages present. Not verified locally:
+  the Docker builds themselves (no Docker daemon here) -- first CI run is
+  the proof. `testing/client-cluster-verification-test/build_images.sh`
+  updated to root contexts. Legal layer (pilot licence clauses) listed in
+  `docs/IP_PROTECTION.md`; required before the first install.
 - **Sample report is now a CI regression test (2026-10-04).**
   `integration-tests/tests/test_sample_report.py` runs
   `docs/pilot/make_sample_report.py`'s `build()` and pins the hand-checked

@@ -4,18 +4,20 @@ Status as of 2026-10-04. Only you can do these; the product side is done.
 
 | # | Action | Status |
 |---|---|---|
-| 1 | Decide how pilots get the images | **Open** — see below |
+| 0 | Protect the source code | Built: images ship compiled code only (`docs/IP_PROTECTION.md`) |
+| 1 | How pilots get the images | Decided 2026-10-04: **machine-account token**, one per pilot — set up the account (steps below) |
 | 2 | Chart delivery | Ready — one command |
 | 3 | Revoke the GitHub tokens pasted into chat earlier | **Do now** — steps below |
 | 4 | Post-pilot pricing | Decided: set after the first pilot's results |
-| 5 | Pilot agreement / NDA | Deferred: with a lawyer, before the first install |
+| 5 | Pilot agreement with IP clauses | **Required before the first install** — with a lawyer; clause list in `docs/IP_PROTECTION.md` (layer 2) |
 | 6 | Startup cloud credits | Apply — table below |
 
 ## 1. Image access for pilots
 
-The images are private on GHCR. Either way the customer can read the
-Python source, because the images run in their cluster — so the choice is
-about install effort versus managing a credential.
+The images are private on GHCR and, since 2026-10-04, contain only
+compiled code (no readable source) — so whichever route a pilot gets them
+by, they can't read your source; the signed agreement covers the rest. The
+choice is about install effort versus managing a credential.
 
 | | Machine-account token | Offline bundle |
 |---|---|---|
@@ -27,15 +29,34 @@ about install effort versus managing a credential.
 Recommendation: token for most pilots, bundle only if a customer's security
 team asks for it (the bundle script can be built when that happens).
 
-Token setup, if chosen:
-1. Create a separate GitHub account for pilots (e.g. `<you>-pilot-bot`); check
-   GitHub's current terms on machine accounts.
-2. Give it read access to the five `ai-scheduler-for-cost-optimization/*`
-   packages only (each package's settings → Manage access).
-3. Per pilot, from that account, create a token with only `read:packages`,
-   with an expiry date at the end of the pilot. Note which customer has it.
-4. Send it to the customer through a channel other than the install guide.
-   Revoke it when the pilot ends.
+**Decision (2026-10-04): machine-account token.** The offline bundle stays
+an option only if a customer's security team requires it.
+
+Token setup (once):
+1. Create a separate GitHub account for pilots (e.g. `<you>-pilot-bot`),
+   with its own email and 2FA. Check GitHub's current terms on machine
+   accounts.
+2. **Do not add it as a collaborator on the repository** — the code stays
+   out of its reach entirely.
+3. For each of the five packages (your profile → Packages →
+   `ai-scheduler-for-cost-optimization/<component>` → Package settings):
+   under "Manage access", turn off inheriting access from the repository
+   if it's on, and add the bot account with **Read**. (GitHub moves these
+   settings occasionally; their docs page "Configuring a package's access
+   control and visibility" has the current path.)
+4. Confirm each package's visibility is **Private**.
+
+Per pilot:
+1. Signed pilot agreement first (`docs/IP_PROTECTION.md`, layer 2).
+2. Signed in as the bot, create a **classic** personal access token with
+   only the `read:packages` scope, an expiry at the pilot's end, and a note
+   naming the customer. (Container registry access has historically needed
+   a classic token; check GitHub's docs if fine-grained tokens now cover it.)
+3. Send the bot's username and the token to the customer's engineer by a
+   different channel from the install guide (e.g. a one-time secret link),
+   for the `kubectl create secret docker-registry` step in PILOT_GUIDE.md.
+4. When the pilot ends — or anything looks wrong — delete that token.
+   Keep a short list: customer, token note, created, expires, revoked.
 
 ## 2. Chart delivery
 
