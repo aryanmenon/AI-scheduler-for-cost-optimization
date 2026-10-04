@@ -4,18 +4,20 @@ Status as of 2026-10-04. Only you can do these; the product side is done.
 
 | # | Action | Status |
 |---|---|---|
-| 1 | Decide how pilots get the images | **Open** — see below |
+| 0 | Protect the source code | Built: images ship compiled code only (`docs/IP_PROTECTION.md`) |
+| 1 | Decide how pilots get the images | **Open** — token recommended, see below |
 | 2 | Chart delivery | Ready — one command |
 | 3 | Revoke the GitHub tokens pasted into chat earlier | **Do now** — steps below |
 | 4 | Post-pilot pricing | Decided: set after the first pilot's results |
-| 5 | Pilot agreement / NDA | Deferred: with a lawyer, before the first install |
+| 5 | Pilot agreement with IP clauses | **Required before the first install** — with a lawyer; clause list in `docs/IP_PROTECTION.md` (layer 2) |
 | 6 | Startup cloud credits | Apply — table below |
 
 ## 1. Image access for pilots
 
-The images are private on GHCR. Either way the customer can read the
-Python source, because the images run in their cluster — so the choice is
-about install effort versus managing a credential.
+The images are private on GHCR and, since 2026-10-04, contain only
+compiled code (no readable source) — so whichever route a pilot gets them
+by, they can't read your source; the signed agreement covers the rest. The
+choice is about install effort versus managing a credential.
 
 | | Machine-account token | Offline bundle |
 |---|---|---|
