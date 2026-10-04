@@ -1,4 +1,4 @@
-"""Run all four waste-detection categories over one set of hourly rollups."""
+"""Run every waste-detection category over one set of hourly rollups."""
 from __future__ import annotations
 
 import time
@@ -7,9 +7,11 @@ from waste_detector.config import Config
 from waste_detector.findings import WasteFinding
 from waste_detector.fragmentation import detect_fragmentation
 from waste_detector.idle import detect_idle
+from waste_detector.multi_gpu import detect_multi_gpu_oversized
 from waste_detector.over_provisioning import detect_over_provisioning
 from waste_detector.patterns import detect_recurring_patterns
 from waste_detector.rollup_reader import RollupRow
+from waste_detector.unrecommended import detect_unrecommended_waste
 
 
 def run_all_detectors(
@@ -21,4 +23,7 @@ def run_all_detectors(
     findings.extend(detect_over_provisioning(rows, config, now))
     findings.extend(detect_fragmentation(rows, config, now))
     findings.extend(detect_recurring_patterns(rows, config, now))
+    findings.extend(detect_multi_gpu_oversized(rows, config, now))
+    # Last, so it only reports below-target GPU time nothing above explains.
+    findings.extend(detect_unrecommended_waste(rows, findings, config, now))
     return findings

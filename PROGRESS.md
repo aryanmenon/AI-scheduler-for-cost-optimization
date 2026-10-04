@@ -6,7 +6,10 @@ everything from scratch. Update or delete this file once it's stale —
 it's a scratchpad, not permanent documentation.
 
 Branch this was written on: `claude/cost-optimization-saas-telemetry-w4zbhb`
-(the repo's actual default branch).
+(the repo's actual default branch). **Since 2026-09-29, work continues on
+`claude/agent-skills-setup-fno99z`**, which was fast-forwarded from it and
+holds everything in this file plus the market report, the fragmentation
+fixes and the multi-GPU signal below; `...-w4zbhb` does not have those.
 
 ## 1. Status summary — what's done
 
@@ -134,9 +137,31 @@ Branch this was written on: `claude/cost-optimization-saas-telemetry-w4zbhb`
   trace (552 machines, 117k jobs, real per-minute utilization from
   `nvidia-smi`) through the actual `waste_detector` code at real (not
   smoke-test-lowered) pilot thresholds, over a real 31-day window: 10,990
-  idle, 279 over-provisioned, 12,568 fragmented, 6,848 recurring-pattern
-  findings, and **23.0% of observed GPU-workload-hours flagged as some form
-  of waste** (merged across categories, no double-counting) -- the first
+  idle, 279 over-provisioned, 5,718 fragmented, 6,848 recurring-pattern
+  findings, and **16.7% of observed GPU-workload-hours flagged as
+  actionable waste** (merged across categories, no double-counting; 14.7%
+  without the unverified fragmentation candidates). Separately, the
+  visibility-only multi-GPU signal shows **12.7%** of GPU-hours as
+  releasable capacity (7.0% not already flagged) -- an upper bound, never
+  added to the 16.7%. The "no recommendation yet" tier adds 13.4% of
+  GPU-hours below the 70% target (2.5% of capacity), also separate.
+  **Use 16.7% (floor 14.7%) when quoting Philly.**
+  **Total waste, all tiers in one unit** (GPU capacity unused below the
+  70% target; `summarize.py` with `rollups.pkl`): total waste **27.0% of
+  capacity**, of which **23.0% detected (85%)** -- actionable 11.1%,
+  multi-GPU review 9.4%, no recommendation 2.5% -- and 4.0% (15%) in
+  low-coverage hours the detectors skip on purpose; 0.0% undetected in
+  checked hours. Raw unused capacity incl. slack above 70%: 51.3%.
+  The 23.0% of *capacity* here is unrelated to the old 23.0% of
+  *GPU-hours* -- don't mix them up with prospects. Suggested claim: "on
+  Microsoft's real Philly cluster, 23% of GPU capacity went unused below
+  an efficient-use target; the product classified all of it -- about
+  half with an actionable recommendation, a third flagged for review,
+  the rest measured without a recommendation yet."
+  History: originally reported as 23.0% with 12,568 fragmented findings;
+  17.1% after fragmentation stopped flagging multi-GPU jobs; 16.7% after
+  the per-workload mislabel fix (all 2026-10-01, see the fragmentation
+  entries below) -- the first
   real-evidence answer to "will this reliably find >=15-20% waste,"
   previously only a synthetic-data claim. Two public Alibaba `clusterdata`
   releases were tried first and ruled out (`cluster-trace-gpu-v2023` turned
@@ -243,6 +268,118 @@ Branch this was written on: `claude/cost-optimization-saas-telemetry-w4zbhb`
   `waste_findings`, for the record immediately once a finding fires --
   don't assume there's time to come back to it later on a
   non-persistent deployment.
+
+- **Market research, competition & unit economics report: DONE (2026-09-29
+  to 2026-10-01).** `reports/gpu_waste_detection_market_research.pdf`,
+  built by `reports/build_market_report.py` (reportlab; edit the script and
+  re-run to change numbers -- every figure is tagged [S] sourced or [A]
+  assumption, assumptions ledger in section 8 of the PDF). 14 pages:
+  market context, TAM/SAM/SOM (India + global + per region), competitor
+  table (CAST AI, ScaleOps, Datadog GPU Monitoring, IBM Kubecost/OpenCost,
+  PerfectScale/DoiT, NVIDIA Run:ai/KAI, DIY DCGM+Grafana, Indian GPU-cloud
+  consoles), unit economics (solo-founder), international expansion,
+  India-only vs India+international comparison, and a reconciliation with
+  the founder's earlier September SMB market study. Key numbers are in
+  section 8 of this file.
+- **Fragmentation honesty fixes ("step A"): DONE (2026-10-01, commit
+  62142d2).** Prompted by a critique that fragmentation doesn't prove
+  consolidation is possible (true -- the module's own docstring said
+  bin-packing was out of scope). Verified against the code before
+  changing anything; all three code claims reproduced:
+  1. Multi-GPU jobs weren't fully excluded: the only check was "2+
+     distinct workloads among the underused GPUs", so a 4-GPU training
+     job next to one small model got "consolidate" findings on all 4 of
+     its GPUs. **Fix:** any workload on >1 GPU in an hour is excluded
+     from fragmentation (rollups carry workload, not pod, so a Deployment
+     whose replicas each hold one GPU is excluded too -- deliberately
+     conservative).
+  2. Fragmentation ₹ = (1 - utilization) x 50% per GPU with no fit check.
+     **Fix:** finding detail says "consolidation candidate, needs engineer
+     review" and lists what wasn't checked (memory fit, combined compute,
+     cluster GPU sharing); recommended_action now "review whether this
+     workload can share a GPU ... (needs time-slicing, MPS, or MIG)";
+     methodology says it's an upper bound that may be zero.
+  3. The dashboard headline summed every projected estimate, so a GPU
+     flagged both over-provisioned and fragmented (alternative actions)
+     was counted twice. **Fix:** headline counts each physical GPU once at
+     its largest projected estimate, with a note when category totals add
+     up to more.
+  Philly re-run: 23.0% -> 17.1%. Also fixed `replay.py` crashing at the
+  end of a 10-minute run because it didn't create its output directory.
+- **Multi-GPU "could use fewer GPUs" signal ("option B") + fragmentation
+  mislabel fix: DONE (2026-10-01).** Step A dropped real multi-GPU
+  underuse along with the bad advice (multi-GPU GPU-hours averaging 2-50%
+  that nothing flags = 22.2% of Philly GPU-hours). New category
+  `multi_gpu_oversized` (`waste-detector/src/waste_detector/multi_gpu.py`):
+  per hour a workload holds N>1 GPUs, GPUs needed = ceil(sum of hourly-avg
+  utilization / 70%); if fewer than N for a 4h+ streak, every GPU of the
+  job gets a finding with metric_value = smallest releasable fraction
+  across the streak. **Sized on averages on purpose** (founder chose this
+  after seeing the prototype): peak-based sizing found +0.4 pts on Philly,
+  average-based +6.6 -- so it's an upper bound. Priced by savings-estimator
+  on a new `visibility_upper_bound` basis (fraction x rate x
+  MULTI_GPU_CAPTURE_FRACTION 0.5 x 730h); the dashboard keeps that basis
+  out of both headline totals, shows it as its own card only when
+  present, and sorts its rows after actionable findings. Helm values:
+  `wasteDetector.multiGpuTargetUtilizationPct` (70),
+  `wasteDetector.multiGpuMinStreakHours` (4; smoke-test 1),
+  `savingsEstimator.multiGpuCaptureFraction` (0.5).
+  **Mislabel fix (pre-existing bug found during verification):**
+  fragmentation findings were keyed by GPU only and labeled with the first
+  row's workload, so a GPU that switched jobs mid-streak charged the first
+  job for every hour (6,419 Philly GPU-hours). Now keyed by GPU and
+  workload. Philly: 17.1% -> 16.7%; multi-GPU signal 12.7% (7.0% new).
+  `testing/real-trace-replay/replay.py` now saves `rollups.pkl` and
+  `rerun_detectors.py` re-runs every detector on it in seconds.
+- **"Below actionable recommendations" tier: DONE (2026-10-01).** Founder's
+  requirement: *never detect less waste just because there's no correct
+  recommendation for it* -- detect it and classify it below the actionable
+  findings. New `waste-detector/src/waste_detector/unrecommended.py` runs
+  last (after the actionable detectors and the multi-GPU signal) and
+  reports every GPU-hour averaging below `UNDERUTILIZED_TARGET_PCT` (70%,
+  same as savings-estimator's SLA ceiling) that no finding already covers:
+  `underutilized` (attributed) and `unattributed_gpu_time` (GPU time with
+  no Kubernetes pod -- previously dropped by every detector).
+  metric_value = average shortfall below target as a fraction of the GPU.
+  Recurring-pattern findings only count as covering their own hour of
+  day. Priced as *observed* cost on a new `detected_no_recommendation`
+  basis (rate x shortfall x hours, not projected). Dashboard: new "Below
+  actionable recommendations" section holding this tier and the
+  multi-GPU upper bound (moved out of the headline row); never added to
+  either headline figure; rows sort after actionable findings. Also
+  fixed observed tier amounts being labeled "/mo". Helm:
+  `wasteDetector.underutilizedTargetPct` (70),
+  `wasteDetector.underutilizedMinRunHours` (1). Philly: 58,491 findings,
+  13.4% of GPU-hours, 2.5% of capacity below target (median run 1h).
+  **Tiers now, in order of trust:** (1) actionable: idle, over-provisioned,
+  recurring pattern, fragmentation candidates -> headline figures;
+  (2) multi-GPU "fewer GPUs" upper bound (projected/month); (3) detected
+  waste with no recommendation (observed). Tiers 2-3 never enter a
+  headline.
+- **Right-sizing mini-test (2026-10-04): FAIL -- found a real flaw in
+  `ceiling.py`.** `testing/rightsizing-mini-test/` (results + full
+  `compare.py` output in `results/`). ~$0.30 total: RTX 3090 on vast.ai,
+  free T4 on Colab. Same model (Qwen2.5-1.5B-Instruct, vLLM 0.8.5.post1,
+  fp16, V0 engine, ~12 GB each), same 15 min of the Azure conv trace at
+  keep 0.05 (237 requests each, 0 errors each).
+  - 3090: mean busy 21.4%, product-style peak (30 s sampling) 75%, p95
+    2.21 s. T4: mean busy 54.3%, peak 97%, p95 5.16 s. Throughput 1.00x.
+  - **Product's assumption (busy % scales by FP16 TFLOPS ratio, 1.09x)
+    predicted ~23% on the T4; measured 54% (2.54x), close to the
+    memory-speed ratio (2.92x).** Latency p50/p95/p99 rose 2.3x (FAIL vs
+    the 1.5x bar). Capacity held: same throughput, no queueing, no errors.
+  - Finding 2: at this light load (~0.26 req/s) the 3090's 30-s-sampled
+    peak was 71-75%, so `over_provisioning.py` (peak <= 30%) would never
+    fire: GPU busy % reads high whenever any request is in flight. For
+    LLM serving the right-sizing path is mostly unreachable (safe, but this
+    waste only lands in the no-recommendation tier). At that peak
+    `ceiling.py` would pick an L4 (121 TFLOPS but 300 GB/s -- slower memory
+    than the T4), so the hypothetical recommendation would very likely fail
+    the same way.
+  - Not a product recommendation tested literally (the product wouldn't
+    flag this load); it tests the assumption every right-sizing number
+    rests on. One model, 15 min, two hosts, single run.
+  - Fix built the same day and re-tested on an RTX 4060 Ti: held (section 4).
 
 ## 2. What's in progress right now
 
@@ -478,6 +615,20 @@ debugging real problems as they come up, not running anything myself.
   `fragmentation_min_underutilized_gpus=2`, `fragmentation_min_streak_hours=4`;
   recurring pattern: `pattern_min_days_observed=7`,
   `pattern_idle_threshold_pct=5.0`, `pattern_min_consistent_fraction=0.8`.
+  multi-GPU oversized (`multi_gpu.py`, visibility only):
+  `multi_gpu_target_utilization_pct=70.0`, `multi_gpu_min_streak_hours=4`.
+- Visibility-only pricing basis: `savings-estimator/src/savings_estimator/estimate.py`
+  (`BASIS_VISIBILITY_UPPER_BOUND`); headline dedupe and the separate
+  figure: `dashboard/src/dashboard/aggregator.py`.
+
+**Market report:** `reports/build_market_report.py` (source of truth) ->
+`reports/gpu_waste_detection_market_research.pdf`. Fonts: DejaVu Sans
+(Helvetica can't render ₹).
+
+**Philly replay:** `testing/real-trace-replay/replay.py` (full run, saves
+`rollups.pkl`), `rerun_detectors.py` (detectors only, from saved rollups),
+`summarize.py` (flagged %, plus the separate multi-GPU figure),
+`RESULTS.md` (every run's raw output and the 2026-10-01 analysis).
 
 **Capability / pricing (real-GPU-only limitation lives here):**
 - `ingestion-normalization/src/ingestion_normalization/capability.py` —
@@ -610,6 +761,89 @@ debugging real problems as they come up, not running anything myself.
    Operational readiness (onboarding/RBAC scope, rollback story, false-
    positive response process, pricing mechanics) is a parallel written-
    answers task, not a blocker to starting outreach conversations.
+
+### Open product items (decided or discussed 2026-09-29 to 2026-10-01, not built)
+
+- **`ceiling.py` memory-speed aware: BUILT and RE-TESTED 2026-10-04 --
+  held out of sample, conservatively.** No A10/L4/V100 on vast.ai, so the
+  re-test used an RTX 4060 Ti (1.24x more compute, 3.25x less bandwidth
+  than the 3090): old logic predicted 0.80x (faster); fixed predicted up to
+  3.25x; measured busy 2.14x, p95 latency 1.72x, throughput 1.00x, 0
+  errors. Fix never under-predicts (T4 in-sample 2.92x vs 2.54x/2.33x);
+  over-predicts on the 4060 Ti (large L2), so savings may be understated.
+  Still untested: the A10 recommendation itself, other models, training.
+  Details in `testing/rightsizing-mini-test/README.md`. Target must fit on both FP16 TFLOPS and memory bandwidth;
+  `RightSizingRecommendation` gained `required_mem_bandwidth_gbps` and
+  `expected_latency_factor` (max of compute and bandwidth drops); the
+  estimator passes the current GPU's bandwidth and the recommended action
+  now reads "right-size to X (each request may take up to ~Fx longer --
+  fine for batch/offline work, check latency targets before moving an
+  interactive service)". verify.py's "right-size to" regex updated for the
+  suffix. 7 new/changed tests fail on the old code, pass on the new; all
+  suites green (37 + 66 + 90 + 71 + 49 + 2 = 315). Effect: fewer and larger
+  downsize targets (e.g. A100 80GB at 25% peak -> V100 instead of L4; RTX
+  3090 at 25-30% -> A10 instead of T4), so projected savings shown drop --
+  correctly. Next: re-run the mini-test "after" side on an A10 (product's
+  prediction: busy % and latency up by at most 1.56x).
+
+Ordered roughly by what was recommended first:
+
+- **Client-cluster verification test: KIT BUILT, NOT RUN** (2026-10-01,
+  `testing/client-cluster-verification-test/`). Verifies the ₹ estimates and
+  recommendations by applying them and measuring (not just detection): one
+  4x A100 VM running vLLM (Qwen2.5-1.5B under the real Azure conv trace,
+  Qwen2.5-0.5B under 15% of the code trace) and a data-loading-bound DDP
+  job on 2 GPUs that trains, holds idle, then exits; then (a) both vLLM
+  services co-located on one GPU, (b) the job on 1 GPU with 2 and 4 loader
+  workers, (c) phase 2: the identical trace on 1x whatever GPU the product
+  recommends. `verify.py` prints predicted vs measured with PASS/MARGINAL/
+  FAIL. Founder chose **Quick (smoke thresholds, ~6 h + ~1.5 h, ~$25-50)
+  then Full (real thresholds, ~29 h + ~1.5 h, ~$90-180)**. All scripts
+  dry-run here: load generator vs a fake vLLM server, DDP script on CPU
+  with 2 processes, verify.py on real product output from a synthetic
+  scenario. Pinned images: vllm/vllm-openai:v0.8.5.post1,
+  pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime (both confirmed on Docker
+  Hub); driver must be >= 550.
+- **Use an existing dcgm-exporter: BUILT 2026-10-04 (not yet run on a
+  GPU Operator cluster).** `dcgmExporter.enabled: false` now uses
+  `dcgmExporter.external`: either `url` (used as-is) or `namespace` +
+  `podSelector` (defaults `gpu-operator` / `app: nvidia-dcgm-exporter`),
+  for which the chart renders a *headless* Service in that namespace
+  (`templates/dcgm-exporter-external.yaml`) so DNS returns every node's
+  exporter pod -- the GPU Operator's own Service is a normal ClusterIP one
+  and would reintroduce the one-node-per-cycle starvation bug. Collector
+  still has no API access. Misconfiguration fails at `helm install` with
+  a clear message. Verified with `helm lint` / `helm template` (default,
+  selector, url, misconfigured, all overlays).
+- **Optional ~1h alternative to step B:** keep fragmentation on the
+  dashboard but out of the headline ₹ total. Recommended before pilots;
+  not chosen yet.
+- **Step B -- fragmentation fit check** (~1 week, 3 services): add peak
+  memory + GPU memory capacity (used+free) to rollups (schema migration),
+  group candidates by GPU model, pack by peak memory (10% headroom) and
+  summed peak compute (<=70%), flag only if fewer GPUs suffice, price as
+  freed GPUs x rate. Caveats: still can't see whether GPU sharing is
+  enabled; vLLM pre-allocates ~90% of GPU memory by default
+  (`gpu_memory_utilization=0.9`) and PyTorch caches freed memory, so the
+  memory check will rarely flag those servers; Philly can't validate it
+  (its memory data is host RAM). Recommended *after* the first pilot.
+- **Option C -- percentile-based multi-GPU sizing** (e.g. p90 of
+  per-minute readings instead of hourly average): needs percentiles in
+  rollups (~+1 day). Calibrate on a pilot, then consider moving the
+  multi-GPU signal from visibility-only toward a recommendation.
+- **No-recommendation tier tuning:** `underutilizedMinRunHours` defaults
+  to 1, so a live cluster will get many short findings (Philly: 58k,
+  median 1h). Raise it (or aggregate per day) if the dashboard gets
+  noisy; check on the first pilot.
+- **Step C -- read cluster scheduling settings** (is time-slicing/MPS/MIG
+  configured; pod affinity) via the K8s API, still read-only. Later.
+- **GPU VM support (no Kubernetes)** -- today non-K8s customers get zero
+  findings (`waste-detector/src/waste_detector/grouping.py` drops
+  unattributed rows). Cheapest step: keep unattributed rows and report
+  idle/recurring per host+GPU (days); then a PID->Docker-container
+  agent for over-provisioned/fragmented (1-2 weeks); then a Docker
+  Compose installer. Estimated to roughly double India SAM. Build only if
+  customer interviews show demand (ask "Kubernetes or plain VMs?").
 
 ## 5. Key gotchas (learned the hard way, don't re-break these)
 
@@ -782,6 +1016,43 @@ debugging real problems as they come up, not running anything myself.
   provisioning regardless of quota values -- upgrade first if quota
   requests seem to go nowhere.
 
+- **DCGM_FI_DEV_GPU_UTIL is busy time, not compute.** It's the % of time
+  any kernel ran; a tiny kernel and a full-GPU kernel both read 100%.
+  Summing it across GPUs ("8 GPUs at 20% = 1.6 GPUs of work") is only a
+  rough proxy. DCGM_FI_PROF_SM_ACTIVE is the better compute signal if
+  ever needed.
+- **Kubernetes gives each pod whole GPUs** unless time-slicing, MPS, MIG
+  (or DRA) is set up; time-slicing has no memory or fault isolation
+  (NVIDIA GPU Operator docs). Any "share a GPU" advice must say so.
+- **NCCL refuses two ranks on the same GPU** ("Duplicate GPU detected",
+  since NCCL 2.5) -- never tell a multi-GPU job to consolidate onto a
+  shared GPU.
+- **Rollups carry workload identity, not pod**, so "same workload on >1
+  GPU" can't distinguish distributed-job ranks from Deployment replicas.
+- **Philly is 82% multi-GPU GPU-hours** (single-GPU median hourly avg
+  utilization 54.3%, multi-GPU 53.6%). Effects that depend on multi-GPU
+  jobs look much bigger on Philly than they will on a single-GPU-pod
+  inference cluster.
+- **Philly trace download can be cut off** (seen: connection reset at
+  27MB). Use `curl -C - --retry 5` in a loop and check the sha256 in the
+  replay README before extracting. 1GB download / 6.6GB extracted; delete
+  it after building rollups.
+- **Never pass the rates JSON to Helm with `--set`/`--set-string`.** Helm
+  parses `{...}` as list syntax: `'{"NVIDIA A100 80GB": 100.0}'` renders
+  as `["NVIDIA A100 80GB": 100.0]`, invalid JSON, so the product silently
+  ignores the real prices. Use a values file
+  (`testing/client-cluster-verification-test/rates.py` writes one).
+- **The published GHCR images lag this branch.** They're private and only
+  rebuilt from the default branch, so a live test of work on
+  `claude/agent-skills-setup-fno99z` must build images on the VM
+  (`testing/client-cluster-verification-test/build_images.sh` +
+  `values-local-images.yaml`), or it silently runs old detectors.
+- **After a detector change, re-run Philly from saved rollups**
+  (`testing/real-trace-replay/rerun_detectors.py`) and update every place
+  that quotes the Philly %: replay README + RESULTS.md, this file, and
+  `reports/build_market_report.py` (scope paragraph, section 4.3, A12,
+  sources), then rebuild the PDF.
+
 ## 6. Methodology risk found via math review (not a code bug -- nothing changed)
 
 User asked, before the managed-cluster test, to sanity-check the detection/
@@ -861,7 +1132,6 @@ No code changed -- this was requested as read-only analysis.
 
 - Not rented, accessed, or run anything on the user's actual vast.ai
   instance — this session has no access to their real infrastructure.
-- Not started the real-managed-cluster (GKE) test work.
 - Not opened any PR beyond PR #1 (registry/CI fix merge).
 - Not made any code changes based on the section 6 methodology review --
   explicitly requested as read-only analysis.
@@ -884,3 +1154,67 @@ No code changed -- this was requested as read-only analysis.
   fallback is `--password-stdin`-style piping or a fresh terminal/tab
   reconnect, not embedding the raw token in a command that then gets
   pasted back into this chat for review.
+
+## 8. Business and market conclusions (2026-09-29 to 2026-10-01)
+
+All from `reports/gpu_waste_detection_market_research.pdf`; [A] figures
+are assumptions to replace with pilot/interview data.
+
+- **What the product is:** GPU observability + waste classification
+  priced in ₹ -- it detects and recommends, it never acts. "GPU cost
+  optimization SaaS" is a fair category label as long as claims don't
+  imply automatic action, verified savings, or a performance fee.
+- **Founder:** solo, doing engineering and sales, planning to stay solo
+  until scale. Fixed costs ~₹50k/month without salary (~₹1.5L with a
+  ₹1L draw) -> break-even ~2 (or ~5) customers at the assumed tier mix.
+  The real constraint is time: ~25 customers supportable alone (2.5 h
+  support/customer/month at 40% of time), ~1 new customer/month. First
+  hire = support engineer at ~20-25 customers (~₹60-75L ARR).
+- **Source-verified re-estimate (report section 8, Oct 2026) -- prefer
+  this when citing externally.** Built top-down from published figures
+  only: K8s cost management $2.23B (2026) x GPUs' 14% share of compute
+  cost (Datadog, 22 Apr 2026) = **global TAM ~$312M (~₹2,980 Cr)**; SAM
+  (NVIDIA 80-92%) ~$250-287M; SOM [A] ~$0.25-1.4M ARR. India = global x
+  1.89% (Gartner 2025 cloud spend 13.7/723.4): **TAM ~$5.9M (~₹56 Cr)**,
+  SAM ~$4.7-5.4M, SOM [A] ~$95-270K ARR. Closest category, GPU
+  monitoring software: ~$1.65B (2026). Cross-check: 2,700-28,674 Indian
+  K8s companies x 6% using GPUs (Datadog) = ~160-1,700 orgs. ₹95.45/$.
+  India likely understated (GPU capacity growing faster than cloud).
+- **TAM/SAM/SOM [A]:** India TAM ₹78-190 Cr/yr, SAM ~₹38 Cr (~885 orgs on
+  Kubernetes), 3-yr SOM 27-45 customers / ₹0.8-1.35 Cr ARR. With SE Asia,
+  Middle East, US, EU: TAM ~₹860 Cr, SAM ~₹270 Cr; 30 India + 15 overseas
+  -> ~₹2.6 Cr ARR. Global top-down TAM ~$0.45B (2026).
+- **Year-3 margins [A]** (₹ lakh/yr, with 1 support engineer, ₹2L/month
+  salary, ~25% tax): 27 customers -> net 22 (27%); 35 -> 40 (38%); 45 ->
+  62 (46%); India+overseas -> 113 (44%). Gross margin 78-87% (no hosting
+  cost; self-hosted). The ₹4.35 Cr scenario (100 customers, full planned
+  product) needs ~8 people and nets ~₹1.78 Cr (41%) -- likely year 4-5
+  if self-funded.
+- **Pricing:** current tiers by GPU count (₹9,999 / 29,999 / 74,999 /
+  custom) underprice H100 fleets and overprice cheap-GPU fleets.
+  Recommended: ~1% of monitored GPU spend with a ₹9,999 floor; move
+  toward 2% only after a pilot proves >=15% savings or once the product
+  acts on waste.
+- **Recoverable-waste assumption:** the report's ROI tables use 10% of
+  GPU spend, now flagged as optimistic: Philly 16.7% flagged x 30-50%
+  acted on = ~5-8%. At 7% every ROI is ~30% lower (16xA100 8.2x; 4xL4
+  1.4x). The first pilot's before/after number replaces this.
+- **Competition:** CAST AI ($1B, Jan 2026) and ScaleOps ($800M+, Mar 2026)
+  automate; Datadog GPU Monitoring (GA Apr 2026) overlaps most on
+  detection. The product wins only where read-only + self-hosted + INR +
+  non-hyperscaler (on-prem/neocloud/k3s) clusters matter. Defensibility is
+  low today.
+- **Earlier SMB study reconciliation:** its ₹216 Cr SAM / ₹7.2 Cr SOM
+  sizes the full planned product sold by a team, with a ₹7.2L average
+  contract that contradicts its own tiers (corrected: ₹130 Cr / ₹4.35
+  Cr). The gap to this report is the feature roadmap (VM support, billing
+  integration, approve-then-act, serving metrics, multi-cluster).
+- **Neoclouds:** the product already runs on any K8s with NVIDIA+DCGM
+  (proven on GKE and vast.ai/k3s); the gaps are the dcgm-exporter URL
+  override and non-K8s GPU VMs. Recommended: stay self-hosted (a hosted
+  SaaS loses the "data never leaves your cluster" edge), and pursue Indian
+  GPU clouds (E2E, Yotta, Neysa) as distribution partners.
+- **Next steps agreed with the earlier study:** 20 discovery interviews ->
+  5 read-only pilots -> 2 paid pilots with verified savings; ask every
+  prospect whether they run Kubernetes or plain VMs.
+

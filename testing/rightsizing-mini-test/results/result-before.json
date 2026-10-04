@@ -1,0 +1,42 @@
+{
+  "label": "before",
+  "gpu_name": "NVIDIA GeForce RTX 3090",
+  "driver": "580.95.05",
+  "gpu_memory_mib": 24576.0,
+  "vllm": "0.8.5.post1",
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "gpu_mem_fraction": 0.5,
+  "keep_fraction": 0.05,
+  "minutes": 15.0,
+  "util": {
+    "samples": 900,
+    "mean_pct": 21.37,
+    "p95_1s_pct": 71.0,
+    "max_1s_pct": 100.0,
+    "product_peak_median_pct": 75.0,
+    "product_peak_max_pct": 100.0,
+    "memory_used_max_mib": 12813.0
+  },
+  "load": {
+    "requests": 237,
+    "ok": 237,
+    "errors": 0,
+    "error_rate": 0.0,
+    "latency_p50_s": 1.9089181423187256,
+    "latency_p95_s": 2.211336612701416,
+    "latency_p99_s": 2.3793890476226807,
+    "latency_mean_s": 1.492561035518405,
+    "start_lag_p95_s": 0.015224695205688477,
+    "output_tokens": 43211,
+    "output_tokens_per_s": 48.06092432493612,
+    "wall_seconds": 899.087993144989,
+    "label": "before",
+    "loops": 1,
+    "model": "main",
+    "target": "http://localhost:8000",
+    "speed": 1.0,
+    "keep_fraction": 0.05,
+    "started": 1791123022.2853196,
+    "ended": 1791123921.3742483
+  }
+}

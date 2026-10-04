@@ -87,6 +87,18 @@ wasteDetector:
   patternMinDaysObserved: 7
   patternIdleThresholdPct: 5.0
   patternMinConsistentFraction: 0.8
+  # Multi-GPU jobs that may need fewer GPUs: the per-GPU hourly-average
+  # busy-time ceiling to size against, and the minimum streak. Findings are
+  # an upper bound shown outside the dashboard's headline total.
+  multiGpuTargetUtilizationPct: 70.0
+  multiGpuMinStreakHours: 4
+  # "Detected waste, no recommendation yet": every GPU-hour averaging below
+  # this target that no actionable finding covers, including GPU time with
+  # no Kubernetes pod. Keep equal to savingsEstimator.slaTargetUtilizationPct
+  # so "below target" means the same thing everywhere. Shown below the
+  # actionable findings, never in the headline totals.
+  underutilizedTargetPct: 70.0
+  underutilizedMinRunHours: 1
   # A resolved waste condition's finding just stops being refreshed
   # rather than being deleted -- without this, every category ever
   # detected accumulates forever. 0 disables pruning.
@@ -110,6 +122,7 @@ savingsEstimator:
   slaTargetUtilizationPct: 70.0
   hoursPerMonth: 730.0
   fragmentationCaptureFraction: 0.5
+  multiGpuCaptureFraction: 0.5
   # Set this to the customer's actual contracted INR/hour rates, e.g.:
   # gpuHourlyRatesJson: '{"NVIDIA A100 80GB": 275, "NVIDIA T4": 35}'
   # Left empty, pricing.py falls back to illustrative Indian GPU-cloud
@@ -191,7 +204,32 @@ persistence:
   size: 5Gi
 
 dcgmExporter:
+  # true: this chart runs its own dcgm-exporter DaemonSet. Set false on a
+  # cluster that already runs one (NVIDIA GPU Operator, a neocloud's
+  # managed stack) -- two exporters on one GPU node fight over the DCGM
+  # host engine -- and fill in `external` below instead.
   enabled: true
+  # Used only when enabled: false. Point the collector at the cluster's
+  # existing exporter in one of two ways:
+  #  1. external.namespace + external.podSelector (recommended): the chart
+  #     creates a small *headless* Service in that namespace selecting the
+  #     existing exporter pods, so DNS returns every node's pod IP and the
+  #     collector scrapes each node. The GPU Operator's own Service is a
+  #     normal ClusterIP one; scraping it directly would reach a single
+  #     random node per cycle and silently starve the others (the bug
+  #     behind metrics_client.resolve_targets). Defaults match a stock GPU
+  #     Operator install. Creating this Service happens at install time,
+  #     by whoever runs helm -- the collector itself still gets no
+  #     Kubernetes API access.
+  #  2. external.url: a full metrics URL used as-is (e.g. an exporter that
+  #     is already behind a headless Service, or a single-node cluster).
+  #     Takes precedence over option 1.
+  external:
+    url: ""
+    namespace: gpu-operator
+    podSelector:
+      app: nvidia-dcgm-exporter
+    port: 9400
   image:
     repository: nvcr.io/nvidia/k8s/dcgm-exporter
     tag: "3.3.5-3.4.1-ubuntu22.04"

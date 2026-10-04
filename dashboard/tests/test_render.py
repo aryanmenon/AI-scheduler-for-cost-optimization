@@ -158,3 +158,56 @@ def test_category_breakdown_unrecognized_category_gets_fallback_color_and_traili
     idle_pos = html_out.index('title="Idle GPUs')
     unknown_pos = html_out.index("Future Detector Category")
     assert idle_pos < unknown_pos
+
+
+def test_overlap_note_shown_only_when_a_gpu_has_multiple_projected_estimates():
+    single = aggregate([_row(category="over_provisioned", basis="projected_monthly", amount_inr=100.0)], top_n=10)
+    assert "counted once" not in render_report(single)
+
+    overlapping = aggregate([
+        _row(id=1, category="over_provisioned", basis="projected_monthly", amount_inr=100.0),
+        _row(id=2, category="fragmented", basis="projected_monthly", amount_inr=60.0),
+    ], top_n=10)
+    html_out = render_report(overlapping)
+    assert "counted once" in html_out
+    assert "1 GPU appears in more than one recommendation" in html_out
+
+
+def test_visibility_card_shown_only_when_there_are_visibility_estimates():
+    plain = aggregate([_row()], top_n=10)
+    assert "Possible Fewer GPUs" not in render_report(plain)
+
+    with_multi = aggregate([
+        _row(id=1, category="multi_gpu_oversized", basis="visibility_upper_bound", amount_inr=5000.0),
+    ], top_n=10)
+    out = render_report(with_multi)
+    assert "Possible Fewer GPUs" in out
+    assert "Not included in Projected Monthly Savings" in out
+    assert "not in headline" in out
+
+
+def test_below_actionable_section_shows_no_recommendation_tier_apart_from_headline():
+    plain = aggregate([_row()], top_n=10)
+    assert "Below actionable recommendations" not in render_report(plain)
+
+    summary = aggregate([
+        _row(id=1, category="underutilized", basis="detected_no_recommendation", amount_inr=4321.0),
+    ], top_n=10)
+    out = render_report(summary)
+    assert "Below actionable recommendations" in out
+    assert "Detected Waste: No Recommendation Yet" in out
+    assert "Not included in either figure above" in out
+    # The headline figures stay zero: the tier never leaks into them.
+    assert summary.projected_monthly_total_inr == 0.0
+    assert summary.observed_window_total_inr == 0.0
+
+
+def test_no_recommendation_amounts_labeled_observed_not_monthly():
+    # Regression: every non-idle basis was labeled "/mo", so the observed
+    # (already-spent) no-recommendation amounts read as monthly projections.
+    summary = aggregate([
+        _row(id=1, category="underutilized", basis="detected_no_recommendation", amount_inr=4321.0),
+    ], top_n=10)
+    out = render_report(summary)
+    assert "₹4.3k obs." in out
+    assert "₹4,321.00 /mo" not in out

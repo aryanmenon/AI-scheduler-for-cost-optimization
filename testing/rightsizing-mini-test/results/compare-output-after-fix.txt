@@ -1,0 +1,30 @@
+== What the product concludes from the 'before' run ==
+before GPU: NVIDIA GeForce RTX 3090 -> NVIDIA GeForce RTX 3090 (71 TFLOPS, 936 GB/s)
+peak busy % as the product samples it (every 30 s): 75.0% (true 1 s max 100.0%, mean 21.37%)
+over-provisioned finding (peak <= 30%): NO -- the product would not recommend a smaller GPU at this load
+recommendation at 30% peak (hypothetical: highest peak it would flag): peak demand sized to a 70% ceiling needs 30 TFLOPS and 401 GB/s memory bandwidth; recommends NVIDIA A10 (125 TFLOPS, 600 GB/s); each request may take up to ~1.6x longer -- fine for batch/offline work, check latency targets before moving an interactive service
+
+== The 'after' GPU and the product's stated prediction for it ==
+after GPU: Tesla T4 -> NVIDIA T4 (not the recommended GPU); same model, keep fraction and duration: yes
+compute drop 1.09x, memory bandwidth drop 2.92x -> product predicts busy % and latency rise by up to 2.92x (mean busy ~62.5%)
+
+== Measured before vs after ==
+metric                            before     after  after/before
+latency p50 (s)                     1.91      4.44         2.32x
+latency p95 (s)                     2.21      5.16         2.33x
+latency p99 (s)                     2.38      5.61         2.36x
+send lag p95 (s)                    0.02      0.00         0.31x
+output tokens/s                    48.06     48.01         1.00x
+error rate                          0.00      0.00           n/a
+busy % mean                        21.37     54.27         2.54x
+busy % peak (30 s sampling)        75.00     97.00         1.29x
+
+== Did the product's promise hold? ==
+  [ok ] kept up: throughput: 1.00x (>= 0.9x)
+  [ok ] kept up: errors: 0.00 (<= 0.005)
+  [ok ] kept up: send lag p95: 0.00 s (<= 5.0 s)
+  [ok ] busy % within prediction: 2.54x (<= 2.92x +15%)
+  [ok ] latency within stated warning: p95 2.33x (<= 2.92x +15%)
+  [ok ] mean busy % under the SLA target: mean 54.27% (<= 70%)
+  (reference) fixed 1.5x latency bar for an interactive service: p95 2.33x -> over
+PRODUCT PREDICTION FOR NVIDIA T4: HELD

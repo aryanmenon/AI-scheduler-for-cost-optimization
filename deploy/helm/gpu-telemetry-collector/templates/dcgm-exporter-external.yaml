@@ -1,0 +1,23 @@
+{{- /*
+Headless Service in front of a dcgm-exporter this chart did not deploy
+(dcgmExporter.enabled: false). It lives in the existing exporter's
+namespace because a Service can only select pods in its own namespace.
+See values.yaml dcgmExporter.external for why it must be headless.
+*/ -}}
+{{- if and (not .Values.dcgmExporter.enabled) (not .Values.dcgmExporter.external.url) .Values.dcgmExporter.external.namespace .Values.dcgmExporter.external.podSelector }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gpu-telemetry-collector.fullname" . }}-dcgm-external
+  namespace: {{ .Values.dcgmExporter.external.namespace }}
+  labels:
+    {{- include "gpu-telemetry-collector.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- toYaml .Values.dcgmExporter.external.podSelector | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ .Values.dcgmExporter.external.port }}
+      targetPort: {{ .Values.dcgmExporter.external.port }}
+{{- end }}

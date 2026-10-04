@@ -1,0 +1,53 @@
+# The "client's" main inference service: a small open model on its own
+# full A100. Expected to be flagged over-provisioned (and to pair with
+# vllm-side as a fragmentation candidate).
+#
+# --gpu-memory-utilization 0.35 (not vLLM's default 0.9) so the
+# co-location experiment later can fit both services on one GPU with the
+# exact same settings. --dtype half and VLLM_USE_V1=0 keep the identical
+# stack runnable on every GPU the product might recommend (T4 included).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-main
+  namespace: client-sim
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: vllm-main}
+  template:
+    metadata:
+      labels: {app: vllm-main}
+    spec:
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.8.5.post1
+          args: ["--model", "Qwen/Qwen2.5-1.5B-Instruct", "--served-model-name", "main",
+                 "--dtype", "half", "--max-model-len", "4096",
+                 "--gpu-memory-utilization", "0.35", "--port", "8000"]
+          env:
+            - {name: VLLM_USE_V1, value: "0"}
+          ports: [{containerPort: 8000}]
+          resources:
+            limits: {nvidia.com/gpu: 1}
+          readinessProbe:
+            httpGet: {path: /v1/models, port: 8000}
+            periodSeconds: 10
+            failureThreshold: 180
+          volumeMounts:
+            - {name: hf-cache, mountPath: /root/.cache/huggingface}
+            - {name: shm, mountPath: /dev/shm}
+      volumes:
+        - name: hf-cache
+          hostPath: {path: /var/lib/hf-cache, type: DirectoryOrCreate}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: 2Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-main
+  namespace: client-sim
+spec:
+  selector: {app: vllm-main}
+  ports: [{port: 8000, targetPort: 8000}]

@@ -129,3 +129,65 @@ def test_metric_value_reflects_average_underutilized_gpu_count():
     rows = _two_underutilized_gpus_over(range(4))
     findings = detect_fragmentation(rows, _config())
     assert all(f.metric_value == 2.0 for f in findings)
+
+
+def test_multi_gpu_workload_excluded_even_alongside_another_workload():
+    # Regression: the old check only required 2+ distinct workloads among
+    # the underutilized GPUs, so a 4-GPU distributed job next to one small
+    # model qualified and every one of the job's GPUs got a "consolidate"
+    # finding -- advice that can't be followed, since NCCL won't run two
+    # ranks on one GPU. Without the job, a lone small model doesn't qualify.
+    rows = []
+    for i in range(6):
+        bs = i * 3600.0
+        for gpu in ("0", "1", "2", "3"):
+            rows.append(_row(bs, gpu, "llm-train", avg_utilization_pct=20.0))
+        rows.append(_row(bs, "4", "small-model", avg_utilization_pct=10.0))
+    findings = detect_fragmentation(rows, _config())
+    assert findings == []
+
+
+def test_multi_gpu_workload_excluded_but_other_single_gpu_workloads_still_flagged():
+    rows = _two_underutilized_gpus_over(range(4))
+    for i in range(4):
+        bs = i * 3600.0
+        rows.append(_row(bs, "2", "llm-train", avg_utilization_pct=20.0))
+        rows.append(_row(bs, "3", "llm-train", avg_utilization_pct=20.0))
+    findings = detect_fragmentation(rows, _config())
+    assert {f.workload for f in findings} == {"model-a", "model-b"}
+
+
+def test_multi_gpu_detection_counts_busy_gpus_and_other_nodes():
+    # One busy GPU on this node plus one on another node still makes it a
+    # multi-GPU job; only its underutilized GPU on this node is visible to
+    # the per-node check, so the exclusion must look at all usable rows.
+    rows = _two_underutilized_gpus_over(range(4))
+    for i in range(4):
+        bs = i * 3600.0
+        rows.append(_row(bs, "2", "llm-train", avg_utilization_pct=20.0))
+        rows.append(_row(bs, "0", "llm-train", avg_utilization_pct=95.0, node="gpu-node-2"))
+    findings = detect_fragmentation(rows, _config())
+    assert "llm-train" not in {f.workload for f in findings}
+    assert {f.workload for f in findings} == {"model-a", "model-b"}
+
+
+def test_detail_marks_finding_as_unverified_candidate():
+    rows = _two_underutilized_gpus_over(range(4))
+    findings = detect_fragmentation(rows, _config())
+    for f in findings:
+        assert "consolidation candidate" in f.detail
+        assert "not checked" in f.detail
+
+
+def test_gpu_that_switches_workloads_mid_streak_charges_each_its_own_hours():
+    # Regression: findings were keyed by GPU only and labeled with the
+    # first row's workload, so a GPU that ran job-A for 2h then job-B for
+    # 2h produced one 4h finding blaming job-A for all of it.
+    rows = []
+    for i in range(4):
+        bs = i * 3600.0
+        rows.append(_row(bs, "0", "job-A" if i < 2 else "job-B", avg_utilization_pct=20.0))
+        rows.append(_row(bs, "1", "job-C", avg_utilization_pct=20.0))
+    findings = detect_fragmentation(rows, _config())
+    gpu0 = {f.workload: (f.window_start, f.window_end) for f in findings if f.gpu_index == "0"}
+    assert gpu0 == {"job-A": (0.0, 2 * 3600.0), "job-B": (2 * 3600.0, 4 * 3600.0)}

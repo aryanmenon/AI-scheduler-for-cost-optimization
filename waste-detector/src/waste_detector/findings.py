@@ -15,6 +15,11 @@ IDLE = "idle"
 OVER_PROVISIONED = "over_provisioned"
 FRAGMENTED = "fragmented"
 RECURRING_PATTERN = "recurring_pattern"
+MULTI_GPU_OVERSIZED = "multi_gpu_oversized"
+# "Below actionable recommendations": waste that is detected and measured
+# but has no reliable recommendation attached (see unrecommended.py).
+UNDERUTILIZED = "underutilized"
+UNATTRIBUTED_GPU_TIME = "unattributed_gpu_time"
 
 
 @dataclass

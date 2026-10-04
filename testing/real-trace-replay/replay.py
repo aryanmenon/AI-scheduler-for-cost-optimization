@@ -49,6 +49,8 @@ from waste_detector.idle import detect_idle  # noqa: E402
 from waste_detector.over_provisioning import detect_over_provisioning  # noqa: E402
 from waste_detector.fragmentation import detect_fragmentation  # noqa: E402
 from waste_detector.patterns import detect_recurring_patterns  # noqa: E402
+from waste_detector.multi_gpu import detect_multi_gpu_oversized  # noqa: E402
+from waste_detector.unrecommended import detect_unrecommended_waste  # noqa: E402
 
 if len(sys.argv) < 2:
     print("usage: python3 replay.py /path/to/trace-data [output_dir]", file=sys.stderr)
@@ -239,6 +241,13 @@ for i, ((bucket_start, machine, gpu_idx, vc, jobid), values) in enumerate(bucket
 
 print(f"[{time.strftime('%H:%M:%S')}] {len(rollup_rows)} hourly rollup rows built, running detectors ...", flush=True)
 
+# Building these rollups is the slow part (~10 min over 44.75M rows of a
+# 6.6GB trace). Saving them lets rerun_detectors.py re-run the detectors
+# after a detector change without re-downloading or re-reading the trace.
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+with open(os.path.join(OUTPUT_DIR, "rollups.pkl"), "wb") as f:
+    pickle.dump(rollup_rows, f)
+
 # Real pilot defaults (values.yaml), NOT the lowered values-smoke-test.yaml
 # thresholds -- the whole point of this replay is to check the detectors
 # against the real evidence bar a real pilot customer would be held to.
@@ -263,6 +272,14 @@ idle_findings = detect_idle(rollup_rows, config)
 over_provisioned_findings = detect_over_provisioning(rollup_rows, config)
 fragmented_findings = detect_fragmentation(rollup_rows, config)
 pattern_findings = detect_recurring_patterns(rollup_rows, config)
+multi_gpu_findings = detect_multi_gpu_oversized(rollup_rows, config)
+_tier = detect_unrecommended_waste(
+    rollup_rows,
+    idle_findings + over_provisioned_findings + fragmented_findings + pattern_findings + multi_gpu_findings,
+    config,
+)
+underutilized_findings = [f for f in _tier if f.category == "underutilized"]
+unattributed_findings = [f for f in _tier if f.category == "unattributed_gpu_time"]
 
 print()
 print("=" * 70)
@@ -272,6 +289,9 @@ print(f"idle findings:            {len(idle_findings)}")
 print(f"over-provisioned findings: {len(over_provisioned_findings)}")
 print(f"fragmented findings:       {len(fragmented_findings)}")
 print(f"recurring-pattern findings:{len(pattern_findings)}")
+print(f"multi-GPU oversized findings (visibility only): {len(multi_gpu_findings)}")
+print(f"underutilized, no recommendation: {len(underutilized_findings)}")
+print(f"unattributed GPU time, no recommendation: {len(unattributed_findings)}")
 print()
 
 for name, findings in [
@@ -279,6 +299,7 @@ for name, findings in [
     ("OVER_PROVISIONED", over_provisioned_findings),
     ("FRAGMENTED", fragmented_findings),
     ("RECURRING_PATTERN", pattern_findings),
+    ("MULTI_GPU_OVERSIZED", multi_gpu_findings),
 ]:
     print(f"--- {name} (showing up to 5 of {len(findings)}) ---")
     for f_ in findings[:5]:
@@ -288,6 +309,7 @@ for name, findings in [
         )
     print()
 
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 out_path = os.path.join(OUTPUT_DIR, "findings.pkl")
 with open(out_path, "wb") as f:
     pickle.dump(
@@ -296,6 +318,9 @@ with open(out_path, "wb") as f:
             "over_provisioned": over_provisioned_findings,
             "fragmented": fragmented_findings,
             "recurring_pattern": pattern_findings,
+            "multi_gpu_oversized": multi_gpu_findings,
+            "underutilized": underutilized_findings,
+            "unattributed_gpu_time": unattributed_findings,
             "rollup_row_count": len(rollup_rows),
             "attributed_readings": attributed_count,
             "in_window_readings": in_window_count,

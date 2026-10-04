@@ -1,0 +1,36 @@
+# The "client's" multi-GPU training job: 2 GPUs in one pod, data-loading
+# bound. Phases (see ddp_train.py): train __TRAIN_HOURS__ h, then hold the
+# GPUs idle for __HOLD_HOURS__ h (pod still attached -> idle finding), then
+# exit (GPUs released, no pod -> unattributed GPU time).
+#
+# --io-ms-per-sample controls how data-starved the GPUs are. Check
+# per-GPU utilization a few minutes after start (README) and aim for
+# roughly 15-35%; lower the value to make the GPUs busier.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: train-2gpu
+  namespace: client-sim
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: train
+          image: pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime
+          command: ["torchrun", "--nproc_per_node=2", "/scripts/ddp_train.py",
+                    "--label", "phase1-train-2gpu",
+                    "--train-hours", "__TRAIN_HOURS__", "--hold-hours", "__HOLD_HOURS__",
+                    "--num-workers", "2", "--io-ms-per-sample", "__IO_MS__",
+                    "--batch-size", "64", "--epoch-samples", "20000"]
+          resources:
+            limits: {nvidia.com/gpu: 2}
+          volumeMounts:
+            - {name: scripts, mountPath: /scripts}
+            - {name: shm, mountPath: /dev/shm}
+      volumes:
+        - name: scripts
+          configMap: {name: client-sim-scripts}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: 4Gi}

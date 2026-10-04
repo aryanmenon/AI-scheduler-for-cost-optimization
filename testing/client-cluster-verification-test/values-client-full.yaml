@@ -1,0 +1,13 @@
+# FULL mode: the product's real default thresholds -- exactly what a client
+# would run (24h for over-provisioned, 4h streaks for idle, fragmentation
+# and multi-GPU). Only persistence and faster polling differ from defaults.
+#   helm install gpuopt deploy/helm/gpu-telemetry-collector \
+#     -f deploy/helm/gpu-telemetry-collector/values.yaml \
+#     -f testing/client-cluster-verification-test/values-client-full.yaml \
+#     -f rates-values.yaml   # written by rates.py; never pass rates JSON via --set-string
+persistence:
+  enabled: true
+wasteDetector:
+  pollIntervalSeconds: 60
+savingsEstimator:
+  pollIntervalSeconds: 60

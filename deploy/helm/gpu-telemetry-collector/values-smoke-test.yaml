@@ -66,6 +66,12 @@ wasteDetector:
   # cannot trigger it, no matter how long it runs.
   fragmentationMinStreakHours: 1
 
+  # --- Multi-GPU oversized: default 4 consecutive hours -> 1 hour. Also a
+  # scenario constraint: needs one workload holding >= 2 GPUs whose summed
+  # hourly-average busy time fits on fewer of them (see multi_gpu.py), so a
+  # single-GPU rental can't trigger it either.
+  multiGpuMinStreakHours: 1
+
   # --- Recurring pattern: default 7 distinct calendar days -> 2, the
   # practical floor (the detector's own math needs at least 2 days to
   # compute a "consistent fraction"). IMPORTANT: unlike the others, this

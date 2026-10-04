@@ -1,0 +1,44 @@
+# The same two loads as phase 1, one pass of the trace (~1h), against the
+# co-located services. Compare with the phase-1 SUMMARY_JSON lines.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: load-coloc-main
+  namespace: client-sim
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: load
+          image: python:3.11-slim
+          command: ["python3", "-u", "/scripts/trace_load.py",
+                    "--target", "http://coloc-main:8000", "--model", "main",
+                    "--trace", "conv", "--speed", "1.0", "--label", "verify-coloc-main"]
+          volumeMounts: [{name: scripts, mountPath: /scripts}]
+      volumes:
+        - name: scripts
+          configMap: {name: client-sim-scripts}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: load-coloc-side
+  namespace: client-sim
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: load
+          image: python:3.11-slim
+          command: ["python3", "-u", "/scripts/trace_load.py",
+                    "--target", "http://coloc-side:8000", "--model", "side",
+                    "--trace", "code", "--speed", "1.0", "--keep-fraction", "0.15",
+                    "--label", "verify-coloc-side"]
+          volumeMounts: [{name: scripts, mountPath: /scripts}]
+      volumes:
+        - name: scripts
+          configMap: {name: client-sim-scripts}

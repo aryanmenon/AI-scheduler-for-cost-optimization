@@ -16,18 +16,42 @@ and conflating them would overclaim:
   observed rate forward to a monthly figure is the standard, defensible
   basis for a right-sizing ROI calculation -- as long as it's labeled as
   a projection, which every estimate here does via `basis`.
+- UNDERUTILIZED and UNATTRIBUTED_GPU_TIME are waste with no reliable
+  recommendation. They're priced like idle -- capacity below the
+  efficient-use target that was paid for during the observed window, not
+  projected -- on BASIS_DETECTED_NO_RECOMMENDATION, which the dashboard
+  shows beneath the actionable findings and never adds to a headline.
+- MULTI_GPU_OVERSIZED is projected the same way but on its own basis,
+  BASIS_VISIBILITY_UPPER_BOUND: it's sized from hourly averages with no
+  memory check, so it shows the scale of an opportunity rather than a
+  savings figure to stand behind, and the dashboard keeps it out of the
+  headline total.
 """
 from __future__ import annotations
 
 from ingestion_normalization.capability import lookup_capability
 
-from savings_estimator.ceiling import right_sized_capability
+from savings_estimator.ceiling import latency_note, right_sized_capability
 from savings_estimator.config import Config
-from savings_estimator.estimate import BASIS_OBSERVED_WINDOW, BASIS_PROJECTED_MONTHLY, SavingsEstimate
+from savings_estimator.estimate import (
+    BASIS_OBSERVED_WINDOW,
+    BASIS_PROJECTED_MONTHLY,
+    BASIS_DETECTED_NO_RECOMMENDATION,
+    BASIS_VISIBILITY_UPPER_BOUND,
+    SavingsEstimate,
+)
 from savings_estimator.findings_reader import FindingRow
 from savings_estimator.pricing import lookup_price
 from savings_estimator.rollup_reader import RollupRow
-from waste_detector.findings import FRAGMENTED, IDLE, OVER_PROVISIONED, RECURRING_PATTERN
+from waste_detector.findings import (
+    FRAGMENTED,
+    IDLE,
+    MULTI_GPU_OVERSIZED,
+    OVER_PROVISIONED,
+    RECURRING_PATTERN,
+    UNATTRIBUTED_GPU_TIME,
+    UNDERUTILIZED,
+)
 
 _SECONDS_PER_HOUR = 3600
 _DAYS_PER_MONTH = 30.0
@@ -97,6 +121,10 @@ def estimate_for_finding(
         return _estimate_fragmented(finding, rollup_rows, price, config)
     if finding.category == RECURRING_PATTERN:
         return _estimate_recurring_pattern(finding, price, config)
+    if finding.category == MULTI_GPU_OVERSIZED:
+        return _estimate_multi_gpu_oversized(finding, price, config)
+    if finding.category in (UNDERUTILIZED, UNATTRIBUTED_GPU_TIME):
+        return _estimate_unrecommended(finding, price)
 
     return _unpriceable(finding, f"unknown finding category {finding.category!r}")
 
@@ -161,7 +189,10 @@ def _estimate_over_provisioned(
 
     # metric_value for this category IS the observed peak utilization %
     # (see waste_detector.over_provisioning) -- no need to re-derive it.
-    rec = right_sized_capability(capability.fp16_tflops, finding.metric_value, config.sla_target_utilization_pct)
+    rec = right_sized_capability(
+        capability.fp16_tflops, finding.metric_value, config.sla_target_utilization_pct,
+        current_mem_bandwidth_gbps=capability.mem_bandwidth_gbps,
+    )
 
     if rec.recommended is None:
         return SavingsEstimate(
@@ -184,7 +215,9 @@ def _estimate_over_provisioned(
         **_base_kwargs(finding),
         basis=BASIS_PROJECTED_MONTHLY,
         amount_inr=monthly_savings,
-        recommended_action=f"right-size to {rec.recommended.canonical_name}",
+        recommended_action=(
+            f"right-size to {rec.recommended.canonical_name} ({latency_note(rec.expected_latency_factor)})"
+        ),
         methodology=(
             f"{rec.detail}; ₹{price.hourly_inr:.2f}/hr -> ₹{recommended_price.hourly_inr:.2f}/hr, "
             f"projected over {config.hours_per_month:.0f}h/month if this profile continues"
@@ -204,11 +237,17 @@ def _estimate_fragmented(finding: FindingRow, rollup_rows: list[RollupRow], pric
         **_base_kwargs(finding),
         basis=BASIS_PROJECTED_MONTHLY,
         amount_inr=monthly_savings,
-        recommended_action="consolidate with the other underutilized workloads on this node",
+        recommended_action=(
+            "review whether this workload can share a GPU with the other underutilized workloads "
+            "on this node (needs GPU sharing via time-slicing, MPS, or MIG; memory fit not checked)"
+        ),
         methodology=(
             f"avg utilization {avg_util:.1f}% -> {wasted_fraction * 100:.0f}% of capacity reclaimable "
             f"(discounted to {config.fragmentation_capture_fraction:.0%} of theoretical, since real "
-            f"consolidation needs migration work), projected over {config.hours_per_month:.0f}h/month"
+            f"consolidation needs migration work), projected over {config.hours_per_month:.0f}h/month; "
+            f"an upper-bound estimate for a consolidation candidate -- GPU memory fit, combined "
+            f"compute, and cluster GPU-sharing support were not verified, so the real figure may be "
+            f"lower, including zero"
         ),
     )
 
@@ -235,5 +274,57 @@ def _estimate_recurring_pattern(finding: FindingRow, price, config: Config) -> S
             f"{finding.metric_value:.0%} of observed days quiet at this hour -> "
             f"~{monthly_wasted_hours:.1f}h/month at ₹{price.hourly_inr:.2f}/hr, "
             f"projected if the pattern continues"
+        ),
+    )
+
+
+def _estimate_multi_gpu_oversized(finding: FindingRow, price, config: Config) -> SavingsEstimate:
+    # metric_value for this category IS the fraction of the job's GPUs that
+    # could be released (see waste_detector.multi_gpu). Every GPU of the job
+    # gets its own finding, so pricing each at that fraction of its own
+    # cost sums to the releasable GPUs' cost across the job.
+    if not (0.0 < finding.metric_value < 1.0):
+        return _unpriceable(finding, f"metric_value {finding.metric_value!r} is not a valid fraction in (0, 1)")
+
+    monthly = price.hourly_inr * finding.metric_value * config.multi_gpu_capture_fraction * config.hours_per_month
+    return SavingsEstimate(
+        **_base_kwargs(finding),
+        basis=BASIS_VISIBILITY_UPPER_BOUND,
+        amount_inr=monthly,
+        recommended_action=(
+            "review whether this multi-GPU job can run on fewer GPUs (check memory fit, batch size and "
+            "run time; for training, a data-loading or communication bottleneck may be the cheaper fix)"
+        ),
+        methodology=(
+            f"{finding.metric_value:.0%} of the job's GPUs releasable on hourly-average busy time, "
+            f"discounted to {config.multi_gpu_capture_fraction:.0%} since shrinking a job's GPU count "
+            f"takes engineering work; ₹{price.hourly_inr:.2f}/hr ({price.source}) projected over "
+            f"{config.hours_per_month:.0f}h/month. Upper bound for visibility, not included in the "
+            f"headline total: bursts above the hourly average and GPU memory fit were not checked"
+        ),
+    )
+
+
+def _estimate_unrecommended(finding: FindingRow, price) -> SavingsEstimate:
+    # metric_value for these categories IS the average shortfall below the
+    # efficient-use target as a fraction of the GPU (see
+    # waste_detector.unrecommended), so the unused capacity's cost over the
+    # observed window is rate x fraction x hours.
+    window_hours = (finding.window_end - finding.window_start) / _SECONDS_PER_HOUR
+    if window_hours < 0:
+        return _unpriceable(finding, "finding window is invalid (window_end precedes window_start)")
+    if not (0.0 < finding.metric_value <= 1.0):
+        return _unpriceable(finding, f"metric_value {finding.metric_value!r} is not a valid fraction in (0, 1]")
+
+    amount = price.hourly_inr * finding.metric_value * window_hours
+    return SavingsEstimate(
+        **_base_kwargs(finding),
+        basis=BASIS_DETECTED_NO_RECOMMENDATION,
+        amount_inr=amount,
+        recommended_action="none yet -- detected waste without a reliable recommendation; review manually",
+        methodology=(
+            f"{finding.metric_value:.0%} of the GPU below the efficient-use target over {window_hours:.1f}h "
+            f"at ₹{price.hourly_inr:.2f}/hr ({price.source}) -- cost of unused capacity already incurred in "
+            f"this observed window, not projected; shown below actionable findings, not in the headline"
         ),
     )

@@ -83,6 +83,10 @@ def test_over_provisioned_recommends_smaller_sku_and_monthly_savings():
     assert estimate.basis == BASIS_PROJECTED_MONTHLY
     assert estimate.amount_inr > 0
     assert "T4" in estimate.recommended_action
+    # The default rollup GPU is an A100; a T4 has far less memory
+    # bandwidth, so the action must warn that requests get slower.
+    assert "longer" in estimate.recommended_action
+    assert "GB/s" in estimate.methodology
 
 
 def test_over_provisioned_high_peak_may_yield_zero_savings():
@@ -151,6 +155,17 @@ def test_fragmented_priced_with_capture_discount():
     assert estimate.amount_inr == 300.00 * 0.40 * 730.0
 
 
+def test_fragmented_framed_as_unverified_candidate_not_a_directive():
+    # The detector can't prove consolidation is possible (memory fit,
+    # combined compute, cluster GPU-sharing support are all unchecked), so
+    # the customer-facing action must read as "review", not "consolidate".
+    finding = _finding(FRAGMENTED, metric_value=2.0)
+    estimate = estimate_for_finding(finding, [_rollup(avg_utilization_pct=20.0)], _config(), {})
+    assert estimate.recommended_action.startswith("review whether")
+    assert "time-slicing, MPS, or MIG" in estimate.recommended_action
+    assert "upper-bound" in estimate.methodology
+
+
 def test_fragmented_weights_avg_utilization_by_coverage_ratio():
     # Regression: a low-coverage bucket (mostly missing data, reading near
     # zero) must not count the same as a full-coverage one in the average
@@ -216,3 +231,44 @@ def test_estimate_preserves_finding_identity():
     assert estimate.finding_id == 42
     assert estimate.workload == "my-svc"
     assert estimate.namespace == "prod"
+
+
+def test_multi_gpu_oversized_priced_as_visibility_upper_bound():
+    from waste_detector.findings import MULTI_GPU_OVERSIZED
+    from savings_estimator.estimate import BASIS_VISIBILITY_UPPER_BOUND
+
+    finding = _finding(MULTI_GPU_OVERSIZED, metric_value=0.625)
+    estimate = estimate_for_finding(finding, [_rollup(avg_utilization_pct=20.0)], _config(), {})
+    assert estimate.priceable
+    assert estimate.basis == BASIS_VISIBILITY_UPPER_BOUND
+    # 300.00/hr * 0.625 releasable * 0.5 capture * 730h
+    assert estimate.amount_inr == pytest.approx(300.00 * 0.625 * 0.5 * 730.0)
+    assert estimate.recommended_action.startswith("review whether")
+    assert "not included in the headline total" in estimate.methodology
+
+
+@pytest.mark.parametrize("bad", [0.0, 1.0, -0.2, 1.5, float("nan")])
+def test_multi_gpu_oversized_rejects_invalid_fraction(bad):
+    from waste_detector.findings import MULTI_GPU_OVERSIZED
+
+    estimate = estimate_for_finding(_finding(MULTI_GPU_OVERSIZED, metric_value=bad), [_rollup()], _config(), {})
+    assert not estimate.priceable
+
+
+@pytest.mark.parametrize("category", ["underutilized", "unattributed_gpu_time"])
+def test_no_recommendation_tier_priced_as_observed_unused_capacity(category):
+    from savings_estimator.estimate import BASIS_DETECTED_NO_RECOMMENDATION
+
+    finding = _finding(category, metric_value=0.5, window_start=0.0, window_end=3 * 3600.0)
+    estimate = estimate_for_finding(finding, [_rollup(avg_utilization_pct=20.0)], _config(), {})
+    assert estimate.priceable
+    assert estimate.basis == BASIS_DETECTED_NO_RECOMMENDATION
+    # 300.00/hr * 0.5 below target * 3h observed -- not projected to a month
+    assert estimate.amount_inr == pytest.approx(300.00 * 0.5 * 3.0)
+    assert estimate.recommended_action.startswith("none yet")
+
+
+@pytest.mark.parametrize("bad", [0.0, 1.5, -0.1, float("nan")])
+def test_no_recommendation_tier_rejects_invalid_fraction(bad):
+    estimate = estimate_for_finding(_finding("underutilized", metric_value=bad), [_rollup()], _config(), {})
+    assert not estimate.priceable

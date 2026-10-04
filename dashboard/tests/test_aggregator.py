@@ -72,3 +72,83 @@ def test_empty_input_produces_zeroed_summary():
     assert summary.observed_window_total_inr == 0.0
     assert summary.by_category == []
     assert summary.top_findings == []
+
+
+def test_projected_total_counts_each_gpu_once_at_its_largest_estimate():
+    # Regression: a GPU flagged both over-provisioned (right-size it) and
+    # fragmented (consolidate it away) got both monthly projections added
+    # into the headline -- alternative actions on the same GPU, so the sum
+    # overstated what could actually be saved.
+    rows = [
+        _row(id=1, category="over_provisioned", basis=BASIS_PROJECTED_MONTHLY, amount_inr=100.0, gpu_index="0"),
+        _row(id=2, category="fragmented", basis=BASIS_PROJECTED_MONTHLY, amount_inr=60.0, gpu_index="0"),
+        _row(id=3, category="fragmented", basis=BASIS_PROJECTED_MONTHLY, amount_inr=40.0, gpu_index="1"),
+    ]
+    summary = aggregate(rows, top_n=10)
+    assert summary.projected_monthly_total_inr == 140.0
+    assert summary.projected_gpus_with_overlapping_estimates == 1
+    # Category totals stay per category, so together they exceed the headline.
+    assert sum(c.total_inr for c in summary.by_category) == 200.0
+
+
+def test_same_gpu_on_different_nodes_or_mig_slices_not_merged():
+    rows = [
+        _row(id=1, basis=BASIS_PROJECTED_MONTHLY, amount_inr=10.0, node="a", gpu_index="0"),
+        _row(id=2, basis=BASIS_PROJECTED_MONTHLY, amount_inr=20.0, node="b", gpu_index="0"),
+        _row(id=3, basis=BASIS_PROJECTED_MONTHLY, amount_inr=30.0, node="a", gpu_index="0", gpu_instance_id="1"),
+    ]
+    summary = aggregate(rows, top_n=10)
+    assert summary.projected_monthly_total_inr == 60.0
+    assert summary.projected_gpus_with_overlapping_estimates == 0
+
+
+def test_observed_window_amounts_still_summed_for_same_gpu():
+    # Idle amounts are cost already incurred in distinct windows -- they
+    # genuinely add up, unlike alternative projected recommendations.
+    rows = [
+        _row(id=1, category="idle", amount_inr=10.0, window_start=0.0, window_end=3600.0),
+        _row(id=2, category="idle", amount_inr=15.0, window_start=7200.0, window_end=10800.0),
+    ]
+    summary = aggregate(rows, top_n=10)
+    assert summary.observed_window_total_inr == 25.0
+
+
+def test_visibility_upper_bound_kept_out_of_headline_and_shown_separately():
+    rows = [
+        _row(id=1, category="over_provisioned", basis=BASIS_PROJECTED_MONTHLY, amount_inr=100.0, gpu_index="0"),
+        _row(id=2, category="multi_gpu_oversized", basis="visibility_upper_bound", amount_inr=500.0, gpu_index="1"),
+        _row(id=3, category="multi_gpu_oversized", basis="visibility_upper_bound", amount_inr=300.0, gpu_index="1"),
+        _row(id=4, category="multi_gpu_oversized", basis="visibility_upper_bound", amount_inr=200.0, gpu_index="2"),
+    ]
+    summary = aggregate(rows, top_n=10)
+    assert summary.projected_monthly_total_inr == 100.0
+    assert summary.observed_window_total_inr == 0.0
+    # Counted once per GPU at its largest estimate, like the headline.
+    assert summary.visibility_upper_bound_total_inr == 700.0
+
+
+def test_visibility_rows_listed_after_actionable_findings():
+    rows = [
+        _row(id=1, category="multi_gpu_oversized", basis="visibility_upper_bound", amount_inr=900.0),
+        _row(id=2, category="over_provisioned", basis=BASIS_PROJECTED_MONTHLY, amount_inr=50.0),
+        _row(id=3, category="idle", amount_inr=10.0),
+    ]
+    summary = aggregate(rows, top_n=10)
+    assert [r.id for r in summary.top_findings] == [2, 3, 1]
+
+
+def test_no_recommendation_tier_summed_separately_and_sorted_last():
+    rows = [
+        _row(id=1, category="underutilized", basis="detected_no_recommendation", amount_inr=800.0),
+        _row(id=2, category="unattributed_gpu_time", basis="detected_no_recommendation", amount_inr=200.0,
+             workload=None, namespace="unattributed"),
+        _row(id=3, category="multi_gpu_oversized", basis="visibility_upper_bound", amount_inr=900.0),
+        _row(id=4, category="over_provisioned", basis=BASIS_PROJECTED_MONTHLY, amount_inr=50.0),
+        _row(id=5, category="idle", amount_inr=10.0),
+    ]
+    summary = aggregate(rows, top_n=10)
+    assert summary.detected_no_recommendation_total_inr == 1000.0
+    assert summary.projected_monthly_total_inr == 50.0
+    assert summary.observed_window_total_inr == 10.0
+    assert summary.visibility_upper_bound_total_inr == 900.0
+    assert [r.id for r in summary.top_findings] == [4, 5, 3, 1, 2]

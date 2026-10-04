@@ -1,4 +1,4 @@
-# Real-trace replay results (2026-09-27)
+# Real-trace replay results
 
 Full stdout from `replay.py` + `summarize.py` on the 2017-10-03 through 2017-11-02 window.
 
@@ -60,3 +60,140 @@ distinct (node,gpu,ns,workload) keys with >=1 finding: 15277
 total flagged hours (merged, no double-counting overlap): 353955
 fraction of observed capacity-hours flagged as some form of waste: 23.0%
 ```
+
+## Re-run 2026-10-01: corrected fragmentation detector
+
+Same trace, same 2017-10-03 to 2017-11-02 window, same thresholds. Only
+change: `waste_detector/fragmentation.py` now excludes any workload holding
+more than one GPU in an hour (multi-GPU training/inference can't be
+consolidated onto a shared GPU). The run above predates that fix and its
+23.0% figure is superseded.
+
+```
+idle findings:            10990
+over-provisioned findings: 279
+fragmented findings:       4636     (was 12568)
+recurring-pattern findings:6848
+
+total observed GPU-workload-hours (rollup rows): 1538668
+distinct (node,gpu,ns,workload) keys with >=1 finding: 12282
+total flagged hours (merged, no double-counting overlap): 263667
+fraction of observed capacity-hours flagged as some form of waste: 17.1%
+
+excluding fragmentation findings (idle + over-provisioned + recurring only):
+fraction of observed capacity-hours flagged as some form of waste: 14.7%
+```
+
+Idle, over-provisioned and recurring-pattern counts are identical to the
+first run, as expected: the fix only touched the fragmentation detector.
+
+## Re-run 2026-10-01 (b): mislabel fix + multi-GPU visibility signal
+
+Same rollups (saved by `replay.py`, re-run with `rerun_detectors.py`), same
+thresholds. Changes: fragmentation findings keyed per GPU *and* workload
+(a GPU that switched jobs mid-streak had been charging the first job for
+every hour), and the new visibility-only `multi_gpu_oversized` category.
+
+```
+idle findings: 10990
+over_provisioned findings: 279
+fragmented findings: 5718      (more findings, fewer hours: split per workload)
+recurring_pattern findings: 6848
+multi_gpu_oversized findings: 24570
+
+total observed GPU-workload-hours (rollup rows): 1538668
+distinct (node,gpu,ns,workload) keys with >=1 finding: 13220
+total flagged hours (merged, no double-counting overlap): 256290
+fraction of observed capacity-hours flagged as some form of waste: 16.7%
+multi-GPU oversized findings (visibility only, NOT in the figure above): 24570
+  releasable GPU-hours (upper bound): 194735 (12.7%), of which not already flagged above: 106952 (7.0%)
+```
+
+Example multi-GPU finding detail:
+
+```
+multi-GPU job held 8.0 GPUs on average for 119h with combined hourly-average busy
+time of 373% of one GPU -- could likely release at least 1 GPU(s) and keep each
+remaining GPU under 70% on hourly average. Upper bound for review, not a verified
+recommendation: sized on hourly averages, so bursts may exceed that ceiling on fewer
+GPUs; GPU memory fit not checked; GPU utilization is busy time, not compute used; for
+training, fewer GPUs changes batch size and run time, and a data-loading or
+communication bottleneck may be the cheaper fix
+```
+
+## Analysis 2026-10-01: where the 23.0% -> 17.1% drop came from
+
+Old (pre-fix) and new fragmentation detectors run side by side on the same
+rollups, flagged hours compared as sets of (GPU, workload, hour):
+
+```
+dropped hours 96707 (6.3 pts): from multi-GPU workloads 58271 (60%),
+  from single-GPU workloads that lost their partner 38436 (40%)
+usable GPU-hours 1386261: multi-GPU 1131562 (82%), single-GPU 254699
+median hourly avg GPU_UTIL: single 54.3%  multi 53.6%
+multi-GPU GPU-hours with avg 2-50% not flagged by anything: 341304 (22.2% of all GPU-hours)
+```
+
+Sizing the multi-GPU signal was prototyped two ways before building it
+(GPUs needed = ceil(summed hourly utilization / 70%), 4h+ streak):
+
+```
+peak-based (hourly max per GPU):     +0.4 pts of GPU-hours -> 17.5% total
+average-based (hourly avg per GPU):  +6.6 pts of GPU-hours -> 23.7% total
+```
+
+Peak-based found almost nothing because a job's busiest minute in an hour
+is usually high; average-based was chosen and is shown separately as a
+visibility-only upper bound rather than added to the headline.
+
+## Re-run 2026-10-01 (c): "below actionable recommendations" tier
+
+Same rollups, same thresholds; adds `waste_detector/unrecommended.py`,
+which runs last and reports every GPU-hour averaging below the 70%
+efficient-use target that no other finding covers.
+
+```
+idle findings: 10990
+over_provisioned findings: 279
+fragmented findings: 5718
+recurring_pattern findings: 6848
+multi_gpu_oversized findings: 24570
+underutilized findings: 58491
+unattributed_gpu_time findings: 0
+
+fraction of observed capacity-hours flagged as some form of waste: 16.7%
+multi-GPU oversized findings (visibility only, NOT in the figure above): 24570
+  releasable GPU-hours (upper bound): 194735 (12.7%), of which not already flagged above: 106952 (7.0%)
+below-target, no recommendation (underutilized + unattributed): 58491 findings, 205567 GPU-hours (13.4%),
+  unused capacity below target 38481 GPU-hours (2.5%)
+coverage: GPU-hours touched by at least one finding in any tier: 881707 (57.3%) -- not an amount of waste
+```
+
+Underutilized runs: median 1h, mean shortfall 0.195 of a GPU. Example:
+
+```
+averaged 51.8% busy over 1h, below the 70% efficient-use target, and not covered by
+any actionable finding -- detected waste, no reliable recommendation yet (e.g. bursts
+too short to call idle, no co-located workload to consolidate with, or a pattern the
+detectors don't classify)
+```
+
+Unattributed GPU time is 0 here only because replay.py builds rollups
+solely from readings it can attribute to a job; on a live cluster this
+category catches GPU time with no Kubernetes pod.
+
+## Unified breakdown (2026-10-01): all tiers in one unit
+
+`summarize.py` with `rollups.pkl` alongside `findings.pkl`:
+
+```
+UNIFIED BREAKDOWN (GPU capacity unused below the 70% target):
+  total waste: 415432 GPU-hours = 27.0% of capacity (raw unused capacity incl. above-target slack: 51.3%)
+  actionable (idle, over-provisioned, recurring, fragmentation): 11.1% of capacity (41% of waste)
+  multi-GPU jobs, could use fewer GPUs (review): 9.4% of capacity (35% of waste)
+  detected, no recommendation yet: 2.5% of capacity (9% of waste)
+  TOTAL DETECTED: 23.0% of capacity (85% of waste)
+  not checked (coverage < 80%): 4.0% of capacity (15% of waste)
+  below target in checked hours but undetected: 0.0% of capacity
+```
+

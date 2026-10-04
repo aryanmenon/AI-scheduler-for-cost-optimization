@@ -34,7 +34,18 @@ they're always identical for the same underlying data.
   window). Combining a monthly rate with a one-off observed figure would
   produce a number that overstates both -- see
   `../savings-estimator/README.md`'s basis table for the full reasoning
-  this report inherits.
+  this report inherits. The projected headline counts each GPU once, at
+  its largest estimate: right-sizing and consolidating the same GPU are
+  alternatives, not additive savings.
+- **A "Below actionable recommendations" section**, shown only when it
+  has something in it and never added to the headline figures:
+  - *Detected waste, no recommendation yet* (`detected_no_recommendation`
+    basis): observed cost of GPU time below the efficient-use target that
+    no actionable finding explains, including GPU time with no pod.
+  - *Multi-GPU jobs, possible fewer GPUs* (`visibility_upper_bound`
+    basis): a monthly upper bound sized on hourly averages with no memory
+    check.
+  In the top-findings table these rows come after the actionable ones.
 - **A "not priced" section**, not a silent omission, for findings whose
   GPU model or rate is unknown -- the point is to be auditable, not to
   make the biggest number possible.

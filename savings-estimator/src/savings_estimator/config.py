@@ -63,6 +63,11 @@ class Config:
     # triggered (fires once on crossing this, once again on recovery), not
     # on every cycle past it -- one transient blip shouldn't page anyone.
     alert_consecutive_failure_threshold: int = 3
+    # Same idea as fragmentation_capture_fraction, for multi-GPU jobs that
+    # may need fewer GPUs: the detector's releasable fraction is sized on
+    # hourly averages and is an upper bound, and actually shrinking a job's
+    # GPU count takes engineering work and may not be possible at all.
+    multi_gpu_capture_fraction: float = 0.5
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -87,6 +92,7 @@ class Config:
                 os.environ.get("FRAGMENTATION_CAPTURE_FRACTION", "0.5")
             ),
             gpu_hourly_rates_json=os.environ.get("GPU_HOURLY_RATES_JSON"),
+            multi_gpu_capture_fraction=float(os.environ.get("MULTI_GPU_CAPTURE_FRACTION", "0.5")),
             savings_estimates_retention_hours=float(
                 os.environ.get("SAVINGS_ESTIMATES_RETENTION_HOURS", "2160")
             ),

@@ -1,0 +1,13 @@
+# Use the images build_images.sh loaded into k3s (this branch's code)
+# instead of the published GHCR ones. pullPolicy Never: fail loudly if an
+# image is missing rather than silently pulling an older published build.
+collector:
+  image: {repository: local/telemetry-collector, tag: test, pullPolicy: Never}
+ingestion:
+  image: {repository: local/ingestion-normalization, tag: test, pullPolicy: Never}
+wasteDetector:
+  image: {repository: local/waste-detector, tag: test, pullPolicy: Never}
+savingsEstimator:
+  image: {repository: local/savings-estimator, tag: test, pullPolicy: Never}
+dashboard:
+  image: {repository: local/dashboard, tag: test, pullPolicy: Never}
