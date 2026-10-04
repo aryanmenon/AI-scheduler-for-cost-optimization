@@ -379,7 +379,7 @@ fixes and the multi-GPU signal below; `...-w4zbhb` does not have those.
   - Not a product recommendation tested literally (the product wouldn't
     flag this load); it tests the assumption every right-sizing number
     rests on. One model, 15 min, two hosts, single run.
-  - Fix proposed, **not built, awaiting founder go-ahead** (section 4).
+  - Fix built the same day (section 4); out-of-sample A10 re-test pending.
 
 ## 2. What's in progress right now
 
@@ -764,13 +764,20 @@ debugging real problems as they come up, not running anything myself.
 
 ### Open product items (decided or discussed 2026-09-29 to 2026-10-01, not built)
 
-- **Make `ceiling.py` memory-speed aware (from the 2026-10-04 mini-test,
-  NOT BUILT, awaiting go-ahead).** Require a target GPU to fit on BOTH
-  FP16 TFLOPS and memory bandwidth (required_bw = current_bw x peak /
-  target, same as TFLOPS), and attach the expected latency change
-  (~ bandwidth ratio for LLM token generation) to every downsize
-  recommendation, so interactive services aren't told to shrink into a
-  slower GPU. Capability table already has `mem_bandwidth_gbps`.
+- **`ceiling.py` memory-speed aware: BUILT 2026-10-04, awaiting A10
+  re-test.** Target must fit on both FP16 TFLOPS and memory bandwidth;
+  `RightSizingRecommendation` gained `required_mem_bandwidth_gbps` and
+  `expected_latency_factor` (max of compute and bandwidth drops); the
+  estimator passes the current GPU's bandwidth and the recommended action
+  now reads "right-size to X (each request may take up to ~Fx longer --
+  fine for batch/offline work, check latency targets before moving an
+  interactive service)". verify.py's "right-size to" regex updated for the
+  suffix. 7 new/changed tests fail on the old code, pass on the new; all
+  suites green (37 + 66 + 90 + 71 + 49 + 2 = 315). Effect: fewer and larger
+  downsize targets (e.g. A100 80GB at 25% peak -> V100 instead of L4; RTX
+  3090 at 25-30% -> A10 instead of T4), so projected savings shown drop --
+  correctly. Next: re-run the mini-test "after" side on an A10 (product's
+  prediction: busy % and latency up by at most 1.56x).
 
 Ordered roughly by what was recommended first:
 

@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from ingestion_normalization.capability import lookup_capability
 
-from savings_estimator.ceiling import right_sized_capability
+from savings_estimator.ceiling import latency_note, right_sized_capability
 from savings_estimator.config import Config
 from savings_estimator.estimate import (
     BASIS_OBSERVED_WINDOW,
@@ -189,7 +189,10 @@ def _estimate_over_provisioned(
 
     # metric_value for this category IS the observed peak utilization %
     # (see waste_detector.over_provisioning) -- no need to re-derive it.
-    rec = right_sized_capability(capability.fp16_tflops, finding.metric_value, config.sla_target_utilization_pct)
+    rec = right_sized_capability(
+        capability.fp16_tflops, finding.metric_value, config.sla_target_utilization_pct,
+        current_mem_bandwidth_gbps=capability.mem_bandwidth_gbps,
+    )
 
     if rec.recommended is None:
         return SavingsEstimate(
@@ -212,7 +215,9 @@ def _estimate_over_provisioned(
         **_base_kwargs(finding),
         basis=BASIS_PROJECTED_MONTHLY,
         amount_inr=monthly_savings,
-        recommended_action=f"right-size to {rec.recommended.canonical_name}",
+        recommended_action=(
+            f"right-size to {rec.recommended.canonical_name} ({latency_note(rec.expected_latency_factor)})"
+        ),
         methodology=(
             f"{rec.detail}; ₹{price.hourly_inr:.2f}/hr -> ₹{recommended_price.hourly_inr:.2f}/hr, "
             f"projected over {config.hours_per_month:.0f}h/month if this profile continues"

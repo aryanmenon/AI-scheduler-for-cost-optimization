@@ -83,6 +83,10 @@ def test_over_provisioned_recommends_smaller_sku_and_monthly_savings():
     assert estimate.basis == BASIS_PROJECTED_MONTHLY
     assert estimate.amount_inr > 0
     assert "T4" in estimate.recommended_action
+    # The default rollup GPU is an A100; a T4 has far less memory
+    # bandwidth, so the action must warn that requests get slower.
+    assert "longer" in estimate.recommended_action
+    assert "GB/s" in estimate.methodology
 
 
 def test_over_provisioned_high_peak_may_yield_zero_savings():

@@ -185,7 +185,7 @@ def section_arithmetic(product, rates):
         elif cat == "multi_gpu_oversized":
             expected = phase1_rate * mv * 0.5 * HOURS_PER_MONTH
         elif cat == "over_provisioned":
-            m = re.search(r"right-size to (.+)$", e.get("recommended_action", ""))
+            m = re.search(r"right-size to (.+?)(?: \(|$)", e.get("recommended_action", ""))
             rec_rate = rate_for(m.group(1).strip(), rates) if m else None
             if m and rec_rate is not None:
                 expected = max(0.0, (phase1_rate - rec_rate) * HOURS_PER_MONTH)
@@ -275,7 +275,7 @@ def section_ground_truth(product, rates, d):
     over = estimates_for(product, "vllm-main", "over_provisioned")
     rec = None
     if over:
-        m = re.search(r"right-size to (.+)$", over[-1].get("recommended_action", ""))
+        m = re.search(r"right-size to (.+?)(?: \(|$)", over[-1].get("recommended_action", ""))
         rec = m.group(1).strip() if m else None
     rec_rate = rate_for(rec, rates) if rec else None
     predicted = over[-1]["amount_inr"] if over else None

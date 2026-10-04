@@ -26,6 +26,25 @@ full `compare.py` output).
   ran in a uv-made Python 3.12 venv (`pip install uv && uv venv --seed -p
   3.12 /content/v`, then run with `/content/v/bin/python`).
 
+### Fix built (2026-10-04) -- awaiting an out-of-sample re-test
+
+`ceiling.py` now requires the target GPU to fit on both FP16 TFLOPS and
+memory bandwidth (required = current x peak / 70% for each), and every
+recommendation states an expected latency factor F = max(1, compute drop,
+bandwidth drop), shown in the recommended action ("each request may take up
+to ~Fx longer -- fine for batch/offline work, check latency targets before
+moving an interactive service"). For this 3090 workload at the highest peak
+the product would flag (30%), it now recommends an **A10** (600 GB/s,
+F = 1.56x) instead of a T4/L4.
+
+`compare.py` now checks the product's promise for whatever GPU the "after"
+run used: throughput/errors/queueing kept up, busy % and p95 latency rose by
+no more than F (+15% tolerance). Re-run on the existing T4 data: all checks
+pass (`results/compare-output-after-fix.txt`) -- but that is in-sample (the
+fix was derived from it). **The real check is a new GPU: the A10.** Re-use
+`result-before.json`; run the "after" side on an A10 with the same settings
+as the 3090 (`--gpu-mem 0.50`, 24 GB).
+
 ## Files
 - `rightsize_minitest.py` -- one side: installs vllm 0.8.5.post1 if missing,
   serves Qwen2.5-1.5B-Instruct (fp16, V0 engine so it runs on a T4), replays
