@@ -1,0 +1,29 @@
+== What the product concludes from the 'before' run ==
+before GPU: NVIDIA GeForce RTX 3090 -> NVIDIA GeForce RTX 3090 (71 TFLOPS, 936 GB/s)
+peak busy % as the product samples it (every 30 s): 75.0% (true 1 s max 100.0%, mean 21.37%)
+over-provisioned finding (peak <= 30%): NO -- the product would not recommend a smaller GPU at this load
+ceiling.py at this peak (hypothetical): peak demand ~53 TFLOPS sized to a 70% ceiling recommends NVIDIA L4 (121 TFLOPS)
+
+== Was the 'after' run comparable? ==
+after GPU: Tesla T4 -> NVIDIA T4 (NOT the GPU ceiling.py picks at this peak)
+same model, keep fraction and duration: yes
+product's model (busy % x 1.09, the TFLOPS ratio) predicts mean busy ~23.3% on NVIDIA T4
+memory-speed model (busy % x 2.92) predicts ~62.5%
+
+== Measured before vs after ==
+metric                            before     after  after/before
+latency p50 (s)                     1.91      4.44         2.32x
+latency p95 (s)                     2.21      5.16         2.33x
+latency p99 (s)                     2.38      5.61         2.36x
+send lag p95 (s)                    0.02      0.00         0.31x
+output tokens/s                    48.06     48.01         1.00x
+error rate                          0.00      0.00           n/a
+busy % mean                        21.37     54.27         2.54x
+busy % peak (30 s sampling)        75.00     97.00         1.29x
+
+== Verdict ==
+capacity (did it keep up?): throughput 1.00x, errors ok, send lag ok
+latency: p95 2.33x of before (PASS <= 1.5x, MARGINAL <= 2.0x)
+mean busy %: product's TFLOPS model predicted ~23.3%, measured 54.27% (peak 97.0% at 30 s sampling)
+busy % moved 2.54x vs TFLOPS 1.09x / memory speed 2.92x -> closer to memory speed (product's assumption does NOT hold)
+SIZING ASSUMPTION (this load moved to this GPU): FAIL

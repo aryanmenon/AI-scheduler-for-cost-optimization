@@ -1,23 +1,30 @@
 # Right-sizing mini-test (RTX 3090 -> T4)
 
-**Status: RUNNING (2026-10-04).** RTX 3090 calibration done (5 min, keep
-0.05, 87 requests, 0 errors): mean busy 23.5%, product-style peak **71%**
-(1 s max 93%), p95 2.24 s. Finding: GPU busy % reads high whenever any
-request is in flight, so a lightly loaded LLM service never gets under the
-product's 30% over-provisioned bar -- the product would not recommend
-shrinking it (safe, but this waste only shows in the no-recommendation
-tier). The run therefore tests the sizing assumption directly: does busy %
-move by the TFLOPS ratio (1.09x, product) or the memory-speed ratio (2.92x)
-on a T4? Before/after runs are 15 min each.
+**Status: RUN 2026-10-04. RESULT: FAIL -- the product's sizing assumption
+does not hold for LLM serving.** See `results/` (both result files and the
+full `compare.py` output).
 
-Tests the product's riskiest unverified assumption for under ~$0.50: that a
-workload's busy % times its GPU's FP16 TFLOPS is the compute it needs, so a
-GPU with enough TFLOPS at a 70% ceiling can take it over. `ceiling.py` sizes
-on TFLOPS only; LLM token generation is usually limited by memory speed.
-RTX 3090 -> T4 is the sharpest case: 1.1x less compute, 2.9x less memory speed.
+| | RTX 3090 (before) | T4 (after) | after/before |
+|---|---|---|---|
+| requests / errors | 237 / 0 | 237 / 0 | |
+| latency p50 / p95 / p99 (s) | 1.91 / 2.21 / 2.38 | 4.44 / 5.16 / 5.61 | 2.3x |
+| output tokens/s | 48.1 | 48.0 | 1.00x |
+| mean busy % | 21.4 | 54.3 | 2.54x |
+| peak busy %, 30 s sampling | 75 | 97 | |
 
-No Kubernetes and no product deployment: `compare.py` feeds the measured
-peak into the product's real `ceiling.py` and checks the result.
+- Product's assumption: busy % scales by the FP16 TFLOPS ratio (1.09x),
+  predicting ~23% on the T4. Measured 54% (2.54x), close to the
+  memory-speed ratio (2.92x). Latency rose 2.3x (pass bar 1.5x). Capacity
+  held: same throughput, no queueing, no errors.
+- The 3090's product-style peak was 71-75% at only ~0.26 req/s (GPU busy %
+  reads high whenever any request is in flight), so the product's
+  over-provisioned finding (peak <= 30%) would not fire for this service.
+  At that peak `ceiling.py` would pick an L4 (300 GB/s, slower memory
+  than the T4), which would very likely fail the same way.
+- What went wrong during the run, for next time: vllm 0.8.5 needs
+  `transformers<5` (pinned now); Colab ships Python 3.13, so the T4 side
+  ran in a uv-made Python 3.12 venv (`pip install uv && uv venv --seed -p
+  3.12 /content/v`, then run with `/content/v/bin/python`).
 
 ## Files
 - `rightsize_minitest.py` -- one side: installs vllm 0.8.5.post1 if missing,

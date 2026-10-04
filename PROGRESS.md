@@ -356,6 +356,30 @@ fixes and the multi-GPU signal below; `...-w4zbhb` does not have those.
   (2) multi-GPU "fewer GPUs" upper bound (projected/month); (3) detected
   waste with no recommendation (observed). Tiers 2-3 never enter a
   headline.
+- **Right-sizing mini-test (2026-10-04): FAIL -- found a real flaw in
+  `ceiling.py`.** `testing/rightsizing-mini-test/` (results + full
+  `compare.py` output in `results/`). ~$0.30 total: RTX 3090 on vast.ai,
+  free T4 on Colab. Same model (Qwen2.5-1.5B-Instruct, vLLM 0.8.5.post1,
+  fp16, V0 engine, ~12 GB each), same 15 min of the Azure conv trace at
+  keep 0.05 (237 requests each, 0 errors each).
+  - 3090: mean busy 21.4%, product-style peak (30 s sampling) 75%, p95
+    2.21 s. T4: mean busy 54.3%, peak 97%, p95 5.16 s. Throughput 1.00x.
+  - **Product's assumption (busy % scales by FP16 TFLOPS ratio, 1.09x)
+    predicted ~23% on the T4; measured 54% (2.54x), close to the
+    memory-speed ratio (2.92x).** Latency p50/p95/p99 rose 2.3x (FAIL vs
+    the 1.5x bar). Capacity held: same throughput, no queueing, no errors.
+  - Finding 2: at this light load (~0.26 req/s) the 3090's 30-s-sampled
+    peak was 71-75%, so `over_provisioning.py` (peak <= 30%) would never
+    fire: GPU busy % reads high whenever any request is in flight. For
+    LLM serving the right-sizing path is mostly unreachable (safe, but this
+    waste only lands in the no-recommendation tier). At that peak
+    `ceiling.py` would pick an L4 (121 TFLOPS but 300 GB/s -- slower memory
+    than the T4), so the hypothetical recommendation would very likely fail
+    the same way.
+  - Not a product recommendation tested literally (the product wouldn't
+    flag this load); it tests the assumption every right-sizing number
+    rests on. One model, 15 min, two hosts, single run.
+  - Fix proposed, **not built, awaiting founder go-ahead** (section 4).
 
 ## 2. What's in progress right now
 
@@ -739,6 +763,14 @@ debugging real problems as they come up, not running anything myself.
    answers task, not a blocker to starting outreach conversations.
 
 ### Open product items (decided or discussed 2026-09-29 to 2026-10-01, not built)
+
+- **Make `ceiling.py` memory-speed aware (from the 2026-10-04 mini-test,
+  NOT BUILT, awaiting go-ahead).** Require a target GPU to fit on BOTH
+  FP16 TFLOPS and memory bandwidth (required_bw = current_bw x peak /
+  target, same as TFLOPS), and attach the expected latency change
+  (~ bandwidth ratio for LLM token generation) to every downsize
+  recommendation, so interactive services aren't told to shrink into a
+  slower GPU. Capability table already has `mem_bandwidth_gbps`.
 
 Ordered roughly by what was recommended first:
 
