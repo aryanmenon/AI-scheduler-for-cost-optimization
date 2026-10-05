@@ -1301,6 +1301,16 @@ are assumptions to replace with pilot/interview data.
   monitoring software: ~$1.65B (2026). Cross-check: 2,700-28,674 Indian
   K8s companies x 6% using GPUs (Datadog) = ~160-1,700 orgs. ₹95.45/$.
   India likely understated (GPU capacity growing faster than cloud).
+- **Growing the market (report section 9, Oct 2026).** No source supports
+  a ₹980 Cr/yr India market for GPU cost optimization; plan against
+  ~₹300 Cr/yr (India GPU-monitoring software ~₹299 Cr; India cloud-GPU
+  services only $67M FY2025 -> $514M FY2030, utilisation <20%, IPO
+  prospectus as reported). Nine features widen it, in order: automated
+  actions, GPU VMs/bare metal/Slurm, MIG/time-slicing, inference-serving
+  optimisation, chargeback/forecasting, billing + IndiaAI-subsidised
+  compute advice, non-NVIDIA accelerators, enterprise (SSO/RBAC/
+  multi-cluster), scheduling on KAI; plus GPU-cloud partnerships.
+  Realistic share even with all: 10-25% [A], ~₹30-75 Cr/yr, ~15-40 people.
 - **TAM/SAM/SOM [A]:** India TAM ₹78-190 Cr/yr, SAM ~₹38 Cr (~885 orgs on
   Kubernetes), 3-yr SOM 27-45 customers / ₹0.8-1.35 Cr ARR. With SE Asia,
   Middle East, US, EU: TAM ~₹860 Cr, SAM ~₹270 Cr; 30 India + 15 overseas

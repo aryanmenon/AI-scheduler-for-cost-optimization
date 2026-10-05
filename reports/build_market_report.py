@@ -110,6 +110,9 @@ s.append(make_table(
                                  "(~₹2,980 Cr)</b>, SAM ~$250-287M; India TAM <b>~$5.9M (~₹56 Cr)</b>, SAM ~$4.7-5.4M. "
                                  "Lower than the bottom-up India TAM in section 2, which rests on assumed org counts "
                                  "and prices; prefer section 8 when citing figures externally."],
+        ["Growing the market", "Section 9 (Oct 2026): no source supports a ₹980 Cr/yr India market; plan "
+                               "against ~₹300 Cr/yr. Nine features widen it, led by automated actions and "
+                               "non-Kubernetes GPU support; realistic share even with all of them is 10-25% [A]."],
         ["Earlier study", "The Sept 2026 SMB market study's ₹216 Cr SAM / ₹7.2 Cr SOM sizes the <b>full planned "
                           "product with a team</b>; with its price assumption corrected it is ₹130 Cr / ₹4.35 Cr. "
                           "The gap to this report is the feature roadmap (section 7)."],
@@ -690,9 +693,93 @@ s.append(P("<b>Bottom line:</b> the market is real and growing fast (Kubernetes 
            "widening what the product does. Note: section 8 uses ₹95.45/$; earlier sections use ₹88/$.",
            "Callout"))
 
+# ================================================================= Growth features
+s.append(PageBreak())
+s.append(P("9. Growing the market: features to build later (verified, October 2026)", "H2"))
+s.append(P("Which features would let the product address the broader Indian market for GPU cost optimization, "
+           "not just the read-only, NVIDIA-on-Kubernetes slice sized in section 8. Each claim is tagged: "
+           "<b>[S]</b> checked against a published source; <b>[R]</b> reported in the press, primary source not "
+           "opened; <b>[A]</b> assumption.", "Body"))
+
+s.append(P("9.1 How big the target really is", "H3"))
+s.append(bullets([
+    "<b>A ₹980 Cr/yr India market for GPU cost optimization is not supported by any source found.</b> No "
+    "published estimate of that size exists; the nearest figure in this report is the <i>global</i> TAM of "
+    "~₹2,980 Cr (section 8.2).",
+    "India's whole GPU-monitoring software market is <b>~₹299 Cr</b> (section 8.3: global market x India's "
+    "share of cloud spend) [S+A].",
+    "India's entire cloud-GPU services market: <b>$67.31M (~₹640 Cr) in FY2025, rising to $513.67M by FY2030</b> "
+    "(50.15% CAGR), with average capacity utilisation <b>below 20%</b> per expert interviews -- figures from an "
+    "IPO prospectus as reported [R]. A ₹980 Cr <i>tools</i> market would exceed all the cloud-GPU rental it "
+    "optimizes.",
+    "<b>Plan against a ceiling of ~₹300 Cr/yr today</b>, growing quickly with India's GPU spend (public cloud "
+    "+28% in 2026, IaaS +40% [S]).",
+]))
+
+s.append(P("9.2 Features that widen the market, in suggested build order", "H3"))
+s.append(make_table(
+    ["Feature", "Why it matters (evidence)", "What it adds"],
+    [
+        ["<b>1. Automated actions</b> (approve-then-act first): reclaim idle GPUs, scale down in quiet hours, "
+         "apply right-sizing",
+         "CAST AI already automates idle GPU node termination, spot with on-demand fallback, MIG/time-slicing and "
+         "rightsizing [S]; valued over $1B, ScaleOps over $800M (section 8.4) [S]. Detection-only competes "
+         "directly with Datadog GPU Monitoring (GA Apr 2026) [S].",
+         "Higher price per customer: a tool that acts can charge more [A]"],
+        ["<b>2. GPU VMs, bare metal and Slurm</b> (no Kubernetes)",
+         "66% of organisations hosting GenAI use Kubernetes for \"some or all\" inference [S] -- about a third "
+         "do not. E2E, India's largest GPU cloud, sells VMs, bare metal and managed Kubernetes [S]. India's PARAM "
+         "supercomputers schedule GPU jobs with Slurm [S].",
+         "More customer organisations; roughly doubles India SAM [A]"],
+        ["<b>3. GPU sharing</b>: recommend and set up MIG / time-slicing",
+         "Indian cloud-GPU utilisation below 20% [R]. CAST AI and NVIDIA's KAI Scheduler both provide GPU "
+         "sharing [S].",
+         "Larger savings per customer"],
+        ["<b>4. Inference-serving optimisation</b>: vLLM/Triton metrics, batching, autoscaling on request load, "
+         "model-to-GPU fit",
+         "Gartner: inference spending overtakes training in 2026, 55% of AI-optimised IaaS spend [S, via press "
+         "coverage].",
+         "Covers the largest, fastest-growing category of GPU spend"],
+        ["<b>5. Chargeback, budgets and forecasting</b> by team / business unit",
+         "Datadog's product chief: companies \"can't chargeback GPU spend across business units\" [S]; Datadog "
+         "forecasts buy-more-GPUs vs optimise [S]; Kubecost sells chargeback as an enterprise feature [S].",
+         "Finance/CFO budgets; multi-team enterprises"],
+        ["<b>6. Billing and purchasing advice</b>: real invoice cost, spot, reserved/committed GPUs, moving "
+         "eligible work to IndiaAI-subsidised compute",
+         "IndiaAI: 38,000+ GPUs onboarded at subsidised rates (sources quote ₹65 or ₹115-150 per GPU-hour), "
+         "target 100,000 by Dec 2026 [S].",
+         "An India-only edge no global tool has [A]"],
+        ["<b>7. Non-NVIDIA accelerators</b>: Google TPU, AWS Trainium/Inferentia, AMD",
+         "NVIDIA holds 80-92% (section 8.1) [S]; IndiaAI's third tender adds 1,050 Google Trillium TPUs, its "
+         "first non-NVIDIA chips [S].",
+         "The remaining 8-20% of accelerators"],
+        ["<b>8. Multi-cluster, SSO, RBAC, audit logs</b>",
+         "Kubecost puts SSO, RBAC and multi-cluster in its enterprise tier [S].",
+         "Required to sell to large enterprises"],
+        ["<b>9. Scheduling, quotas and queues</b>, built on NVIDIA's open-source KAI Scheduler",
+         "KAI Scheduler open-sourced under Apache 2.0 in April 2025, now a CNCF project [S].",
+         "Platform-team budgets"],
+        ["<b>Distribution</b> (not a feature): partner with Indian GPU clouds",
+         "Yotta, E2E, NxtGen and Jio lead the IndiaAI compute-provider roster [S].",
+         "Likely the fastest route to many Indian customers [A]"],
+    ],
+    [1.75 * inch, W - 1.75 * inch - 1.45 * inch, 1.45 * inch],
+))
+
+s.append(P("9.3 Realistic share, even with every feature", "H3"))
+s.append(bullets([
+    "No one captures the whole market. Closest benchmark: Kubecost reached ~0.45% of its global market after "
+    "~5 years (third-party revenue estimate, section 8.5) [R].",
+    "A strong India leader in its home market might reach <b>10-25%</b> [A]: <b>~₹30-75 Cr/yr</b> of a "
+    "~₹300 Cr market.",
+    "Features 1-9 are several years of work; realistically a team of ~15-40 people [A].",
+    "Build each only after pilots show customers pay for it; the first paid pilot decides whether 1 or 2 comes "
+    "first.",
+]))
+
 # ================================================================= Assumptions + sources
 s.append(PageBreak())
-s.append(P("9. Assumptions ledger", "H2"))
+s.append(P("10. Assumptions ledger", "H2"))
 s.append(make_table(
     ["#", "Assumption", "Value", "Why / how to validate"],
     [
@@ -724,7 +811,7 @@ s.append(make_table(
     [0.4 * inch, 2.2 * inch, 1.1 * inch, W - 3.7 * inch],
 ))
 
-s.append(P("10. Sources", "H2"))
+s.append(P("11. Sources", "H2"))
 src = [
     "Gartner, India public cloud forecast (Jun 2026): gartner.com/en/newsroom/press-releases/2026-06-01-gartner-"
     "forecasts-end-user-public-cloud-spending-in-india-to-surpass-17-billion-us-dollars-in-2026",
@@ -777,6 +864,20 @@ src = [
     "tradingeconomics.com/india/currency ; Cast AI: cast.ai/press-release/cast-ai-valued-at-over-1-billion-with-"
     "the-launch-of-its-gpu-marketplace/ ; ScaleOps: insightpartners.com (Series C, Mar 2026); Kubecost: "
     "techcrunch.com/2024/09/17/ibm-acquires-kubernetes-cost-optimization-startup-kubecost/",
+    "Section 9 -- India cloud-GPU market $67.31M FY2025 to $513.67M FY2030, utilisation below 20% (IPO prospectus "
+    "as reported): multibagg.ai/market-pulse/articles/india-cloud-gpu-market-utilisation-rhp-cmu8v1j1100hwy6picg88u4ve",
+    "Section 9 -- CAST AI GPU automation: cast.ai/blog/kubernetes-gpu-autoscaling/ ; cast.ai/blog/fractional-gpu-kubernetes/",
+    "Section 9 -- CNCF 2025 Annual Cloud Native Survey (66% use Kubernetes for some or all GenAI inference): "
+    "cncf.io/announcements/2026/01/20/kubernetes-established-as-the-de-facto-operating-system-for-ai-as-production-"
+    "use-hits-82-in-2025-cncf-annual-cloud-native-survey/",
+    "Section 9 -- E2E Networks (VMs, bare metal, managed Kubernetes): e2enetworks.com ; docs.e2enetworks.com ; "
+    "C-DAC National PARAM Supercomputing Facility (Slurm): cdac.in/index.aspx?id=hpc_nsf_npsfidx",
+    "Section 9 -- Gartner, inference spending overtakes training in 2026 (via techtimes.com/articles/323879)",
+    "Section 9 -- IndiaAI: 38,000+ GPUs (telecomtalk.info/over-38000-gpus-onboarded-under-indiaai-mission/1005751/); "
+    "TPU tender (techpillow.co/blog/indiaai-mission-38000-gpus-shakti-cloud-compute-2026); providers "
+    "(blogs.nvidia.com/blog/india-ai-mission-infrastructure-models/)",
+    "Section 9 -- IBM Kubecost enterprise features: apptio.com/products/kubecost/ ; KAI Scheduler open source: "
+    "developer.nvidia.com/blog/nvidia-open-sources-runai-scheduler-to-foster-community-collaboration/",
     "Earlier study: India GPU Optimization SaaS: SMB Market Research (September 2026), provided by the founder.",
     "Own test results: testing/real-trace-replay/RESULTS.md (Philly, 16.7% flagged after the 2026-10-01 detector fixes; originally reported as 23.0%); "
     "testing/azure-inference-trace-replay/RESULTS.md; PROGRESS.md.",
