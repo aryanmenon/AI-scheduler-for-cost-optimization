@@ -784,6 +784,33 @@ debugging real problems as they come up, not running anything myself.
 
 ### Open product items (decided or discussed 2026-09-29 to 2026-10-01, not built)
 
+- **Pilot install rehearsal run live (2026-10-04/05), all six checks
+  pass** (`testing/pilot-install-rehearsal/README.md`): compiled images
+  pulled with a `read:packages` token, run, contain no source, PVC binds,
+  a real idle RTX 3090 became "Rs20.00, 1.0h at Rs20/hr
+  (customer_provided_rate)" in the report, uninstall leaves nothing. Also
+  survived a node reboot and a mid-pilot `helm upgrade` with on-volume
+  migration. **Found a real bug, fixed in PR #7**: the rollups unique
+  index was per GPU per bucket, so any hour in which a GPU changed pod
+  raised IntegrityError and was never stored (370 errors live); now keyed
+  by namespace + workload, old index dropped at startup, verified live.
+  Open cosmetic item: see the next entry.
+- **TO FIX LATER (flagged 2026-10-05): idle GPU duplicated as
+  "Over-Provisioned, Rs0/mo, none".** Seen live in the rehearsal report:
+  the idle RTX 3090 (0% peak for its observed hour) appeared both as
+  Idle (Rs20.00, correct) and as Over-Provisioned with Rs0/mo and "none
+  -- no smaller known SKU meets the SLA ceiling / no observed peak load to
+  size against". Cause: `detect_over_provisioning`
+  (`waste-detector/src/waste_detector/over_provisioning.py`) flags any
+  peak <= `over_provision_threshold_pct`, 0% included; the estimator then
+  can't size against zero load (`savings-estimator/.../ceiling.py`,
+  "no observed peak load to size against"). The headline is unaffected
+  (each GPU counted once at its largest estimate), but a Rs0 "none" row
+  for a GPU we already call idle reads as noise to a customer. Proposed
+  fix (~15 min + tests): skip over-provisioned when the observed peak is
+  0 -- the idle detector owns that case. Check that a 0%-peak workload
+  that is *not* an idle streak (e.g. low coverage hours) isn't left with
+  no finding at all; the no-recommendation tier should still catch it.
 - **Pilot pack + headline fixes (2026-10-04).** `docs/pilot/`: PILOT_PLAN.md
   (prospect-facing pilot terms), PILOT_GUIDE.md (install/security/uninstall,
   commands verified against `helm template`), OUTREACH.md (internal: ICP,
@@ -933,6 +960,14 @@ Ordered roughly by what was recommended first:
 
 ## 5. Key gotchas (learned the hard way, don't re-break these)
 
+- **Rollups are one row per workload per GPU per bucket** -- any unique
+  key on `rollups` must include namespace and workload, or every hour in
+  which a job starts/stops fails to store (PR #7, found live 2026-10-04).
+  Detectors already group by workload per GPU.
+- **Disabling `unattended-upgrades.service` does not stop Ubuntu's
+  automatic upgrade** -- `apt-daily-upgrade.timer` starts it. On a fresh
+  GPU VM, disable the apt-daily timers before anything else, or the NVIDIA
+  driver gets upgraded under you (see the client-cluster kit, section 1).
 - **vast.ai instance type**: the earlier attempt to get k8s + the NVIDIA
   device plugin running on a vast.ai rental failed because the default
   vast.ai instance type is itself a Docker container, which blocks nested
