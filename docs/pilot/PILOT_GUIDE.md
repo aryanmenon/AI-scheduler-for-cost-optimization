@@ -142,8 +142,23 @@ helm uninstall gpu-optimizer -n gpu-optimizer
 kubectl delete namespace gpu-optimizer        # also deletes the stored data
 ```
 
+`helm uninstall` reports that it kept `gpu-optimizer-dashboard-auth`: the
+chart keeps the dashboard token across upgrades on purpose. Deleting the
+namespace removes it.
+
 With `dcgmExporter.enabled=false`, the small headless Service the chart
 placed next to your existing exporter is removed by `helm uninstall` too.
+
+The product's images stay in your nodes' image cache until the container
+runtime garbage-collects them. To remove them right away, on each GPU
+node:
+
+```bash
+crictl images | awk '/ai-scheduler-for-cost-optimization/{print $3}' | xargs -r crictl rmi
+```
+
+(Rehearsed end to end on a live GPU cluster on 2026-10-04: nothing left
+behind.)
 
 ## If a finding looks wrong
 

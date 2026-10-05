@@ -784,6 +784,18 @@ debugging real problems as they come up, not running anything myself.
 
 ### Open product items (decided or discussed 2026-09-29 to 2026-10-01, not built)
 
+- **Pilot install rehearsal run live (2026-10-04/05), all six checks
+  pass** (`testing/pilot-install-rehearsal/README.md`): compiled images
+  pulled with a `read:packages` token, run, contain no source, PVC binds,
+  a real idle RTX 3090 became "Rs20.00, 1.0h at Rs20/hr
+  (customer_provided_rate)" in the report, uninstall leaves nothing. Also
+  survived a node reboot and a mid-pilot `helm upgrade` with on-volume
+  migration. **Found a real bug, fixed in PR #7**: the rollups unique
+  index was per GPU per bucket, so any hour in which a GPU changed pod
+  raised IntegrityError and was never stored (370 errors live); now keyed
+  by namespace + workload, old index dropped at startup, verified live.
+  Open cosmetic item: an idle (0% peak) GPU is also listed as
+  over-provisioned with Rs0 and "none" -- suppress that.
 - **Pilot pack + headline fixes (2026-10-04).** `docs/pilot/`: PILOT_PLAN.md
   (prospect-facing pilot terms), PILOT_GUIDE.md (install/security/uninstall,
   commands verified against `helm template`), OUTREACH.md (internal: ICP,
@@ -933,6 +945,14 @@ Ordered roughly by what was recommended first:
 
 ## 5. Key gotchas (learned the hard way, don't re-break these)
 
+- **Rollups are one row per workload per GPU per bucket** -- any unique
+  key on `rollups` must include namespace and workload, or every hour in
+  which a job starts/stops fails to store (PR #7, found live 2026-10-04).
+  Detectors already group by workload per GPU.
+- **Disabling `unattended-upgrades.service` does not stop Ubuntu's
+  automatic upgrade** -- `apt-daily-upgrade.timer` starts it. On a fresh
+  GPU VM, disable the apt-daily timers before anything else, or the NVIDIA
+  driver gets upgraded under you (see the client-cluster kit, section 1).
 - **vast.ai instance type**: the earlier attempt to get k8s + the NVIDIA
   device plugin running on a vast.ai rental failed because the default
   vast.ai instance type is itself a Docker container, which blocks nested
