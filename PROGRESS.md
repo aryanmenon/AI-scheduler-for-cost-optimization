@@ -794,8 +794,23 @@ debugging real problems as they come up, not running anything myself.
   index was per GPU per bucket, so any hour in which a GPU changed pod
   raised IntegrityError and was never stored (370 errors live); now keyed
   by namespace + workload, old index dropped at startup, verified live.
-  Open cosmetic item: an idle (0% peak) GPU is also listed as
-  over-provisioned with Rs0 and "none" -- suppress that.
+  Open cosmetic item: see the next entry.
+- **TO FIX LATER (flagged 2026-10-05): idle GPU duplicated as
+  "Over-Provisioned, Rs0/mo, none".** Seen live in the rehearsal report:
+  the idle RTX 3090 (0% peak for its observed hour) appeared both as
+  Idle (Rs20.00, correct) and as Over-Provisioned with Rs0/mo and "none
+  -- no smaller known SKU meets the SLA ceiling / no observed peak load to
+  size against". Cause: `detect_over_provisioning`
+  (`waste-detector/src/waste_detector/over_provisioning.py`) flags any
+  peak <= `over_provision_threshold_pct`, 0% included; the estimator then
+  can't size against zero load (`savings-estimator/.../ceiling.py`,
+  "no observed peak load to size against"). The headline is unaffected
+  (each GPU counted once at its largest estimate), but a Rs0 "none" row
+  for a GPU we already call idle reads as noise to a customer. Proposed
+  fix (~15 min + tests): skip over-provisioned when the observed peak is
+  0 -- the idle detector owns that case. Check that a 0%-peak workload
+  that is *not* an idle streak (e.g. low coverage hours) isn't left with
+  no finding at all; the no-recommendation tier should still catch it.
 - **Pilot pack + headline fixes (2026-10-04).** `docs/pilot/`: PILOT_PLAN.md
   (prospect-facing pilot terms), PILOT_GUIDE.md (install/security/uninstall,
   commands verified against `helm template`), OUTREACH.md (internal: ICP,
