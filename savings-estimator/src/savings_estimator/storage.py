@@ -7,7 +7,15 @@ import os
 import sqlite3
 from contextlib import contextmanager
 
+from typing import TYPE_CHECKING
+
 from savings_estimator.estimate import SavingsEstimate
+
+if TYPE_CHECKING:
+    # Type-only: importing recoverable at runtime would pull in
+    # ingestion_normalization, which dashboard's tests (that import this
+    # module) deliberately don't install.
+    from savings_estimator.recoverable import RecoverableCeiling
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS savings_estimates (
@@ -33,6 +41,21 @@ CREATE TABLE IF NOT EXISTS savings_estimates (
 CREATE INDEX IF NOT EXISTS idx_savings_category ON savings_estimates (category);
 CREATE INDEX IF NOT EXISTS idx_savings_workload ON savings_estimates (namespace, workload);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_savings_finding ON savings_estimates (finding_id);
+
+-- The cluster's recoverable ceiling (see recoverable.py): one row,
+-- replaced every cycle.
+CREATE TABLE IF NOT EXISTS recoverable_ceiling (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    window_start REAL NOT NULL,
+    window_end REAL NOT NULL,
+    target_utilization_pct REAL NOT NULL,
+    observed_gpu_hours REAL NOT NULL,
+    observed_spend_inr REAL NOT NULL,
+    recoverable_inr REAL NOT NULL,
+    monthly_spend_inr REAL NOT NULL,
+    excluded_gpu_hours REAL NOT NULL,
+    computed_at REAL NOT NULL
+);
 """
 
 
@@ -111,6 +134,35 @@ class SavingsStorage:
         with self._cursor() as cur:
             cur.execute("DELETE FROM savings_estimates WHERE estimated_at < ?", (cutoff,))
             return cur.rowcount
+
+    def save_ceiling(self, ceiling: "RecoverableCeiling | None", computed_at: float) -> None:
+        with self._cursor() as cur:
+            if ceiling is None:
+                cur.execute("DELETE FROM recoverable_ceiling")
+                return
+            cur.execute(
+                """INSERT INTO recoverable_ceiling
+                   (id, window_start, window_end, target_utilization_pct, observed_gpu_hours,
+                    observed_spend_inr, recoverable_inr, monthly_spend_inr, excluded_gpu_hours,
+                    computed_at)
+                   VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT (id) DO UPDATE SET
+                       window_start = excluded.window_start,
+                       window_end = excluded.window_end,
+                       target_utilization_pct = excluded.target_utilization_pct,
+                       observed_gpu_hours = excluded.observed_gpu_hours,
+                       observed_spend_inr = excluded.observed_spend_inr,
+                       recoverable_inr = excluded.recoverable_inr,
+                       monthly_spend_inr = excluded.monthly_spend_inr,
+                       excluded_gpu_hours = excluded.excluded_gpu_hours,
+                       computed_at = excluded.computed_at""",
+                (ceiling.window_start, ceiling.window_end, ceiling.target_utilization_pct,
+                 ceiling.observed_gpu_hours, ceiling.observed_spend_inr, ceiling.recoverable_inr,
+                 ceiling.monthly_spend_inr, ceiling.excluded_gpu_hours, computed_at),
+            )
+
+    def ceiling(self) -> sqlite3.Row | None:
+        return self._conn.execute("SELECT * FROM recoverable_ceiling WHERE id = 1").fetchone()
 
     def count(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM savings_estimates").fetchone()[0]

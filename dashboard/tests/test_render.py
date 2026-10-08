@@ -221,3 +221,34 @@ def test_fragmentation_is_presented_as_a_review_candidate_not_headline():
     assert "Fragmented: Could Share GPUs? (upper bound, not in headline)" in html
     assert "Review Candidates (Upper Bound)" in html
     assert "consolidation" not in html.lower()
+
+
+def _ceiling(**overrides):
+    from dashboard.report_reader import CeilingRow
+    defaults = dict(window_start=0.0, window_end=7 * 86400.0, target_utilization_pct=70.0,
+                    observed_gpu_hours=1176.0, observed_spend_inr=100_000.0, recoverable_inr=72_000.0,
+                    monthly_spend_inr=1_000_000.0, excluded_gpu_hours=0.0)
+    defaults.update(overrides)
+    return CeilingRow(**defaults)
+
+
+def test_recoverable_ceiling_line_shows_share_monthly_figure_and_capture():
+    rows = [_row(id=1, category="over_provisioned", basis="projected_monthly", amount_inr=180_000.0)]
+    html_out = render_report(aggregate(rows, top_n=10, ceiling=_ceiling()))
+    assert "Recoverable Ceiling" in html_out
+    assert "72% of GPU spend" in html_out
+    assert "₹720,000.00/mo" in html_out
+    # 180,000 of 720,000 recoverable per month is captured by the recommendations.
+    assert "(25%)" in html_out
+    assert "A ceiling, not a" in html_out
+
+
+def test_recoverable_ceiling_mentions_excluded_gpu_hours():
+    html_out = render_report(aggregate([_row()], top_n=10, ceiling=_ceiling(excluded_gpu_hours=48.0)))
+    assert "Excludes 48 GPU-hours" in html_out
+
+
+def test_no_ceiling_line_without_ceiling_data_or_spend():
+    assert "Recoverable Ceiling" not in render_report(aggregate([_row()], top_n=10))
+    zero = _ceiling(observed_spend_inr=0.0, recoverable_inr=0.0)
+    assert "Recoverable Ceiling" not in render_report(aggregate([_row()], top_n=10, ceiling=zero))

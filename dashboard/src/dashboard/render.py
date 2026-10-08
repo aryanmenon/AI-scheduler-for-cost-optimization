@@ -162,6 +162,34 @@ def _below_actionable_section(summary: ReportSummary) -> str:
   </section>"""
 
 
+def _ceiling_section(summary: ReportSummary) -> str:
+    """The most any optimization could save on the observed fleet, next to
+    what the recommendations capture -- room to improve, not a forecast."""
+    c = summary.ceiling
+    if c is None or c.observed_spend_inr <= 0:
+        return ""
+    captured = ""
+    if c.monthly_recoverable_inr > 0:
+        share = min(1.0, summary.projected_monthly_total_inr / c.monthly_recoverable_inr)
+        captured = (f" The recommendations above capture {_e(_fmt_inr(summary.projected_monthly_total_inr))}/mo "
+                    f"of it ({share:.0%}).")
+    excluded = ""
+    if c.excluded_gpu_hours > 0:
+        excluded = (f" Excludes {c.excluded_gpu_hours:,.0f} GPU-hours on GPUs without a known model or "
+                    f"rate, and MIG slices.")
+    return f"""
+  <div class="stat-row">
+    <div class="stat-card ceiling">
+      <div class="label">Recoverable Ceiling</div>
+      <div class="value">{c.fraction:.0%} of GPU spend &middot; {_e(_fmt_inr(c.monthly_recoverable_inr))}/mo</div>
+      <div class="note">The most any optimization could save on the {c.observed_gpu_hours:,.0f} GPU-hours
+        observed ({_e(_fmt_ts(c.window_start))} to {_e(_fmt_ts(c.window_end))}): the cost of capacity below
+        {c.target_utilization_pct:.0f}% busy, if every workload could be packed perfectly. A ceiling, not a
+        forecast -- hourly averages hide bursts, so real savings are lower.{captured}{excluded}</div>
+    </div>
+  </div>"""
+
+
 def _overlap_note(summary: ReportSummary) -> str:
     n = summary.projected_gpus_with_overlapping_estimates
     if not n:
@@ -273,6 +301,7 @@ def render_report(summary: ReportSummary) -> str:
     font-variant-numeric: tabular-nums; }}
   .stat-card.projected .value {{ color: var(--overprov); }}
   .stat-card.observed .value {{ color: var(--idle); }}
+  .stat-card.ceiling .value {{ font-size: 22px; color: var(--text-secondary); }}
   .stat-card .note {{ color: var(--text-secondary); font-size: 12.5px; margin-top: 8px; line-height: 1.5; }}
   .card {{
     background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
@@ -334,6 +363,7 @@ def render_report(summary: ReportSummary) -> str:
         a lower bound, not extrapolated to a full month.</div>
     </div>
   </div>
+{_ceiling_section(summary)}
 {_below_actionable_section(summary)}
 
   <section class="card">

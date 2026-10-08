@@ -61,3 +61,20 @@ def test_fragmentation_stays_out_of_the_headline(report):
 def test_nothing_unpriceable(report):
     estimates, _ = report
     assert all(e.priceable for e in estimates)
+
+
+def test_recoverable_ceiling_on_the_sample_cluster(report):
+    _, summary = report
+    c = summary.ceiling
+    # Newest 7 days of the 8: 7 GPUs x 168 h. Hourly spend 4 x Rs300 (A100)
+    # + 2 x Rs70 (L4) + Rs45 (T4) = Rs1,385 -> Rs2,32,680 observed and
+    # Rs10,11,050 a month at that run rate.
+    assert c.observed_gpu_hours == 1176
+    assert c.observed_spend_inr == pytest.approx(232_680.0)
+    assert c.monthly_spend_inr == pytest.approx(1_011_050.0)
+    assert c.excluded_gpu_hours == 0
+    # Share of that spend below the 70% target (depends on the seeded
+    # utilization, so pinned to the value it produced on 2026-10-08).
+    assert c.fraction == pytest.approx(0.7261, abs=1e-4)
+    # The headline captures ~38% of the ceiling.
+    assert summary.projected_monthly_total_inr / c.monthly_recoverable_inr == pytest.approx(0.376, abs=1e-3)

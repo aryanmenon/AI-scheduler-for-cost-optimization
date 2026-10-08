@@ -133,6 +133,10 @@ curl -H "Authorization: Bearer <token>" http://localhost:8080/ > report.html
 
 The headline counts each GPU once. "Already wasted" figures are money
 spent in the observed window; "/mo" figures assume today's usage continues.
+**Recoverable Ceiling** is the most any optimization could save on the last
+7 days observed: the cost of GPU capacity below 70% busy, as if every
+workload could be packed perfectly. It's a ceiling, not a forecast, shown next
+to how much of it the recommendations capture.
 See `sample-report.html` for what a report looks like.
 
 ## Uninstall (2 minutes, leaves nothing behind)

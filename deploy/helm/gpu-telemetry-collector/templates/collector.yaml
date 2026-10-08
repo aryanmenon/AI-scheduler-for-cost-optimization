@@ -53,6 +53,7 @@ data:
   FRAGMENTATION_CAPTURE_FRACTION: {{ .Values.savingsEstimator.fragmentationCaptureFraction | quote }}
   MULTI_GPU_CAPTURE_FRACTION: {{ .Values.savingsEstimator.multiGpuCaptureFraction | quote }}
   AVG_LOAD_TARGET_UTILIZATION_PCT: {{ .Values.savingsEstimator.avgLoadTargetUtilizationPct | quote }}
+  CEILING_WINDOW_HOURS: {{ .Values.savingsEstimator.ceilingWindowHours | quote }}
   {{- if .Values.savingsEstimator.gpuHourlyRatesJson }}
   # Always prefer setting this to the customer's actual contracted rates
   # over the illustrative public list-price defaults baked into pricing.py.

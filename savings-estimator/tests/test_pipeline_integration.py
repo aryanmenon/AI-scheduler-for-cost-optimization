@@ -1,4 +1,5 @@
 import json
+import pytest
 import os
 
 from conftest import make_finding, make_rollup_record, write_findings, write_rollups
@@ -361,3 +362,25 @@ def test_run_forever_alerts_after_consecutive_failures_then_on_recovery(tmp_path
     assert len(posted) == 2
     assert "3 consecutive failed" in posted[0]
     assert "recovered" in posted[1]
+
+
+def test_run_once_stores_the_recoverable_ceiling_even_with_no_findings(tmp_path):
+    findings_path = str(tmp_path / "findings.db")
+    normalized_path = str(tmp_path / "normalized.db")
+    savings_path = str(tmp_path / "savings.db")
+    write_findings(findings_path, [])
+    # 10 hours of one A100 at 20% busy; the window keeps only the newest 4.
+    write_rollups(normalized_path, "hourly",
+                  [make_rollup_record(bucket_start=float(i * 3600), avg_utilization_pct=20.0) for i in range(10)])
+
+    config = _config(findings_path, normalized_path, savings_path, ceiling_window_hours=4)
+    storage = SavingsStorage(savings_path)
+    run_once(config, FindingsReader(findings_path), RollupReader(normalized_path), storage)
+
+    row = storage.ceiling()
+    assert row["window_start"] == 6 * 3600 and row["window_end"] == 10 * 3600
+    assert row["observed_gpu_hours"] == 4
+    assert row["observed_spend_inr"] == 4 * 300.0
+    # 20% busy against a 70% target: 1 - 20/70 of the spend is below it.
+    assert row["recoverable_inr"] == pytest.approx(4 * 300.0 * (1 - 20 / 70))
+    storage.close()

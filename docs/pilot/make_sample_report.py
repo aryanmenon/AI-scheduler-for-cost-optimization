@@ -109,8 +109,10 @@ def build(tmp: str):
     savings_run_once(scfg, fr, sr, ss)
     fr.close(); sr.close(); ss.close()
 
-    estimates = ReportReader(savings).all_estimates()
-    return estimates, aggregate(estimates, top_n=15)
+    reader = ReportReader(savings)
+    estimates, ceiling = reader.all_estimates(), reader.ceiling()
+    reader.close()
+    return estimates, aggregate(estimates, top_n=15, ceiling=ceiling)
 
 
 def main() -> None:

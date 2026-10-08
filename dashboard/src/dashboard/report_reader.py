@@ -34,6 +34,27 @@ class EstimateRow:
     estimated_at: float
 
 
+@dataclass
+class CeilingRow:
+    """savings-estimator's recoverable_ceiling row (see its recoverable.py)."""
+    window_start: float
+    window_end: float
+    target_utilization_pct: float
+    observed_gpu_hours: float
+    observed_spend_inr: float
+    recoverable_inr: float
+    monthly_spend_inr: float
+    excluded_gpu_hours: float
+
+    @property
+    def fraction(self) -> float:
+        return self.recoverable_inr / self.observed_spend_inr if self.observed_spend_inr > 0 else 0.0
+
+    @property
+    def monthly_recoverable_inr(self) -> float:
+        return self.fraction * self.monthly_spend_inr
+
+
 class ReportReader:
     def __init__(self, path: str):
         self._conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
@@ -63,6 +84,27 @@ class ReportReader:
             )
             for row in cur.fetchall()
         ]
+
+    def ceiling(self) -> CeilingRow | None:
+        # Absent on a savings database written before the ceiling existed.
+        has_table = self._conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'recoverable_ceiling'"
+        ).fetchone()
+        if not has_table:
+            return None
+        row = self._conn.execute("SELECT * FROM recoverable_ceiling WHERE id = 1").fetchone()
+        if row is None:
+            return None
+        return CeilingRow(
+            window_start=row["window_start"],
+            window_end=row["window_end"],
+            target_utilization_pct=row["target_utilization_pct"],
+            observed_gpu_hours=row["observed_gpu_hours"],
+            observed_spend_inr=row["observed_spend_inr"],
+            recoverable_inr=row["recoverable_inr"],
+            monthly_spend_inr=row["monthly_spend_inr"],
+            excluded_gpu_hours=row["excluded_gpu_hours"],
+        )
 
     def close(self) -> None:
         self._conn.close()

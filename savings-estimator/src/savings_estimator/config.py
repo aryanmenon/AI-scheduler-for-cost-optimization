@@ -72,6 +72,9 @@ class Config:
     # Stricter than sla_target_utilization_pct because that finding is
     # sized on an hourly average, which hides bursts within the hour.
     avg_load_target_utilization_pct: float = 50.0
+    # How far back the recoverable ceiling looks, ending at the newest
+    # hourly data (see recoverable.py).
+    ceiling_window_hours: float = 168.0  # 7 days
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -100,6 +103,7 @@ class Config:
             avg_load_target_utilization_pct=float(
                 os.environ.get("AVG_LOAD_TARGET_UTILIZATION_PCT", "50.0")
             ),
+            ceiling_window_hours=float(os.environ.get("CEILING_WINDOW_HOURS", "168")),
             savings_estimates_retention_hours=float(
                 os.environ.get("SAVINGS_ESTIMATES_RETENTION_HOURS", "2160")
             ),

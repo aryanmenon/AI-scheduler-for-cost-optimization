@@ -76,3 +76,14 @@ def test_rollup_reader_is_read_only(tmp_path):
             reader._conn.execute("DELETE FROM rollups")
     finally:
         reader.close()
+
+
+def test_fetch_recent_on_a_database_without_rollups_yet_is_empty(tmp_path):
+    import sqlite3
+
+    from savings_estimator.rollup_reader import RollupReader
+    path = str(tmp_path / "normalized.db")
+    sqlite3.connect(path).close()
+    reader = RollupReader(path)
+    assert reader.fetch_recent("hourly", 168) == []
+    reader.close()

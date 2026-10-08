@@ -65,6 +65,28 @@ class RollupReader:
         cur = self._conn.execute(query, params)
         return [self._row(r) for r in cur.fetchall()]
 
+    def fetch_recent(self, granularity: str, window_hours: float) -> list[RollupRow]:
+        """Every row in the last window_hours before the newest bucket.
+
+        Anchored to the newest data rather than the wall clock, so a
+        replayed or paused dataset still yields its own latest window."""
+        try:
+            newest = self._conn.execute(
+                "SELECT MAX(bucket_start) FROM rollups WHERE granularity = ?", (granularity,)
+            ).fetchone()[0]
+        except sqlite3.OperationalError:
+            # Fresh install: ingestion hasn't created the table yet. Runs
+            # every cycle (unlike fetch_for_gpu), so this must not fail it.
+            return []
+        if newest is None:
+            return []
+        since = newest - window_hours * 3600 + 3600
+        cur = self._conn.execute(
+            "SELECT * FROM rollups WHERE granularity = ? AND bucket_start >= ? ORDER BY bucket_start",
+            (granularity, since),
+        )
+        return [self._row(r) for r in cur.fetchall()]
+
     @staticmethod
     def _row(row: sqlite3.Row) -> RollupRow:
         return RollupRow(

@@ -133,12 +133,23 @@ def test_sustained_idle_gpu_flows_from_raw_scrape_to_a_priced_rupee_figure(tmp_p
     # --- dashboard: read the real savings.db, aggregate, render ---
     report_reader = ReportReader(savings_path)
     rows = report_reader.all_estimates()
-    summary = aggregate(rows, top_n=10)
+    ceiling = report_reader.ceiling()
+    summary = aggregate(rows, top_n=10, ceiling=ceiling)
     html_out = render_report(summary)
 
     assert "₹1,200.00" in html_out
     assert "bert-large" in html_out
     assert "Idle GPUs" in html_out
+
+    # Recoverable ceiling: 4 GPU-hours at 0% busy, Rs300/hr -> all of the
+    # Rs1,200 observed spend is below the 70% target; at that run rate a
+    # month (730 h) is Rs2,19,000.
+    assert ceiling.observed_gpu_hours == 4
+    assert ceiling.observed_spend_inr == 1200.0
+    assert ceiling.fraction == 1.0
+    assert ceiling.monthly_recoverable_inr == 300.0 * 730
+    assert "Recoverable Ceiling" in html_out
+    assert "100% of GPU spend" in html_out
 
 
 def test_second_cycle_with_no_new_data_does_not_duplicate_anything(tmp_path):

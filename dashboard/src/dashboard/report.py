@@ -37,10 +37,11 @@ def generate_report_html(config: Config) -> str:
     reader = ReportReader(config.savings_sqlite_path)
     try:
         rows = reader.all_estimates()
+        ceiling = reader.ceiling()
     finally:
         reader.close()
 
-    summary = aggregate(rows, top_n=config.top_findings_limit)
+    summary = aggregate(rows, top_n=config.top_findings_limit, ceiling=ceiling)
     html = render_report(summary)
 
     duration_ms = (time.monotonic() - start) * 1000

@@ -41,6 +41,7 @@
     font-variant-numeric: tabular-nums; }
   .stat-card.projected .value { color: var(--overprov); }
   .stat-card.observed .value { color: var(--idle); }
+  .stat-card.ceiling .value { font-size: 22px; color: var(--text-secondary); }
   .stat-card .note { color: var(--text-secondary); font-size: 12.5px; margin-top: 8px; line-height: 1.5; }
   .card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
@@ -82,7 +83,7 @@
     <div class="logo">G</div>
     <div>
       <h1>GPU Cost Optimization Report</h1>
-      <div class="subtitle">Generated 2026-10-04 18:41 UTC &middot;
+      <div class="subtitle">Generated 2026-10-08 14:22 UTC &middot;
         37 findings evaluated (37 priced,
         0 not priceable)</div>
     </div>
@@ -100,6 +101,17 @@
       <div class="value">₹43,200.00</div>
       <div class="note">Actual cost of idle GPU time during the exact windows observed --
         a lower bound, not extrapolated to a full month.</div>
+    </div>
+  </div>
+
+  <div class="stat-row">
+    <div class="stat-card ceiling">
+      <div class="label">Recoverable Ceiling</div>
+      <div class="value">73% of GPU spend &middot; ₹734,111.45/mo</div>
+      <div class="note">The most any optimization could save on the 1,176 GPU-hours
+        observed (2026-09-22 00:00 UTC to 2026-09-29 00:00 UTC): the cost of capacity below
+        70% busy, if every workload could be packed perfectly. A ceiling, not a
+        forecast -- hourly averages hide bursts, so real savings are lower. The recommendations above capture ₹276,150.00/mo of it (38%).</div>
     </div>
   </div>
 

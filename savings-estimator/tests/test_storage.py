@@ -97,3 +97,18 @@ def test_all_estimates_priceable_only_filter(storage):
     )
     assert len(storage.all_estimates()) == 2
     assert len(storage.all_estimates(priceable_only=True)) == 1
+
+
+def test_ceiling_is_one_row_replaced_each_cycle_and_cleared_when_absent(tmp_path):
+    from savings_estimator.recoverable import RecoverableCeiling
+    s = SavingsStorage(str(tmp_path / "s.db"))
+    first = RecoverableCeiling(0.0, 3600.0, 70.0, 1.0, 300.0, 300.0, 219000.0, 0.0)
+    second = RecoverableCeiling(0.0, 7200.0, 70.0, 2.0, 600.0, 150.0, 219000.0, 1.0)
+    s.save_ceiling(first, computed_at=1.0)
+    s.save_ceiling(second, computed_at=2.0)
+    row = s.ceiling()
+    assert row["observed_gpu_hours"] == 2.0 and row["excluded_gpu_hours"] == 1.0 and row["computed_at"] == 2.0
+    assert s._conn.execute("SELECT COUNT(*) FROM recoverable_ceiling").fetchone()[0] == 1
+    s.save_ceiling(None, computed_at=3.0)
+    assert s.ceiling() is None
+    s.close()

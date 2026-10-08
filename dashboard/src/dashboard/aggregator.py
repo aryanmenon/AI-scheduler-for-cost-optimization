@@ -14,7 +14,7 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 
-from dashboard.report_reader import EstimateRow
+from dashboard.report_reader import CeilingRow, EstimateRow
 
 BASIS_OBSERVED_WINDOW = "observed_window"
 BASIS_PROJECTED_MONTHLY = "projected_monthly"
@@ -64,6 +64,9 @@ class ReportSummary:
     # actionable finding explains. Its hours never overlap an actionable or
     # multi-GPU finding's (the detector excludes them), so it's a plain sum.
     detected_no_recommendation_total_inr: float = 0.0
+    # The most any optimization could save on the observed fleet (see
+    # savings-estimator's recoverable.py); None when not yet computed.
+    ceiling: CeilingRow | None = None
 
 
 _RECURRING_PATTERN = "recurring_pattern"
@@ -103,7 +106,10 @@ def _total_counting_each_gpu_once(priceable: list[EstimateRow], basis: str) -> t
     return sum(best_by_gpu.values()), overlapping
 
 
-def aggregate(rows: list[EstimateRow], top_n: int, generated_at: float | None = None) -> ReportSummary:
+def aggregate(
+    rows: list[EstimateRow], top_n: int, generated_at: float | None = None,
+    ceiling: CeilingRow | None = None,
+) -> ReportSummary:
     generated_at = generated_at if generated_at is not None else time.time()
 
     priceable = [r for r in rows if r.priceable]
@@ -159,4 +165,5 @@ def aggregate(rows: list[EstimateRow], top_n: int, generated_at: float | None = 
         projected_gpus_with_overlapping_estimates=overlapping_gpus,
         visibility_upper_bound_total_inr=visibility_total,
         detected_no_recommendation_total_inr=no_recommendation_total,
+        ceiling=ceiling,
     )

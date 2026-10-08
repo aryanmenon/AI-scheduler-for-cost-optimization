@@ -130,6 +130,8 @@ savingsEstimator:
   # Right-sizing ceiling for "oversized by average load" findings: stricter
   # than slaTargetUtilizationPct because an hourly average hides bursts.
   avgLoadTargetUtilizationPct: 50.0
+  # Look-back for the report's Recoverable Ceiling line, ending at the newest data.
+  ceilingWindowHours: 168
   # Set this to the customer's actual contracted INR/hour rates, e.g.:
   # gpuHourlyRatesJson: '{"NVIDIA A100 80GB": 275, "NVIDIA T4": 35}'
   # Left empty, pricing.py falls back to illustrative Indian GPU-cloud
