@@ -784,6 +784,25 @@ debugging real problems as they come up, not running anything myself.
 
 ### Open product items (decided or discussed 2026-09-29 to 2026-10-01, not built)
 
+- **Recoverable Ceiling line in the report (built 2026-10-08,
+  `savings-estimator/src/savings_estimator/recoverable.py`).** For every
+  hourly GPU row in the last 7 days (`ceilingWindowHours`, ending at the
+  newest data, not the wall clock): cost of capacity below the 70%
+  target, weighted by coverage; shown as % of GPU spend and ₹/month at
+  the observed run rate, next to the share the headline captures. Unknown
+  GPUs / no rate / MIG slices excluded and reported as excluded. One row
+  in the savings DB (`recoverable_ceiling`); dashboard reads it, absent on
+  older DBs. Sample cluster: 73% of spend, headline captures 38% (spend
+  Rs1,385/h x 168 h hand-checked, pinned in CI). Built instead of a "90%
+  savings" claim (see section 8).
+- **GPU models missing from the capability table (flag, 2026-10-05):**
+  H200, B200, GH200 return unknown -> every finding on them is "not
+  priceable" (even with a customer rate). H100 NVL maps to H100 SXM specs
+  (understates memory: 94 GB vs 80). ~30 min + tests; do before any pilot
+  on Neysa/Yotta/E2E-class hardware.
+- **AMD (non-NVIDIA) support: only if interviews show AMD users.** AMD's
+  official Device Metrics Exporter (ROCm, Prometheus, Helm, k8s job
+  labels) would be a second collector input; product is DCGM-only today.
 - **Pilot install rehearsal run live (2026-10-04/05), all six checks
   pass** (`testing/pilot-install-rehearsal/README.md`): compiled images
   pulled with a `read:packages` token, run, contain no source, PVC binds,
@@ -1301,6 +1320,65 @@ are assumptions to replace with pilot/interview data.
   monitoring software: ~$1.65B (2026). Cross-check: 2,700-28,674 Indian
   K8s companies x 6% using GPUs (Datadog) = ~160-1,700 orgs. ₹95.45/$.
   India likely understated (GPU capacity growing faster than cloud).
+- **Neysa CTO feedback (2026-10-07): "a solved problem and a crowded
+  place."** Consistent with the earlier competition finding (CAST AI,
+  ScaleOps, Datadog GPU Monitoring, Kubecost, KAI Scheduler, neocloud
+  dashboards such as Velocis Command Center). Caveat: a GPU cloud is not
+  the buyer and has an incentive conflict. Decision: stop adding
+  features; run 10-15 buyer interviews with a pre-set kill criterion
+  (e.g. fewer than 3 of 15 with unsolved pain who'd pilot -> change
+  direction). Neysa context: Velocis = GPU cloud (VMs, containers, VKE,
+  bare metal, Slurm; H100/H200/L40S/L4); Command Center shows
+  utilisation, DCGM health, per-team spend; nothing public says it
+  recommends. Fit options were A) VKE add-on, B) Neysa's own managed
+  fleet, C) embedded in Command Center (needs Prometheus input, JSON API,
+  multi-tenant, fleet-scale DB), D) VMs/Slurm (unsupported). Briefing:
+  `docs/briefings/neysa-cto-briefing.pdf` (founder-only).
+- **"90% savings" claim rejected (2026-10-08).** Savings are capped by
+  the customer's waste: max ~= 1 - (utilisation / 70% target) -> 40% busy
+  ~43%, 20% ~71%, 7% ~90%. Measured basis today: Philly 16.7% flagged x
+  30-50% acted on ~= 5-8% of the bill. A blanket 90% claim is misleading
+  (ASCI/consumer-protection risk) and undercuts credibility with
+  technical buyers. Honest framing: "we show your maximum recoverable
+  saving on day 7 and measure what you actually saved by week 4"; real
+  levers to raise captured savings: automated actions, IndiaAI-subsidised
+  / cheaper GPU-hours, MIG/time-slicing, dev scale-to-zero. Never loosen
+  detectors or Rs formulas to inflate numbers.
+- **Heterogeneous GPU clusters: researched 2026-10-08. Verdict: real
+  activity, no verified demand to sell into from India yet.**
+  - Mixed NVIDIA generations (H100+A100+L4...): common (procurement
+    cycles; an academic cluster runs Ampere/Ada/Hopper/Blackwell; IndiaAI
+    pool mixes H100/H200/A100 across 13 providers) but no survey
+    quantifies it. Product already supports it (per-model specs/rates,
+    cross-model right-sizing).
+  - Multi-vendor (NVIDIA + AMD/TPU/Trainium/Gaudi): small in production.
+    AMD Instinct ~5-7% of AI accelerator revenue vs NVIDIA ~75-81%
+    (third-party estimates); AMD Data Center revenue +107% YoY in Q2 2026
+    (SEC filing, includes EPYC CPUs). VB Pulse: 39.4% of enterprise AI
+    buyers plan to *evaluate* non-NVIDIA chips (n=170, non-random,
+    intent only); production use figure unclear. Big labs do run mixed
+    fleets (Anthropic: TPU + Trainium + NVIDIA). India: AMD mostly inside
+    IndiaAI (Cyfuture ordered 1,184 GPUs incl. MI300/MI325; 1,050 Google
+    TPUs in the third tender); Yotta and E2E 2026 announcements are NVIDIA.
+  - Money goes to orchestration, not cost tools: Callosum $100M seed (Aug
+    2026, mixed-chip routing); Exostellar (multi-vendor orchestration)
+    acquired by Qualcomm in 2026; Kubernetes DRA GA in 1.34.
+  - Useful for the "solved problem" objection: VB Pulse research (n=107,
+    mostly US) -- 83% of GPU-operating respondents report utilisation
+    <=50%, 49% <=25%; only 44-47% rigorously track AI compute cost.
+  - Recommendation: don't pivot to "heterogeneous"; say "works across GPU
+    generations and providers"; ask every interviewee which accelerators
+    they run. Sources (several opened only via search summaries --
+    VentureBeat and llm-d blocked here): AMD Q2 2026 8-K slides and Q1
+    10-Q (sec.gov); siliconanalysts.com AMD vs NVIDIA 2026; venturebeat.com
+    (non-NVIDIA evaluation lists; AI compute gap; GPUs at half capacity);
+    backend.ai/blog/2026-06-heterogeneous-gpu-operation; llm-d.ai
+    heterogeneous 3-vendor blog; arXiv 2604.04745; anthropic.com TPU
+    news; datacenterfrontier.com Anthropic multi-cloud; inc42.com IndiaAI
+    tender; introl.com India GPU survey; Bloomberg 2026-02-18 (E2E/Yotta);
+    eu-startups.com and pulse2.com (Callosum); businesswire.com Exostellar
+    AIM; storagenewsletter.com Qualcomm/Exostellar; Red Hat DRA GA;
+    github.com/ROCm/device-metrics-exporter.
 - **Growing the market (report section 9, Oct 2026).** No source supports
   a ₹980 Cr/yr India market for GPU cost optimization; plan against
   ~₹300 Cr/yr (India GPU-monitoring software ~₹299 Cr; India cloud-GPU
